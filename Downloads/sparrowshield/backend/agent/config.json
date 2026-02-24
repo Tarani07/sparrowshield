@@ -1,0 +1,5 @@
+{
+  "api_url": "https://YOUR_SUPABASE_PROJECT.supabase.co/functions/v1",
+  "device_id": "",
+  "device_token": ""
+}
