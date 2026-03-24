@@ -8,8 +8,8 @@ const nav = [
   { to: "/alerts", label: "Alerts", icon: BellRing },
 ];
 
-const MAC_AGENT_PATH   = "/agents/agent_mac.py";
-const WIN_AGENT_PATH   = "/agents/agent_windows.py";
+const MAC_AGENT_PATH   = "/agents/sparrowshield-mac-agent.zip";
+const WIN_AGENT_PATH   = "/agents/sparrowshield-windows-agent.zip";
 const CONFIG_PATH      = "/agents/config.json";
 
 export default function Sidebar() {
@@ -78,7 +78,7 @@ export default function Sidebar() {
 
               {/* macOS */}
               <button
-                onClick={() => downloadFile(MAC_AGENT_PATH, "agent_mac.py")}
+                onClick={() => downloadFile(MAC_AGENT_PATH, "sparrowshield-mac-agent.zip")}
                 className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
               >
                 <span className="w-6 h-6 rounded-md bg-slate-800 group-hover:bg-indigo-600/30 flex items-center justify-center transition-colors">
@@ -86,13 +86,13 @@ export default function Sidebar() {
                 </span>
                 <div className="text-left">
                   <p className="text-slate-300 font-medium">macOS Agent</p>
-                  <p className="text-slate-600 text-[10px]">agent_mac.py</p>
+                  <p className="text-slate-600 text-[10px]">agent + config.json</p>
                 </div>
               </button>
 
               {/* Windows */}
               <button
-                onClick={() => downloadFile(WIN_AGENT_PATH, "agent_windows.py")}
+                onClick={() => downloadFile(WIN_AGENT_PATH, "sparrowshield-windows-agent.zip")}
                 className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
               >
                 <span className="w-6 h-6 rounded-md bg-slate-800 group-hover:bg-blue-600/30 flex items-center justify-center transition-colors">
@@ -100,7 +100,7 @@ export default function Sidebar() {
                 </span>
                 <div className="text-left">
                   <p className="text-slate-300 font-medium">Windows Agent</p>
-                  <p className="text-slate-600 text-[10px]">agent_windows.py</p>
+                  <p className="text-slate-600 text-[10px]">agent + config.json</p>
                 </div>
               </button>
 
@@ -121,7 +121,7 @@ export default function Sidebar() {
               {/* Install instructions hint */}
               <div className="px-2 py-2 mt-1 rounded-lg bg-slate-800/60 border border-slate-700/50">
                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                  Place <span className="text-slate-400">config.json</span> next to the agent script before running.
+                  📦 Each ZIP includes the <span className="text-slate-400">agent</span> + <span className="text-slate-400">config.json</span> — unzip and run.
                 </p>
               </div>
             </div>
