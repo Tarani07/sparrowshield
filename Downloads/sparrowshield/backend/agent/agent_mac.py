@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FleetPulse macOS agent — collects system metrics and inventory, sends to backend.
+HealSparrow macOS agent — collects system metrics and inventory, sends to backend.
 """
 
 import json
@@ -16,7 +16,7 @@ from pathlib import Path
 import psutil
 import requests
 
-LOG_PATH = "/var/log/fleetpulse-agent.log"
+LOG_PATH = "/var/log/healsparrow-agent.log"
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600
@@ -86,6 +86,20 @@ def enroll(api_url: str, config: dict) -> bool:
     os_type = "mac"
     os_version = platform.mac_ver()[0] or platform.release()
 
+    # Hardware config
+    cpu_model = platform.processor() or "unknown"
+    try:
+        r = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            cpu_model = r.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    ram_total_gb = round(psutil.virtual_memory().total / (1024 ** 3), 2)
+
     body = {
         "hostname": hostname,
         "serial_number": serial_number,
@@ -93,6 +107,9 @@ def enroll(api_url: str, config: dict) -> bool:
         "os_version": os_version,
         "assigned_user": os.environ.get("USER", ""),
         "department": "",
+        "cpu_model": cpu_model,
+        "cpu_cores": cpu_cores,
+        "ram_total_gb": ram_total_gb,
     }
 
     for attempt in range(3):
@@ -263,7 +280,7 @@ def get_top_processes(limit=20):
                 procs.append((pinfo.get("name") or p.name(), cpu, mem / (1024 * 1024)))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        procs.sort(key=lambda x: x[1], reverse=True)
+        procs.sort(key=lambda x: x[2], reverse=True)  # sort by RAM (x[2]), not CPU
         for name, cpu_pct, ram_mb in procs[:limit]:
             result.append({
                 "process_name": (name or "unknown")[:256],

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FleetPulse Windows agent — collects system metrics and inventory, sends to backend.
+HealSparrow Windows agent — collects system metrics and inventory, sends to backend.
 """
 
 import json
@@ -17,7 +17,7 @@ import psutil
 import requests
 
 LOG_DIR = os.environ.get("ProgramData", "C:\\ProgramData")
-LOG_PATH = os.path.join(LOG_DIR, "FleetPulse", "agent.log")
+LOG_PATH = os.path.join(LOG_DIR, "HealSparrow", "agent.log")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600
@@ -25,7 +25,7 @@ INVENTORY_INTERVAL = 3600
 
 def setup_logging():
     try:
-        Path(LOG_DIR, "FleetPulse").mkdir(parents=True, exist_ok=True)
+        Path(LOG_DIR, "HealSparrow").mkdir(parents=True, exist_ok=True)
     except OSError:
         pass
     try:
@@ -94,6 +94,23 @@ def enroll(api_url: str, config: dict) -> bool:
     os_type = "windows"
     os_version = platform.win32_ver()[1] or platform.release()
 
+    # Hardware config
+    cpu_model = platform.processor() or "unknown"
+    try:
+        r = subprocess.run(
+            ["wmic", "cpu", "get", "Name", "/format:value"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        )
+        for line in r.stdout.splitlines():
+            if line.startswith("Name=") and line[5:].strip():
+                cpu_model = line[5:].strip()
+                break
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    cpu_cores = psutil.cpu_count(logical=False) or psutil.cpu_count()
+    ram_total_gb = round(psutil.virtual_memory().total / (1024 ** 3), 2)
+
     body = {
         "hostname": hostname,
         "serial_number": serial_number,
@@ -101,6 +118,9 @@ def enroll(api_url: str, config: dict) -> bool:
         "os_version": os_version,
         "assigned_user": os.environ.get("USERNAME", ""),
         "department": "",
+        "cpu_model": cpu_model,
+        "cpu_cores": cpu_cores,
+        "ram_total_gb": ram_total_gb,
     }
 
     for attempt in range(3):
@@ -276,7 +296,7 @@ def get_top_processes(limit=20):
                 procs.append((pinfo.get("name") or p.name(), cpu, mem / (1024 * 1024)))
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        procs.sort(key=lambda x: x[1], reverse=True)
+        procs.sort(key=lambda x: x[2], reverse=True)  # sort by RAM (x[2]), not CPU
         for name, cpu_pct, ram_mb in procs[:limit]:
             result.append({
                 "process_name": (name or "unknown")[:256],
