@@ -334,12 +334,227 @@ def main():
         token = config.get("device_token")
         device_id = config.get("device_id")
 
+    # Derive REST URL from functions URL
+    supabase_rest_url = api_url.replace("/functions/v1", "/rest/v1")
+    anon_key = config.get("anon_key", "")
+
     logger.info("Starting agent for device_id=%s", device_id)
 
     t = threading.Thread(target=inventory_loop, args=(api_url, token), daemon=True)
     t.start()
 
+    t2 = threading.Thread(target=command_loop, args=(device_id, anon_key, supabase_rest_url), daemon=True)
+    t2.start()
+
     heartbeat_loop(api_url, token)
+
+
+# ──────────────────────────────────────────────
+# OPTIMIZER: command handlers + polling loop
+# ──────────────────────────────────────────────
+
+SAFE_PROCS = {
+    "kernel_task", "launchd", "WindowServer", "loginwindow", "coreaudiod",
+    "configd", "mds", "mds_stores", "diskarbitrationd", "securityd",
+    "opendirectoryd", "systemstats", "sysmond", "powerd", "symptomsd",
+    "python3", "python",
+}
+
+FOREGROUND_APPS = {
+    "Safari", "Google Chrome", "Google Chrome Helper", "Firefox", "Slack",
+    "zoom.us", "Microsoft Teams", "Finder", "Dock", "Mail", "Calendar",
+    "Terminal", "iTerm2", "Visual Studio Code", "Xcode", "Spotify",
+    "Music", "Photos", "Messages", "FaceTime", "Notes", "Reminders",
+}
+
+
+# When a helper is killed, also kill the parent app so it can't respawn the helper
+APP_FAMILY = {
+    "Google Chrome Helper": "Google Chrome",
+    "Spotify Helper":       "Spotify",
+    "Slack Helper":         "Slack",
+    "Brave Browser Helper": "Brave Browser",
+    "WhatsApp Helper":      "WhatsApp",
+    "Firefox Helper":       "Firefox",
+    "Opera Helper":         "Opera",
+}
+
+
+def _kill_by_name(name):
+    killed = []
+    for proc in psutil.process_iter(["name", "pid"]):
+        try:
+            if proc.info["name"] == name and name not in SAFE_PROCS:
+                proc.kill()
+                killed.append(proc.info["pid"])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return killed
+
+
+def handle_kill_process(payload):
+    process_name = payload.get("process_name", "")
+    if not process_name:
+        return "No process_name in payload", False
+    try:
+        killed = _kill_by_name(process_name)
+
+        # If this is a helper process, also kill the parent app to prevent respawn
+        parent_killed = []
+        for prefix, parent_name in APP_FAMILY.items():
+            if process_name.startswith(prefix):
+                parent_killed = _kill_by_name(parent_name)
+                if parent_killed:
+                    logger.info("Also killed parent app '%s' to prevent respawn", parent_name)
+                break
+
+        total = len(killed) + len(parent_killed)
+        if total:
+            result = f"Killed '{process_name}' ({len(killed)} instance(s))"
+            if parent_killed:
+                result += f" + parent app ({len(parent_killed)} instance(s)) to prevent respawn"
+        else:
+            result = f"Process '{process_name}' not found (may have already exited)"
+        logger.info(result)
+        return result, True
+    except Exception as e:
+        return f"Error: {e}", False
+
+
+def handle_optimize_memory(payload):
+    threshold_mb = payload.get("threshold_mb", 500)
+    try:
+        killed = []
+        for proc in psutil.process_iter(["name", "pid", "memory_info"]):
+            try:
+                name = proc.info["name"]
+                if name in SAFE_PROCS:
+                    continue
+                ram_mb = (proc.info["memory_info"].rss / 1024 / 1024) if proc.info["memory_info"] else 0
+                if ram_mb > threshold_mb:
+                    proc.kill()
+                    killed.append(f"{name} ({ram_mb:.0f}MB)")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        result = f"Freed memory — killed {len(killed)} process(es): {', '.join(killed)}" if killed else f"No processes using >{threshold_mb}MB found"
+        logger.info(result)
+        return result, True
+    except Exception as e:
+        return f"Memory optimization error: {e}", False
+
+
+def handle_clear_cache(payload):
+    import shutil
+    freed_bytes = 0
+    cleared = 0
+    cache_dir = os.path.expanduser("~/Library/Caches")
+    try:
+        if os.path.exists(cache_dir):
+            for entry in os.scandir(cache_dir):
+                try:
+                    if entry.is_dir():
+                        size = sum(f.stat().st_size for f in Path(entry.path).rglob("*") if f.is_file())
+                        shutil.rmtree(entry.path, ignore_errors=True)
+                        freed_bytes += size
+                        cleared += 1
+                    elif entry.is_file():
+                        freed_bytes += entry.stat().st_size
+                        os.remove(entry.path)
+                except Exception:
+                    continue
+        mb = freed_bytes / 1024 / 1024
+        freed_str = f"{mb/1024:.1f} GB" if mb >= 1024 else f"{mb:.0f} MB"
+        result = f"Cache cleared — freed {freed_str} across {cleared} folder(s)"
+        logger.info(result)
+        return result, True
+    except Exception as e:
+        return f"Cache clear error: {e}", False
+
+
+def handle_restart_ui(payload):
+    try:
+        import subprocess as sp
+        sp.run(["killall", "Dock"], capture_output=True)
+        sp.run(["killall", "Finder"], capture_output=True)
+        result = "UI restarted — Dock and Finder relaunched successfully"
+        logger.info(result)
+        return result, True
+    except Exception as e:
+        return f"UI restart error: {e}", False
+
+
+def handle_kill_background_services(payload):
+    threshold_mb = payload.get("threshold_mb", 200)
+    try:
+        killed = []
+        for proc in psutil.process_iter(["name", "pid", "memory_info"]):
+            try:
+                name = proc.info["name"]
+                if name in SAFE_PROCS or name in FOREGROUND_APPS:
+                    continue
+                ram_mb = (proc.info["memory_info"].rss / 1024 / 1024) if proc.info["memory_info"] else 0
+                if ram_mb > threshold_mb:
+                    proc.kill()
+                    killed.append(f"{name} ({ram_mb:.0f}MB)")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        result = f"Killed {len(killed)} background service(s): {', '.join(killed)}" if killed else f"No background services using >{threshold_mb}MB found"
+        logger.info(result)
+        return result, True
+    except Exception as e:
+        return f"Background service kill error: {e}", False
+
+
+COMMAND_HANDLERS = {
+    "kill_process":             handle_kill_process,
+    "optimize_memory":          handle_optimize_memory,
+    "clear_cache":              handle_clear_cache,
+    "restart_ui":               handle_restart_ui,
+    "kill_background_services": handle_kill_background_services,
+}
+
+
+def command_loop(device_id, anon_key, supabase_rest_url):
+    if not supabase_rest_url or not anon_key:
+        logger.warning("Command loop: missing REST URL or anon_key — optimizer disabled")
+        return
+    headers = {
+        "Authorization": f"Bearer {anon_key}",
+        "apikey": anon_key,
+        "Content-Type": "application/json",
+    }
+    logger.info("Optimizer command loop started — polling every 10s")
+    while True:
+        try:
+            r = requests.get(
+                f"{supabase_rest_url}/device_commands"
+                f"?device_id=eq.{device_id}&status=eq.pending&order=created_at.asc&limit=10",
+                headers=headers, timeout=10,
+            )
+            if r.status_code == 200:
+                for cmd in r.json():
+                    cmd_id = cmd["id"]
+                    cmd_type = cmd.get("command_type")
+                    payload = cmd.get("payload", {})
+                    requests.patch(
+                        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
+                        headers=headers, json={"status": "running"}, timeout=10,
+                    )
+                    handler = COMMAND_HANDLERS.get(cmd_type)
+                    result, success = handler(payload) if handler else (f"Unknown command: {cmd_type}", False)
+                    requests.patch(
+                        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
+                        headers=headers,
+                        json={
+                            "status": "done" if success else "failed",
+                            "result": result,
+                            "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        },
+                        timeout=10,
+                    )
+        except Exception as e:
+            logger.warning("Command loop error: %s", e)
+        time.sleep(10)
 
 
 if __name__ == "__main__":

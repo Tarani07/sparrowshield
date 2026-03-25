@@ -25,13 +25,9 @@ Deno.serve(async (req) => {
     return failure("Method not allowed", 405);
   }
 
-  const auth = req.headers.get("Authorization");
-  if (!auth?.startsWith("Bearer ")) {
-    return failure("Missing or invalid Authorization header", 401);
-  }
-  const rawToken = auth.slice(7).trim();
+  const rawToken = req.headers.get("X-Device-Token")?.trim();
   if (!rawToken) {
-    return failure("Missing Bearer token", 401);
+    return failure("Missing X-Device-Token header", 401);
   }
 
   let body: HeartbeatBody;

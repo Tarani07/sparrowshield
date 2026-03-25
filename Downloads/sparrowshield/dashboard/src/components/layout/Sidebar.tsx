@@ -1,10 +1,13 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor } from "lucide-react";
+import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "../../lib/supabase";
 
 const nav = [
   { to: "/", label: "Fleet Overview", icon: LayoutDashboard },
+  { to: "/devices", label: "Device List", icon: Laptop },
   { to: "/alerts", label: "Alerts", icon: BellRing },
 ];
 
@@ -14,6 +17,15 @@ const CONFIG_PATH      = "/agents/config.json";
 
 export default function Sidebar() {
   const [expanded, setExpanded] = useState(false);
+
+  const { data: deviceCount = 0 } = useQuery<number>({
+    queryKey: ["device-count"],
+    queryFn: async () => {
+      const { count } = await supabase.from("devices").select("*", { count: "exact", head: true });
+      return count ?? 0;
+    },
+    refetchInterval: 30_000,
+  });
 
   function downloadFile(url: string, filename: string) {
     const a = document.createElement("a");
@@ -52,7 +64,12 @@ export default function Sidebar() {
             }
           >
             <Icon className="w-4 h-4" />
-            {label}
+            <span className="flex-1">{label}</span>
+            {to === "/devices" && deviceCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-400 text-[10px] font-bold border border-indigo-600/40">
+                {deviceCount}
+              </span>
+            )}
           </NavLink>
         ))}
 

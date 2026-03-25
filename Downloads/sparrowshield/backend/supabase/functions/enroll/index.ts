@@ -10,6 +10,9 @@ interface EnrollBody {
   os_version: string;
   assigned_user?: string;
   department?: string;
+  cpu_model?: string;
+  cpu_cores?: number;
+  ram_total_gb?: number;
 }
 
 Deno.serve(async (req) => {
@@ -34,6 +37,9 @@ Deno.serve(async (req) => {
     os_version,
     assigned_user,
     department,
+    cpu_model,
+    cpu_cores,
+    ram_total_gb,
   } = body;
 
   if (
@@ -83,6 +89,9 @@ Deno.serve(async (req) => {
         os_version,
         assigned_user: assigned_user ?? null,
         department: department ?? null,
+        cpu_model: cpu_model ?? null,
+        cpu_cores: cpu_cores ?? null,
+        ram_total_gb: ram_total_gb ?? null,
         last_seen: new Date().toISOString(),
         status: "online",
       })
@@ -104,6 +113,9 @@ Deno.serve(async (req) => {
       os_version,
       assigned_user: assigned_user ?? null,
       department: department ?? null,
+      cpu_model: cpu_model ?? null,
+      cpu_cores: cpu_cores ?? null,
+      ram_total_gb: ram_total_gb ?? null,
       status: "online",
     })
     .select("id")

@@ -3,6 +3,7 @@ import Sidebar from "./components/layout/Sidebar";
 import FleetOverview from "./pages/FleetOverview";
 import DeviceDetail from "./pages/DeviceDetail";
 import AlertCenter from "./pages/AlertCenter";
+import DeviceList from "./pages/DeviceList";
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <main className="flex-1 ml-56 flex flex-col overflow-hidden">
           <Routes>
             <Route path="/" element={<FleetOverview />} />
+            <Route path="/devices" element={<DeviceList />} />
             <Route path="/device/:id" element={<DeviceDetail />} />
             <Route path="/alerts" element={<AlertCenter />} />
           </Routes>
