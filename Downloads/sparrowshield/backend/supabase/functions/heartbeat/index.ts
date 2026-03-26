@@ -49,6 +49,15 @@ interface HeartbeatBody {
   // Login / session (new)
   active_user?: string;
   remote_session_active?: boolean;
+
+  // Location (new)
+  public_ip?: string;
+  city?: string;
+  region?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+  isp?: string;
 }
 
 Deno.serve(async (req) => {
@@ -117,6 +126,13 @@ Deno.serve(async (req) => {
     last_crashed_app,
     active_user,
     remote_session_active,
+    public_ip,
+    city,
+    region,
+    country,
+    latitude,
+    longitude,
+    isp,
   } = body;
 
   if (
@@ -179,6 +195,13 @@ Deno.serve(async (req) => {
   if (net_download_mb != null)       deviceUpdate.net_download_mb = net_download_mb;
   if (usb_devices != null)           deviceUpdate.usb_devices = usb_devices;
   if (installed_apps != null)        deviceUpdate.installed_apps = installed_apps;
+  if (public_ip != null)             deviceUpdate.public_ip = public_ip;
+  if (city != null)                  deviceUpdate.city = city;
+  if (region != null)                deviceUpdate.region = region;
+  if (country != null)               deviceUpdate.country = country;
+  if (latitude != null)              deviceUpdate.latitude = latitude;
+  if (longitude != null)             deviceUpdate.longitude = longitude;
+  if (isp != null)                   deviceUpdate.isp = isp;
 
   await supabase
     .from("devices")

@@ -308,6 +308,27 @@ def get_wifi_info() -> dict:
     return info
 
 
+def get_location() -> dict:
+    """Get approximate location from public IP using ip-api.com (free, no key needed)."""
+    try:
+        r = requests.get("http://ip-api.com/json/?fields=status,country,regionName,city,lat,lon,isp,query", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if data.get("status") == "success":
+                return {
+                    "public_ip": data.get("query"),
+                    "city": data.get("city"),
+                    "region": data.get("regionName"),
+                    "country": data.get("country"),
+                    "latitude": data.get("lat"),
+                    "longitude": data.get("lon"),
+                    "isp": data.get("isp"),
+                }
+    except Exception:
+        pass
+    return {"public_ip": None, "city": None, "region": None, "country": None, "latitude": None, "longitude": None, "isp": None}
+
+
 def get_network_io() -> dict:
     """Return net_upload_mb and net_download_mb (cumulative since boot)."""
     try:
@@ -691,6 +712,9 @@ def collect_metrics() -> dict:
     # Crash logs
     crash_info = get_crash_info()
 
+    # Location (cached — refresh every 30 min)
+    location = get_location()
+
     # Login / session
     active_user = get_active_user()
     remote_session = get_remote_session_active()
@@ -738,6 +762,15 @@ def collect_metrics() -> dict:
         # Login / session
         "active_user": active_user or None,
         "remote_session_active": remote_session,
+
+        # Location
+        "public_ip": location.get("public_ip"),
+        "city": location.get("city"),
+        "region": location.get("region"),
+        "country": location.get("country"),
+        "latitude": location.get("latitude"),
+        "longitude": location.get("longitude"),
+        "isp": location.get("isp"),
 
         # Installed apps (hourly refresh)
         "installed_apps": _cached_apps,

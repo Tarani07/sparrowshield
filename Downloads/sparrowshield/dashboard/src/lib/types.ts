@@ -97,6 +97,15 @@ export interface Device {
   // Login / session
   active_user: string | null;
   remote_session_active: boolean | null;
+
+  // Location
+  public_ip: string | null;
+  city: string | null;
+  region: string | null;
+  country: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  isp: string | null;
 }
 
 export interface Alert {

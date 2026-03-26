@@ -12,6 +12,7 @@ import SecurityStatusCard from "../components/device/SecurityStatusCard";
 import ComplianceCard from "../components/device/ComplianceCard";
 import CrashCard from "../components/device/CrashCard";
 import InstalledAppsCard from "../components/device/InstalledAppsCard";
+import LocationCard from "../components/device/LocationCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -168,7 +169,8 @@ export default function DeviceDetail() {
           </div>
         )}
 
-        {/* Installed Apps Inventory */}
+        {/* Location + Installed Apps */}
+        {device && <LocationCard device={device} />}
         {device && (
           <InstalledAppsCard apps={device.installed_apps ?? []} />
         )}
