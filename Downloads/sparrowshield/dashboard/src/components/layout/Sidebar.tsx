@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop } from "lucide-react";
+import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ const nav = [
   { to: "/", label: "Fleet Overview", icon: LayoutDashboard },
   { to: "/devices", label: "Device List", icon: Laptop },
   { to: "/alerts", label: "Alerts", icon: BellRing },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 const MAC_AGENT_PATH   = "/agents/sparrowshield-mac-agent.zip";

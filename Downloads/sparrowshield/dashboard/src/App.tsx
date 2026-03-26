@@ -4,6 +4,7 @@ import FleetOverview from "./pages/FleetOverview";
 import DeviceDetail from "./pages/DeviceDetail";
 import AlertCenter from "./pages/AlertCenter";
 import DeviceList from "./pages/DeviceList";
+import Settings from "./pages/Settings";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route path="/devices" element={<DeviceList />} />
             <Route path="/device/:id" element={<DeviceDetail />} />
             <Route path="/alerts" element={<AlertCenter />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>
       </div>

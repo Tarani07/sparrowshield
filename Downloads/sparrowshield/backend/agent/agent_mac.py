@@ -567,6 +567,82 @@ def get_crash_info() -> dict:
 
 
 # ──────────────────────────────────────────────
+# DISK HEALTH (S.M.A.R.T.)
+# ──────────────────────────────────────────────
+
+def get_disk_health() -> str:
+    """Return disk S.M.A.R.T. status via diskutil. Returns 'Verified', 'Not Supported', or error string."""
+    try:
+        # Get the boot disk identifier
+        r = subprocess.run(
+            ["diskutil", "info", "/"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return "Not Supported"
+        disk_id = None
+        for line in r.stdout.splitlines():
+            if "Device Identifier" in line:
+                disk_id = line.split(":")[-1].strip()
+                break
+        if not disk_id:
+            return "Not Supported"
+
+        # Run verifyDisk
+        r2 = subprocess.run(
+            ["diskutil", "verifyDisk", disk_id],
+            capture_output=True, text=True, timeout=60,
+        )
+        output = r2.stdout + r2.stderr
+        if "appears to be OK" in output or "verified" in output.lower():
+            return "Verified"
+        elif "not supported" in output.lower():
+            return "Not Supported"
+        else:
+            return output.strip()[:200] or "Unknown"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return "Not Supported"
+    except Exception as e:
+        logger.debug("Disk health check failed: %s", e)
+        return "Not Supported"
+
+
+# ──────────────────────────────────────────────
+# SLACK NOTIFICATIONS
+# ──────────────────────────────────────────────
+
+def notify_slack(api_url, anon_key, event_type, title, message, severity, fields=None):
+    """Send a notification to the slack-notify Edge Function."""
+    if not api_url or not anon_key:
+        return
+    payload = {
+        "event_type": event_type,
+        "device_name": platform.node(),
+        "title": title,
+        "message": message,
+        "severity": severity,
+        "fields": fields or [],
+    }
+    try:
+        r = requests.post(
+            f"{api_url}/slack-notify",
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {anon_key}",
+                "apikey": anon_key,
+            },
+            timeout=15,
+        )
+        if r.status_code == 200:
+            logger.info("Slack notification sent: %s", title)
+        else:
+            logger.debug("Slack notify response %s: %s", r.status_code, r.text[:200])
+    except Exception as e:
+        logger.debug("Slack notification failed: %s", e)
+
+
+# ──────────────────────────────────────────────
 # METRICS COLLECTION
 # ──────────────────────────────────────────────
 
@@ -671,13 +747,138 @@ def collect_metrics() -> dict:
 def heartbeat_loop(api_url: str, token: str, anon_key: str = ""):
     # Track previous USB devices to detect new storage devices
     prev_usb_serials: set = set()
+    # Track previous installed apps to detect new installs
+    prev_app_names: set = set()
+    # Track consecutive high-CPU heartbeats
+    high_cpu_count = 0
     first_run = True
+    hostname = platform.node()
 
     while True:
         try:
             metrics = collect_metrics()
 
-            # Detect new USB storage devices
+            # ── New App Installed Detection ──
+            current_apps = metrics.get("installed_apps") or []
+            current_app_names = {a.get("name", "") for a in current_apps if a.get("name")}
+            if not first_run and prev_app_names:
+                new_apps = current_app_names - prev_app_names
+                for app_name in new_apps:
+                    app_info = next((a for a in current_apps if a.get("name") == app_name), {})
+                    version = app_info.get("version", "unknown")
+                    logger.info("New app detected: %s v%s", app_name, version)
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="new_app_installed",
+                        title="New App Installed",
+                        message=f"{app_name} (v{version}) was installed on {hostname}",
+                        severity="info",
+                        fields=[
+                            {"title": "App", "value": f"{app_name} v{version}"},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+            prev_app_names = current_app_names
+
+            # ── System Critical: CPU, RAM, Disk, Battery ──
+            cpu_pct = metrics.get("cpu_pct", 0)
+            ram_pct = metrics.get("ram_pct", 0)
+            disk_pct = metrics.get("disk_pct", 0)
+            battery_pct = metrics.get("battery_pct")
+
+            # CPU > 90% for 2 consecutive heartbeats
+            if cpu_pct > 90:
+                high_cpu_count += 1
+            else:
+                high_cpu_count = 0
+
+            if not first_run:
+                if high_cpu_count >= 2:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="system_critical",
+                        title="High CPU Usage",
+                        message=f"CPU at {cpu_pct}% for {high_cpu_count} consecutive heartbeats on {hostname}",
+                        severity="critical",
+                        fields=[
+                            {"title": "CPU", "value": f"{cpu_pct}%"},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+                    high_cpu_count = 0  # Reset after notification
+
+                if ram_pct > 90:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="system_critical",
+                        title="High RAM Usage",
+                        message=f"RAM at {ram_pct}% on {hostname}",
+                        severity="warning",
+                        fields=[
+                            {"title": "RAM", "value": f"{ram_pct}%"},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+
+                if disk_pct > 90:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="system_critical",
+                        title="High Disk Usage",
+                        message=f"Disk at {disk_pct}% on {hostname}",
+                        severity="critical",
+                        fields=[
+                            {"title": "Disk", "value": f"{disk_pct}%"},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+
+                if battery_pct is not None and battery_pct < 10:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="system_critical",
+                        title="Low Battery",
+                        message=f"Battery at {battery_pct}% on {hostname}",
+                        severity="warning",
+                        fields=[
+                            {"title": "Battery", "value": f"{battery_pct}%"},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+
+            # ── Security Alerts ──
+            if not first_run:
+                if metrics.get("filevault_enabled") is False:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="security_alert",
+                        title="FileVault Disabled",
+                        message=f"FileVault disk encryption is disabled on {hostname}",
+                        severity="critical",
+                        fields=[{"title": "Device", "value": hostname}],
+                    )
+
+                if metrics.get("firewall_enabled") is False:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="security_alert",
+                        title="Firewall Disabled",
+                        message=f"Firewall is disabled on {hostname}",
+                        severity="warning",
+                        fields=[{"title": "Device", "value": hostname}],
+                    )
+
+                if metrics.get("sip_enabled") is False:
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="security_alert",
+                        title="SIP Disabled",
+                        message=f"System Integrity Protection is disabled on {hostname}",
+                        severity="critical",
+                        fields=[{"title": "Device", "value": hostname}],
+                    )
+
+            # ── USB Storage Detection + Slack ──
             current_usb = metrics.get("usb_devices") or []
             current_storage = {
                 d.get("serial") or d.get("name", "")
@@ -688,7 +889,36 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = ""):
                 new_storage = current_storage - prev_usb_serials
                 if new_storage:
                     logger.warning("New USB storage device(s) detected: %s", new_storage)
+                    for usb_id in new_storage:
+                        notify_slack(
+                            api_url, anon_key,
+                            event_type="security_alert",
+                            title="New USB Storage Device",
+                            message=f"USB storage device '{usb_id}' connected to {hostname}",
+                            severity="warning",
+                            fields=[
+                                {"title": "USB Device", "value": str(usb_id)},
+                                {"title": "Device", "value": hostname},
+                            ],
+                        )
             prev_usb_serials = current_storage
+
+            # ── Disk Health (S.M.A.R.T.) ──
+            if not first_run:
+                disk_status = get_disk_health()
+                if disk_status not in ("Verified", "Not Supported"):
+                    notify_slack(
+                        api_url, anon_key,
+                        event_type="disk_failing",
+                        title="Disk Health Warning",
+                        message=f"Disk S.M.A.R.T. status: {disk_status} on {hostname}",
+                        severity="critical",
+                        fields=[
+                            {"title": "Status", "value": disk_status},
+                            {"title": "Device", "value": hostname},
+                        ],
+                    )
+
             first_run = False
 
             r = retry_request(
