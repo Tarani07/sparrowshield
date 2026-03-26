@@ -570,11 +570,21 @@ def get_crash_info() -> dict:
 # METRICS COLLECTION
 # ──────────────────────────────────────────────
 
+_cached_apps: list = []
+_cached_apps_time: float = 0.0
+
 def collect_metrics() -> dict:
+    global _cached_apps, _cached_apps_time
     vm = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
     cpu_pct = psutil.cpu_percent(interval=2)
     uptime_seconds = int(time.time() - psutil.boot_time()) if hasattr(psutil, "boot_time") else 0
+
+    # Installed apps — refresh every hour or on first run
+    now = time.time()
+    if not _cached_apps or (now - _cached_apps_time) >= 3600:
+        _cached_apps = get_installed_apps()
+        _cached_apps_time = now
 
     # Existing battery (legacy fields kept for metrics table compat)
     battery_health_pct = None
@@ -652,6 +662,9 @@ def collect_metrics() -> dict:
         # Login / session
         "active_user": active_user or None,
         "remote_session_active": remote_session,
+
+        # Installed apps (hourly refresh)
+        "installed_apps": _cached_apps,
     }
 
 

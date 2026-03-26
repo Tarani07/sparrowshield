@@ -11,6 +11,7 @@ import NetworkCard from "../components/device/NetworkCard";
 import SecurityStatusCard from "../components/device/SecurityStatusCard";
 import ComplianceCard from "../components/device/ComplianceCard";
 import CrashCard from "../components/device/CrashCard";
+import InstalledAppsCard from "../components/device/InstalledAppsCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -165,6 +166,11 @@ export default function DeviceDetail() {
             <ComplianceCard device={device} />
             <CrashCard device={device} />
           </div>
+        )}
+
+        {/* Installed Apps Inventory */}
+        {device && (
+          <InstalledAppsCard apps={device.installed_apps ?? []} />
         )}
 
         {/* Optimizer Panel */}
