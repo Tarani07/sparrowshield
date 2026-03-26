@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import psutil
@@ -20,6 +21,45 @@ LOG_PATH = "/var/log/healsparrow-agent.log"
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600
+
+# Known antivirus/EDR apps to check for
+KNOWN_AV_APPS = [
+    "CrowdStrike Falcon",
+    "CrowdStrikeFalcon",
+    "Falcon",
+    "Carbon Black",
+    "CarbonBlack",
+    "SentinelOne",
+    "Symantec Endpoint Security",
+    "Norton",
+    "McAfee Endpoint Security",
+    "Sophos",
+    "Malwarebytes",
+    "ESET Endpoint Antivirus",
+    "Trend Micro",
+    "Kaspersky",
+    "Bitdefender",
+    "Avast",
+    "Avira",
+    "F-Secure",
+    "Webroot",
+    "Cylance",
+    "Palo Alto Cortex",
+    "Microsoft Defender",
+]
+
+# Remote access apps to watch
+REMOTE_ACCESS_PROCS = {
+    "anydesk": "AnyDesk",
+    "teamviewer": "TeamViewer",
+    "screensharing": "Screen Sharing",
+    "screensharingd": "Screen Sharing",
+    "rfb": "VNC",
+    "logmein": "LogMeIn",
+    "splashtop": "Splashtop",
+    "goto": "GoTo Meeting",
+    "bomgar": "Bomgar",
+}
 
 
 def setup_logging():
@@ -151,6 +191,132 @@ def retry_request(method, url, **kwargs):
     raise last_error
 
 
+# ──────────────────────────────────────────────
+# BATTERY
+# ──────────────────────────────────────────────
+
+def get_battery_info() -> dict:
+    """Return battery_pct, battery_cycles, battery_health, is_charging."""
+    info = {
+        "battery_pct": None,
+        "battery_cycles": None,
+        "battery_health": None,
+        "is_charging": None,
+    }
+
+    # psutil for charge % and charging status
+    try:
+        bat = psutil.sensors_battery()
+        if bat:
+            info["battery_pct"] = round(bat.percent, 1)
+            info["is_charging"] = bat.power_plugged
+    except Exception:
+        pass
+
+    # ioreg for cycle count and health condition
+    try:
+        r = subprocess.run(
+            ["ioreg", "-rn", "AppleSmartBattery"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                if '"CycleCount"' in line:
+                    parts = line.split("=")
+                    if len(parts) > 1:
+                        try:
+                            info["battery_cycles"] = int(parts[-1].strip())
+                        except ValueError:
+                            pass
+                if '"BatteryHealth"' in line or '"PermanentFailureStatus"' in line:
+                    pass  # Covered by DesignCapacity vs MaxCapacity ratio below
+                if '"DesignCapacity"' in line:
+                    try:
+                        design = int(line.split("=")[-1].strip())
+                        info["_design_cap"] = design
+                    except ValueError:
+                        pass
+                if '"MaxCapacity"' in line:
+                    try:
+                        max_cap = int(line.split("=")[-1].strip())
+                        info["_max_cap"] = max_cap
+                    except ValueError:
+                        pass
+
+            # Derive health from capacity ratio
+            design = info.pop("_design_cap", None)
+            max_cap = info.pop("_max_cap", None)
+            if design and max_cap and design > 0:
+                ratio = (max_cap / design) * 100
+                if ratio >= 80:
+                    info["battery_health"] = "Good"
+                elif ratio >= 50:
+                    info["battery_health"] = "Fair"
+                else:
+                    info["battery_health"] = "Poor"
+    except Exception as e:
+        logger.debug("Battery ioreg failed: %s", e)
+
+    return info
+
+
+# ──────────────────────────────────────────────
+# NETWORK
+# ──────────────────────────────────────────────
+
+def get_wifi_info() -> dict:
+    """Return wifi_ssid and wifi_rssi."""
+    info = {"wifi_ssid": None, "wifi_rssi": None}
+    airport_paths = [
+        "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport",
+        "/usr/sbin/airport",
+    ]
+    airport = None
+    for p in airport_paths:
+        if os.path.exists(p):
+            airport = p
+            break
+
+    if not airport:
+        return info
+
+    try:
+        r = subprocess.run(
+            [airport, "-I"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("SSID:"):
+                    info["wifi_ssid"] = line.split(":", 1)[-1].strip()
+                elif line.startswith("agrCtlRSSI:"):
+                    try:
+                        info["wifi_rssi"] = int(line.split(":")[-1].strip())
+                    except ValueError:
+                        pass
+    except Exception as e:
+        logger.debug("WiFi info failed: %s", e)
+
+    return info
+
+
+def get_network_io() -> dict:
+    """Return net_upload_mb and net_download_mb (cumulative since boot)."""
+    try:
+        io = psutil.net_io_counters()
+        return {
+            "net_upload_mb": round(io.bytes_sent / (1024 * 1024), 2),
+            "net_download_mb": round(io.bytes_recv / (1024 * 1024), 2),
+        }
+    except Exception:
+        return {"net_upload_mb": None, "net_download_mb": None}
+
+
+# ──────────────────────────────────────────────
+# SECURITY STATUS
+# ──────────────────────────────────────────────
+
 def get_filevault_status() -> bool:
     try:
         r = subprocess.run(
@@ -175,11 +341,227 @@ def get_firewall_status() -> bool:
             timeout=5,
         )
         if r.returncode == 0:
-            return r.stdout.strip() == "1"
+            return r.stdout.strip() in ("1", "2")
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return False
 
+
+def get_sip_status() -> bool:
+    try:
+        r = subprocess.run(
+            ["csrutil", "status"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return "enabled" in r.stdout.lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return False
+
+
+def get_gatekeeper_status() -> bool:
+    try:
+        r = subprocess.run(
+            ["spctl", "--status"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0:
+            return "assessments enabled" in r.stdout.lower() or "enabled" in r.stdout.lower()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return False
+
+
+# ──────────────────────────────────────────────
+# COMPLIANCE
+# ──────────────────────────────────────────────
+
+def get_mdm_enrollment() -> bool:
+    try:
+        r = subprocess.run(
+            ["profiles", "status", "-type", "enrollment"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            output = r.stdout.lower()
+            return "enrolled" in output and "not enrolled" not in output
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return False
+
+
+def get_antivirus_installed() -> str:
+    """Return name of detected AV/EDR or empty string."""
+    applications_dir = "/Applications"
+    try:
+        installed = os.listdir(applications_dir)
+        for av in KNOWN_AV_APPS:
+            for app in installed:
+                app_name = app.replace(".app", "")
+                if av.lower() in app_name.lower():
+                    return av
+    except OSError:
+        pass
+    return ""
+
+
+# ──────────────────────────────────────────────
+# USB DEVICES
+# ──────────────────────────────────────────────
+
+def get_usb_devices() -> list:
+    """Return list of connected USB devices."""
+    try:
+        r = subprocess.run(
+            ["system_profiler", "SPUSBDataType", "-json"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode != 0:
+            return []
+        data = json.loads(r.stdout)
+        usb_items = data.get("SPUSBDataType", [])
+        devices = []
+
+        def _extract(items):
+            if not isinstance(items, list):
+                return
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                name = item.get("_name") or item.get("manufacturer", "Unknown")
+                vendor = item.get("manufacturer", "")
+                product_id = item.get("product_id", "")
+                vendor_id = item.get("vendor_id", "")
+                serial = item.get("serial_num", "")
+                dev_type = "storage" if any(
+                    k in name.lower() for k in ("disk", "storage", "flash", "drive", "usb")
+                ) else "peripheral"
+                devices.append({
+                    "name": name[:128],
+                    "vendor": vendor[:64],
+                    "product_id": product_id[:16],
+                    "vendor_id": vendor_id[:16],
+                    "serial": serial[:64],
+                    "type": dev_type,
+                })
+                # Recurse into sub-items
+                _extract(item.get("_items", []))
+
+        _extract(usb_items)
+        return devices[:50]
+    except Exception as e:
+        logger.debug("USB devices failed: %s", e)
+        return []
+
+
+# ──────────────────────────────────────────────
+# INSTALLED APPS (hourly)
+# ──────────────────────────────────────────────
+
+def get_installed_apps() -> list:
+    """Return list of installed apps from /Applications with name, version, last_modified."""
+    apps = []
+    try:
+        applications_dir = Path("/Applications")
+        for app_path in applications_dir.glob("*.app"):
+            try:
+                name = app_path.stem
+                last_modified = datetime.fromtimestamp(
+                    app_path.stat().st_mtime
+                ).isoformat()
+                version = ""
+                plist_path = app_path / "Contents" / "Info.plist"
+                if plist_path.exists():
+                    try:
+                        r = subprocess.run(
+                            ["defaults", "read", str(plist_path), "CFBundleShortVersionString"],
+                            capture_output=True, text=True, timeout=3,
+                        )
+                        if r.returncode == 0:
+                            version = r.stdout.strip()[:32]
+                    except Exception:
+                        pass
+                apps.append({
+                    "name": name[:128],
+                    "version": version,
+                    "last_modified": last_modified,
+                })
+            except OSError:
+                continue
+        apps.sort(key=lambda x: x["name"].lower())
+    except Exception as e:
+        logger.debug("Installed apps failed: %s", e)
+    return apps[:500]
+
+
+# ──────────────────────────────────────────────
+# LOGIN / SESSION
+# ──────────────────────────────────────────────
+
+def get_active_user() -> str:
+    """Return currently logged-in user."""
+    try:
+        r = subprocess.run(
+            ["stat", "-f", "%Su", "/dev/console"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return os.environ.get("USER", "")
+
+
+def get_remote_session_active() -> bool:
+    """Check if AnyDesk, TeamViewer, or Screen Sharing is actively running."""
+    try:
+        running_names = {p.name().lower() for p in psutil.process_iter(["name"])}
+        for proc_name in REMOTE_ACCESS_PROCS:
+            if proc_name in running_names:
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# ──────────────────────────────────────────────
+# CRASH LOGS
+# ──────────────────────────────────────────────
+
+def get_crash_info() -> dict:
+    """Count crash logs from last 24h and return most recent app name."""
+    crash_dir = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+    count = 0
+    last_app = None
+    last_mtime = 0
+    cutoff = time.time() - 86400
+
+    try:
+        if crash_dir.exists():
+            for f in crash_dir.iterdir():
+                try:
+                    st = f.stat()
+                    if st.st_mtime > cutoff and f.suffix in (".crash", ".ips", ".hang"):
+                        count += 1
+                        if st.st_mtime > last_mtime:
+                            last_mtime = st.st_mtime
+                            # File name format: AppName_date_hostname.crash
+                            last_app = f.name.split("_")[0]
+                except OSError:
+                    continue
+    except Exception as e:
+        logger.debug("Crash logs failed: %s", e)
+
+    return {
+        "crash_count_24h": count,
+        "last_crashed_app": last_app,
+    }
+
+
+# ──────────────────────────────────────────────
+# METRICS COLLECTION
+# ──────────────────────────────────────────────
 
 def collect_metrics() -> dict:
     vm = psutil.virtual_memory()
@@ -187,32 +569,108 @@ def collect_metrics() -> dict:
     cpu_pct = psutil.cpu_percent(interval=2)
     uptime_seconds = int(time.time() - psutil.boot_time()) if hasattr(psutil, "boot_time") else 0
 
+    # Existing battery (legacy fields kept for metrics table compat)
     battery_health_pct = None
-    battery_cycles = None
     if hasattr(psutil, "sensors_battery") and psutil.sensors_battery():
         bat = psutil.sensors_battery()
         battery_health_pct = getattr(bat, "percent", None)
-        battery_cycles = None
+
+    # New battery info
+    battery_info = get_battery_info()
+
+    # Network
+    wifi_info = get_wifi_info()
+    net_io = get_network_io()
+
+    # Security
+    filevault = get_filevault_status()
+    firewall = get_firewall_status()
+    sip = get_sip_status()
+    gatekeeper = get_gatekeeper_status()
+
+    # Compliance
+    mdm = get_mdm_enrollment()
+    antivirus = get_antivirus_installed()
+
+    # USB
+    usb_devices = get_usb_devices()
+
+    # Crash logs
+    crash_info = get_crash_info()
+
+    # Login / session
+    active_user = get_active_user()
+    remote_session = get_remote_session_active()
 
     return {
+        # Core metrics (existing)
         "cpu_pct": round(cpu_pct, 2),
         "ram_pct": round(vm.percent, 2),
         "ram_total_gb": round(vm.total / (1024 ** 3), 2),
         "disk_pct": round(disk.percent, 2),
         "disk_total_gb": round(disk.total / (1024 ** 3), 2),
         "battery_health_pct": battery_health_pct,
-        "battery_cycles": battery_cycles,
+        "battery_cycles": battery_info.get("battery_cycles"),
         "uptime_seconds": uptime_seconds,
-        "filevault_enabled": get_filevault_status(),
+        "filevault_enabled": filevault,
         "bitlocker_enabled": None,
-        "firewall_enabled": get_firewall_status(),
+        "firewall_enabled": firewall,
+
+        # New battery fields
+        "battery_pct": battery_info.get("battery_pct"),
+        "battery_health": battery_info.get("battery_health"),
+        "is_charging": battery_info.get("is_charging"),
+
+        # Network
+        "wifi_ssid": wifi_info.get("wifi_ssid"),
+        "wifi_rssi": wifi_info.get("wifi_rssi"),
+        "net_upload_mb": net_io.get("net_upload_mb"),
+        "net_download_mb": net_io.get("net_download_mb"),
+
+        # Security
+        "sip_enabled": sip,
+        "gatekeeper_enabled": gatekeeper,
+
+        # Compliance
+        "mdm_enrolled": mdm,
+        "antivirus_installed": antivirus or None,
+
+        # USB
+        "usb_devices": usb_devices,
+
+        # Crash logs
+        "crash_count_24h": crash_info.get("crash_count_24h"),
+        "last_crashed_app": crash_info.get("last_crashed_app"),
+
+        # Login / session
+        "active_user": active_user or None,
+        "remote_session_active": remote_session,
     }
 
 
 def heartbeat_loop(api_url: str, token: str):
+    # Track previous USB devices to detect new storage devices
+    prev_usb_serials: set = set()
+    first_run = True
+
     while True:
         try:
             metrics = collect_metrics()
+
+            # Detect new USB storage devices
+            current_usb = metrics.get("usb_devices") or []
+            current_storage = {
+                d.get("serial") or d.get("name", "")
+                for d in current_usb
+                if d.get("type") == "storage"
+            }
+            if not first_run:
+                new_storage = current_storage - prev_usb_serials
+                if new_storage:
+                    logger.warning("New USB storage device(s) detected: %s", new_storage)
+            prev_usb_serials = current_storage
+            first_run = False
+
             r = retry_request(
                 requests.post,
                 f"{api_url}/heartbeat",
@@ -293,15 +751,29 @@ def get_top_processes(limit=20):
 
 
 def inventory_loop(api_url: str, token: str):
+    last_apps_sent = 0
+
     while True:
         time.sleep(INVENTORY_INTERVAL)
         try:
             software = get_software_list()
             processes = get_top_processes(20)
+
+            # Send installed_apps once per hour via heartbeat (included in metrics)
+            # Here we also collect the /Applications inventory
+            payload = {"software": software, "processes": processes}
+
+            # Include installed apps in hourly inventory
+            now = time.time()
+            if now - last_apps_sent >= INVENTORY_INTERVAL:
+                installed_apps = get_installed_apps()
+                payload["installed_apps"] = installed_apps
+                last_apps_sent = now
+
             r = retry_request(
                 requests.post,
                 f"{api_url}/inventory",
-                json={"software": software, "processes": processes},
+                json=payload,
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {token}",

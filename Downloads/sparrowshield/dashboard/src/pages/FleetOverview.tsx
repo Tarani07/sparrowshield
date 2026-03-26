@@ -7,6 +7,7 @@ import FleetHealthChart from "../components/fleet/FleetHealthChart";
 import TopOffendersWidget from "../components/fleet/TopOffendersWidget";
 import DeviceTable from "../components/fleet/DeviceTable";
 import { useFleetReports } from "../hooks/useHealthReports";
+import { useAllDevices } from "../hooks/useDevices";
 import { cn } from "../lib/utils";
 
 const FILTERS = [
@@ -24,23 +25,47 @@ export default function FleetOverview() {
   const [filter, setFilter] = useState("all");
 
   const { data: reports = [], isLoading, refetch, isFetching } = useFleetReports();
+  const { data: allDevices = [] } = useAllDevices();
 
   const total    = reports.length;
   const healthy  = reports.filter((r) => r.health_status === "healthy").length;
   const warning  = reports.filter((r) => r.health_status === "warning").length;
   const critical = reports.filter((r) => r.health_status === "critical").length;
 
+  // Security fleet stats — computed from device records
+  const filevaultOff = allDevices.filter((d) => d.filevault_enabled === false).length;
+  const lowBattery   = allDevices.filter((d) => d.battery_pct != null && d.battery_pct < 20).length;
+
+  // Compliance score per device
+  const complianceAtRisk = allDevices.filter((d) => {
+    const score =
+      (d.filevault_enabled  ? 20 : 0) +
+      (d.firewall_enabled   ? 20 : 0) +
+      (d.sip_enabled        ? 15 : 0) +
+      (d.gatekeeper_enabled ? 15 : 0) +
+      (d.mdm_enrolled       ? 15 : 0) +
+      (d.antivirus_installed ? 15 : 0);
+    return score < 50;
+  }).length;
+
   return (
     <div className="flex flex-col h-full">
       <TopBar title="Fleet Overview" />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Stat cards */}
+        {/* Stat cards — health */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard label="Total Devices" value={total} icon="💻" color="default" sub={isLoading ? "Loading…" : "monitored"} />
           <StatCard label="Healthy" value={healthy} icon="✅" color="green" sub={total ? `${Math.round((healthy / total) * 100)}% of fleet` : undefined} />
           <StatCard label="Warning" value={warning} icon="⚠️" color="amber" sub="needs attention" />
           <StatCard label="Critical" value={critical} icon="🔴" color="red" sub="action required" />
+        </div>
+
+        {/* Stat cards — security */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <StatCard label="FileVault OFF" value={filevaultOff} icon="🔓" color={filevaultOff > 0 ? "red" : "green"} sub="unencrypted disks" />
+          <StatCard label="Low Battery" value={lowBattery} icon="🪫" color={lowBattery > 0 ? "amber" : "green"} sub="below 20%" />
+          <StatCard label="Compliance At Risk" value={complianceAtRisk} icon="📋" color={complianceAtRisk > 0 ? "red" : "green"} sub="score < 50%" />
         </div>
 
         {/* Charts row */}

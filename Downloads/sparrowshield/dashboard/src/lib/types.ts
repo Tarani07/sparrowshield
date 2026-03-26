@@ -34,6 +34,21 @@ export interface HealthReport {
   };
 }
 
+export interface UsbDevice {
+  name: string;
+  vendor: string;
+  product_id: string;
+  vendor_id: string;
+  serial: string;
+  type: "storage" | "peripheral";
+}
+
+export interface InstalledApp {
+  name: string;
+  version: string;
+  last_modified: string;
+}
+
 export interface Device {
   id: string;
   hostname: string;
@@ -48,6 +63,40 @@ export interface Device {
   cpu_model: string | null;
   cpu_cores: number | null;
   ram_total_gb: number | null;
+
+  // Battery
+  battery_pct: number | null;
+  battery_cycles: number | null;
+  battery_health: string | null;
+  is_charging: boolean | null;
+
+  // Network
+  wifi_ssid: string | null;
+  wifi_rssi: number | null;
+  net_upload_mb: number | null;
+  net_download_mb: number | null;
+
+  // Security
+  filevault_enabled: boolean | null;
+  firewall_enabled: boolean | null;
+  sip_enabled: boolean | null;
+  gatekeeper_enabled: boolean | null;
+
+  // Compliance
+  mdm_enrolled: boolean | null;
+  antivirus_installed: string | null;
+
+  // USB + Apps
+  usb_devices: UsbDevice[] | null;
+  installed_apps: InstalledApp[] | null;
+
+  // Crash logs
+  crash_count_24h: number | null;
+  last_crashed_app: string | null;
+
+  // Login / session
+  active_user: string | null;
+  remote_session_active: boolean | null;
 }
 
 export interface Alert {

@@ -14,6 +14,165 @@ from pathlib import Path
 import psutil
 import rumps
 
+# ── Security helpers (shared with agent) ──────────────────────────────────────
+
+def _get_filevault_status() -> bool:
+    try:
+        r = subprocess.run(["fdesetup", "status"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and "FileVault is On" in r.stdout
+    except Exception:
+        return False
+
+
+def _get_firewall_status() -> bool:
+    try:
+        r = subprocess.run(
+            ["defaults", "read", "/Library/Preferences/com.apple.alf", "globalstate"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.returncode == 0 and r.stdout.strip() in ("1", "2")
+    except Exception:
+        return False
+
+
+def _get_sip_status() -> bool:
+    try:
+        r = subprocess.run(["csrutil", "status"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and "enabled" in r.stdout.lower()
+    except Exception:
+        return False
+
+
+def _get_gatekeeper_status() -> bool:
+    try:
+        r = subprocess.run(["spctl", "--status"], capture_output=True, text=True, timeout=5)
+        return r.returncode == 0 and ("assessments enabled" in r.stdout.lower() or "enabled" in r.stdout.lower())
+    except Exception:
+        return False
+
+
+def _get_mdm_enrollment() -> bool:
+    try:
+        r = subprocess.run(
+            ["profiles", "status", "-type", "enrollment"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            output = r.stdout.lower()
+            return "enrolled" in output and "not enrolled" not in output
+    except Exception:
+        pass
+    return False
+
+
+_KNOWN_AV = [
+    "CrowdStrike Falcon", "CrowdStrikeFalcon", "Falcon", "Carbon Black",
+    "SentinelOne", "Symantec Endpoint Security", "Norton", "McAfee Endpoint Security",
+    "Sophos", "Malwarebytes", "ESET Endpoint Antivirus", "Trend Micro",
+    "Kaspersky", "Bitdefender", "Avast", "Avira", "F-Secure", "Webroot",
+    "Cylance", "Palo Alto Cortex", "Microsoft Defender",
+]
+
+
+def _get_antivirus() -> str:
+    try:
+        installed = os.listdir("/Applications")
+        for av in _KNOWN_AV:
+            for app in installed:
+                if av.lower() in app.replace(".app", "").lower():
+                    return av
+    except OSError:
+        pass
+    return ""
+
+
+def _get_battery_info() -> dict:
+    """Return pct, cycles, health, is_charging."""
+    info = {"pct": None, "cycles": None, "health": None, "is_charging": None}
+    try:
+        bat = psutil.sensors_battery()
+        if bat:
+            info["pct"] = round(bat.percent, 1)
+            info["is_charging"] = bat.power_plugged
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(
+            ["ioreg", "-rn", "AppleSmartBattery"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            design_cap = None
+            max_cap = None
+            for line in r.stdout.splitlines():
+                if '"CycleCount"' in line:
+                    try:
+                        info["cycles"] = int(line.split("=")[-1].strip())
+                    except ValueError:
+                        pass
+                if '"DesignCapacity"' in line:
+                    try:
+                        design_cap = int(line.split("=")[-1].strip())
+                    except ValueError:
+                        pass
+                if '"MaxCapacity"' in line:
+                    try:
+                        max_cap = int(line.split("=")[-1].strip())
+                    except ValueError:
+                        pass
+            if design_cap and max_cap and design_cap > 0:
+                ratio = (max_cap / design_cap) * 100
+                info["health"] = "Good" if ratio >= 80 else ("Fair" if ratio >= 50 else "Poor")
+    except Exception:
+        pass
+    return info
+
+
+def _get_wifi_rssi() -> int | None:
+    airport_paths = [
+        "/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport",
+        "/usr/sbin/airport",
+    ]
+    for airport in airport_paths:
+        if not os.path.exists(airport):
+            continue
+        try:
+            r = subprocess.run([airport, "-I"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                for line in r.stdout.splitlines():
+                    line = line.strip()
+                    if line.startswith("agrCtlRSSI:"):
+                        return int(line.split(":")[-1].strip())
+        except Exception:
+            pass
+    return None
+
+
+def _rssi_bars(rssi: int | None) -> str:
+    """Convert RSSI dBm to a 5-bar emoji indicator."""
+    if rssi is None:
+        return "No signal"
+    if rssi >= -55:
+        return "▂▄▆█ Excellent"
+    if rssi >= -65:
+        return "▂▄▆  Good"
+    if rssi >= -75:
+        return "▂▄   Fair"
+    if rssi >= -85:
+        return "▂    Weak"
+    return "     Very Weak"
+
+
+def _compute_compliance_score(fv: bool, fw: bool, sip: bool, gk: bool, mdm: bool, av: str) -> int:
+    score = 0
+    if fv:  score += 20
+    if fw:  score += 20
+    if sip: score += 15
+    if gk:  score += 15
+    if mdm: score += 15
+    if av:  score += 15
+    return score
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
@@ -311,12 +470,30 @@ def do_memory_check():
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
+    # Battery info
+    bat = _get_battery_info()
+    bat_pct   = f"{bat['pct']}%" if bat['pct'] is not None else "N/A"
+    bat_cycles = str(bat['cycles']) if bat['cycles'] is not None else "N/A"
+    bat_health = bat['health'] or "N/A"
+    bat_chg    = "Yes" if bat['is_charging'] else ("No" if bat['is_charging'] is False else "N/A")
+
+    # WiFi signal
+    rssi = _get_wifi_rssi()
+    rssi_str = f"{rssi} dBm  ({_rssi_bars(rssi)})" if rssi is not None else "N/A"
+
     lines = [
         f"RAM Used:      {used_gb:.1f} GB / {total_gb:.1f} GB  ({vm.percent:.0f}%)",
         f"Available:     {avail_gb:.1f} GB",
         f"Cache Junk:    {_fmt_bytes(cache_bytes)}",
         f"Old Downloads: {old_dl_count} files  ({_fmt_bytes(old_dl_bytes)})  [>1 year]",
         f"Hung/Zombie:   {hung_count} process(es)",
+        "",
+        "Battery:",
+        f"  Charge:      {bat_pct}  {'(Charging)' if bat['is_charging'] else ''}",
+        f"  Cycles:      {bat_cycles}",
+        f"  Health:      {bat_health}",
+        "",
+        f"WiFi Signal:   {rssi_str}",
         "",
         "Top 5 Memory Hogs:",
     ]
@@ -325,6 +502,47 @@ def do_memory_check():
 
     rumps.alert(title="Memory Check", message="\n".join(lines), ok="Close")
     return "Memory check complete"
+
+
+# ── Security Check ─────────────────────────────────────────────────────────────
+
+def do_security_check():
+    fv  = _get_filevault_status()
+    fw  = _get_firewall_status()
+    sip = _get_sip_status()
+    gk  = _get_gatekeeper_status()
+    mdm = _get_mdm_enrollment()
+    av  = _get_antivirus()
+    score = _compute_compliance_score(fv, fw, sip, gk, mdm, av)
+
+    def _status(val: bool) -> str:
+        return "ON  ✓" if val else "OFF ✗"
+
+    score_label = "GOOD" if score >= 80 else ("FAIR" if score >= 50 else "AT RISK")
+
+    lines = [
+        f"Compliance Score:  {score}/100  [{score_label}]",
+        "",
+        f"FileVault:         {_status(fv)}",
+        f"Firewall:          {_status(fw)}",
+        f"SIP (System Integrity): {_status(sip)}",
+        f"Gatekeeper:        {_status(gk)}",
+        f"MDM Enrolled:      {_status(mdm)}",
+        f"Antivirus:         {av if av else 'NOT FOUND  ✗'}",
+        "",
+    ]
+
+    if score < 80:
+        lines.append("Recommendations:")
+        if not fv:  lines.append("  • Enable FileVault in System Settings → Privacy & Security")
+        if not fw:  lines.append("  • Enable Firewall in System Settings → Network → Firewall")
+        if not sip: lines.append("  • Re-enable SIP (requires macOS Recovery mode)")
+        if not gk:  lines.append("  • Enable Gatekeeper: sudo spctl --master-enable")
+        if not mdm: lines.append("  • Enrol this device in your MDM solution")
+        if not av:  lines.append("  • Install endpoint protection (CrowdStrike, Sophos, etc.)")
+
+    rumps.alert(title="Security Check", message="\n".join(lines), ok="Close")
+    return f"Security check complete — score {score}/100"
 
 
 # ── 3. Kill Old Apps ──────────────────────────────────────────────────────────
@@ -668,6 +886,11 @@ def on_disk_health(_):
     run("Disk Health", do_disk_health)
 
 
+@rumps.clicked("Security Check")
+def on_security_check(_):
+    run("Security Check", do_security_check)
+
+
 @rumps.clicked("Raise IT Ticket")
 def on_raise_ticket(_):
     do_raise_ticket()
@@ -686,6 +909,8 @@ app.menu = [
     "Kill Old Apps",
     "Top 5 Large Files",
     "Disk Health",
+    None,
+    "Security Check",
     None,
     "Raise IT Ticket",
     None,

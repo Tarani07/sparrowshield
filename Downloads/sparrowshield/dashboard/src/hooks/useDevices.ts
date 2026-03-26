@@ -17,3 +17,18 @@ export function useDevice(deviceId: string) {
     enabled: !!deviceId,
   });
 }
+
+export function useAllDevices() {
+  return useQuery<Device[]>({
+    queryKey: ["all-devices"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("devices")
+        .select("*")
+        .order("last_seen", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as Device[];
+    },
+    refetchInterval: 30_000,
+  });
+}

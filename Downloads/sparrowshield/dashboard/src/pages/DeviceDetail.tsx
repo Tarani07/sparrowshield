@@ -6,6 +6,11 @@ import AIDiagnosisCard from "../components/device/AIDiagnosisCard";
 import MetricBar from "../components/device/MetricBar";
 import CulpritAppRow from "../components/device/CulpritAppRow";
 import MetricsTrendChart from "../components/device/MetricsTrendChart";
+import BatteryCard from "../components/device/BatteryCard";
+import NetworkCard from "../components/device/NetworkCard";
+import SecurityStatusCard from "../components/device/SecurityStatusCard";
+import ComplianceCard from "../components/device/ComplianceCard";
+import CrashCard from "../components/device/CrashCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -142,6 +147,25 @@ export default function DeviceDetail() {
           <MetricBar label="Disk" icon="💾" value={snapshot?.disk_pct ?? null} warnAt={80} critAt={92} />
           <MetricBar label="Battery" icon="🔋" value={snapshot?.battery_health_pct ?? null} warnAt={50} critAt={20} />
         </div>
+
+        {/* Battery + Network row */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <BatteryCard device={device} />
+            <NetworkCard device={device} />
+          </div>
+        )}
+
+        {/* Security Status */}
+        {device && <SecurityStatusCard device={device} />}
+
+        {/* Compliance + Crash row */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <ComplianceCard device={device} />
+            <CrashCard device={device} />
+          </div>
+        )}
 
         {/* Optimizer Panel */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">

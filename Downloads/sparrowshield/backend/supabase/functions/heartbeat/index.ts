@@ -4,6 +4,7 @@ import { getSupabase } from "../_shared/supabase.ts";
 import { hashToken } from "../_shared/auth.ts";
 
 interface HeartbeatBody {
+  // Core metrics (existing)
   cpu_pct?: number;
   ram_pct?: number;
   ram_total_gb?: number;
@@ -15,6 +16,39 @@ interface HeartbeatBody {
   filevault_enabled?: boolean;
   bitlocker_enabled?: boolean;
   firewall_enabled?: boolean;
+
+  // Battery (new)
+  battery_pct?: number;
+  battery_health?: string;
+  is_charging?: boolean;
+
+  // Network (new)
+  wifi_ssid?: string;
+  wifi_rssi?: number;
+  net_upload_mb?: number;
+  net_download_mb?: number;
+
+  // Security (new)
+  sip_enabled?: boolean;
+  gatekeeper_enabled?: boolean;
+
+  // Compliance (new)
+  mdm_enrolled?: boolean;
+  antivirus_installed?: string;
+
+  // USB devices (new)
+  usb_devices?: Record<string, unknown>[];
+
+  // Installed apps (new)
+  installed_apps?: Record<string, unknown>[];
+
+  // Crash logs (new)
+  crash_count_24h?: number;
+  last_crashed_app?: string;
+
+  // Login / session (new)
+  active_user?: string;
+  remote_session_active?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -65,6 +99,24 @@ Deno.serve(async (req) => {
     filevault_enabled,
     bitlocker_enabled,
     firewall_enabled,
+    // New fields
+    battery_pct,
+    battery_health,
+    is_charging,
+    wifi_ssid,
+    wifi_rssi,
+    net_upload_mb,
+    net_download_mb,
+    sip_enabled,
+    gatekeeper_enabled,
+    mdm_enrolled,
+    antivirus_installed,
+    usb_devices,
+    installed_apps,
+    crash_count_24h,
+    last_crashed_app,
+    active_user,
+    remote_session_active,
   } = body;
 
   if (
@@ -100,9 +152,37 @@ Deno.serve(async (req) => {
   }
 
   const now = new Date().toISOString();
+
+  // Build device update payload — only include new monitoring fields if present
+  const deviceUpdate: Record<string, unknown> = {
+    last_seen: now,
+    status: "online",
+  };
+
+  if (battery_pct != null)           deviceUpdate.battery_pct = battery_pct;
+  if (battery_cycles != null)        deviceUpdate.battery_cycles = battery_cycles;
+  if (battery_health != null)        deviceUpdate.battery_health = battery_health;
+  if (is_charging != null)           deviceUpdate.is_charging = is_charging;
+  if (wifi_ssid != null)             deviceUpdate.wifi_ssid = wifi_ssid;
+  if (wifi_rssi != null)             deviceUpdate.wifi_rssi = wifi_rssi;
+  if (filevault_enabled != null)     deviceUpdate.filevault_enabled = filevault_enabled;
+  if (firewall_enabled != null)      deviceUpdate.firewall_enabled = firewall_enabled;
+  if (sip_enabled != null)           deviceUpdate.sip_enabled = sip_enabled;
+  if (gatekeeper_enabled != null)    deviceUpdate.gatekeeper_enabled = gatekeeper_enabled;
+  if (mdm_enrolled != null)          deviceUpdate.mdm_enrolled = mdm_enrolled;
+  if (antivirus_installed != null)   deviceUpdate.antivirus_installed = antivirus_installed;
+  if (crash_count_24h != null)       deviceUpdate.crash_count_24h = crash_count_24h;
+  if (last_crashed_app != null)      deviceUpdate.last_crashed_app = last_crashed_app;
+  if (active_user != null)           deviceUpdate.active_user = active_user;
+  if (remote_session_active != null) deviceUpdate.remote_session_active = remote_session_active;
+  if (net_upload_mb != null)         deviceUpdate.net_upload_mb = net_upload_mb;
+  if (net_download_mb != null)       deviceUpdate.net_download_mb = net_download_mb;
+  if (usb_devices != null)           deviceUpdate.usb_devices = usb_devices;
+  if (installed_apps != null)        deviceUpdate.installed_apps = installed_apps;
+
   await supabase
     .from("devices")
-    .update({ last_seen: now, status: "online" })
+    .update(deviceUpdate)
     .eq("id", deviceId);
 
   return success({ ok: true });
