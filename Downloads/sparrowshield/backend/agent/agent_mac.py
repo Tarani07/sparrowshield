@@ -152,12 +152,19 @@ def enroll(api_url: str, config: dict) -> bool:
         "ram_total_gb": ram_total_gb,
     }
 
+    anon_key = config.get("anon_key", "")
+    enroll_headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {anon_key}",
+        "apikey": anon_key,
+    }
+
     for attempt in range(3):
         try:
             r = requests.post(
                 f"{api_url}/enroll",
                 json=body,
-                headers={"Content-Type": "application/json"},
+                headers=enroll_headers,
                 timeout=30,
             )
             data = r.json()
@@ -648,7 +655,7 @@ def collect_metrics() -> dict:
     }
 
 
-def heartbeat_loop(api_url: str, token: str):
+def heartbeat_loop(api_url: str, token: str, anon_key: str = ""):
     # Track previous USB devices to detect new storage devices
     prev_usb_serials: set = set()
     first_run = True
@@ -677,7 +684,8 @@ def heartbeat_loop(api_url: str, token: str):
                 json=metrics,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
+                    "Authorization": f"Bearer {anon_key}",
+                    "X-Device-Token": token,
                 },
                 timeout=30,
             )
@@ -750,7 +758,7 @@ def get_top_processes(limit=20):
     return result
 
 
-def inventory_loop(api_url: str, token: str):
+def inventory_loop(api_url: str, token: str, anon_key: str = ""):
     last_apps_sent = 0
 
     while True:
@@ -776,7 +784,8 @@ def inventory_loop(api_url: str, token: str):
                 json=payload,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}",
+                    "Authorization": f"Bearer {anon_key}",
+                    "X-Device-Token": token,
                 },
                 timeout=60,
             )
@@ -812,13 +821,13 @@ def main():
 
     logger.info("Starting agent for device_id=%s", device_id)
 
-    t = threading.Thread(target=inventory_loop, args=(api_url, token), daemon=True)
+    t = threading.Thread(target=inventory_loop, args=(api_url, token, anon_key), daemon=True)
     t.start()
 
     t2 = threading.Thread(target=command_loop, args=(device_id, anon_key, supabase_rest_url), daemon=True)
     t2.start()
 
-    heartbeat_loop(api_url, token)
+    heartbeat_loop(api_url, token, anon_key)
 
 
 # ──────────────────────────────────────────────
