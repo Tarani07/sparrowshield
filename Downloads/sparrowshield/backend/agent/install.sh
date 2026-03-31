@@ -44,7 +44,7 @@ echo "        ✅ Files downloaded"
 
 # ── Step 3: Install Python dependencies ──────────────────────
 echo "[ 3/6 ] Installing Python dependencies..."
-pip3 install psutil requests rumps --break-system-packages -q
+pip3 install psutil requests rumps --break-system-packages -q 2>/dev/null || pip3 install psutil requests rumps --user -q 2>/dev/null || pip3 install psutil requests rumps -q
 echo "        ✅ Dependencies installed"
 
 # ── Step 4: LaunchAgent — background agent (auto-start on boot) ──
