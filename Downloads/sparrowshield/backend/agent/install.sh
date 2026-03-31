@@ -19,20 +19,8 @@ else
   INSTALL_DIR="$HOME/.sparrow-agent"
   LAUNCH_HOME="$HOME"
 fi
-GH_TOKEN="${GH_TOKEN:-}"
-REPO_API="https://api.github.com/repos/Tarani07/sparrowshield/contents/Downloads/sparrowshield/backend/agent"
+REPO_URL="https://hevcfhxmjgbpozqtescm.supabase.co/storage/v1/object/public/agent-installer"
 LAUNCH_AGENT_LABEL="com.sparrow.agent"
-
-# Helper: download file from private GitHub repo via API
-gh_download() {
-  local file="$1" dest="$2"
-  if [ -n "$GH_TOKEN" ]; then
-    curl -fsSL -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3.raw" \
-      "${REPO_API}/${file}?ref=main" -o "$dest"
-  else
-    curl -fsSL "https://raw.githubusercontent.com/Tarani07/sparrowshield/main/Downloads/sparrowshield/backend/agent/${file}" -o "$dest"
-  fi
-}
 mkdir -p "${LAUNCH_HOME}/Library/LaunchAgents" 2>/dev/null || true
 LAUNCH_AGENT_PLIST="${LAUNCH_HOME}/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
 MENUBAR_PLIST="${LAUNCH_HOME}/Library/LaunchAgents/com.sparrow.menubar.plist"
@@ -49,9 +37,9 @@ mkdir -p "$INSTALL_DIR"
 
 # ── Step 2: Download agent files ──────────────────────────────
 echo "[ 2/6 ] Downloading agent files..."
-gh_download "agent_mac.py"   "$INSTALL_DIR/agent_mac.py"
-gh_download "menubar_mac.py" "$INSTALL_DIR/menubar_mac.py"
-gh_download "config.json"    "$INSTALL_DIR/config.json"
+curl -fsSL "$REPO_URL/agent_mac.py"   -o "$INSTALL_DIR/agent_mac.py"
+curl -fsSL "$REPO_URL/menubar_mac.py" -o "$INSTALL_DIR/menubar_mac.py"
+curl -fsSL "$REPO_URL/config.json"    -o "$INSTALL_DIR/config.json"
 echo "        ✅ Files downloaded"
 
 # ── Step 3: Install Python dependencies ──────────────────────
