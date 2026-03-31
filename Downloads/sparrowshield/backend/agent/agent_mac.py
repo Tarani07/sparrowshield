@@ -915,6 +915,124 @@ def get_last_reboot() -> str:
         return None
 
 
+def get_bluetooth_devices() -> list:
+    """Get paired/connected Bluetooth devices via system_profiler."""
+    devices = []
+    try:
+        r = subprocess.run(
+            ["system_profiler", "SPBluetoothDataType", "-json"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            bt_items = data.get("SPBluetoothDataType", [])
+            for item in bt_items:
+                for section_key in ("device_connected", "device_not_connected", "devices_connected", "devices_not_connected"):
+                    for dev_group in item.get(section_key, []):
+                        if isinstance(dev_group, dict):
+                            for name, info in dev_group.items():
+                                connected = section_key in ("device_connected", "devices_connected")
+                                devices.append({
+                                    "name": name,
+                                    "type": info.get("device_minorClassOfDevice_string", "Unknown"),
+                                    "connected": connected,
+                                    "battery_pct": None,
+                                })
+    except Exception as e:
+        logger.debug("Bluetooth detection error: %s", e)
+    return devices
+
+
+def get_connected_displays() -> list:
+    """Get connected displays via system_profiler."""
+    displays = []
+    try:
+        r = subprocess.run(
+            ["system_profiler", "SPDisplaysDataType", "-json"],
+            capture_output=True, text=True, timeout=15
+        )
+        if r.returncode == 0:
+            data = json.loads(r.stdout)
+            for gpu_entry in data.get("SPDisplaysDataType", []):
+                gpu_name = gpu_entry.get("sppci_model", "Unknown GPU")
+                for disp in gpu_entry.get("spdisplays_ndrvs", []):
+                    res = disp.get("_spdisplays_resolution", disp.get("spdisplays_resolution", "Unknown"))
+                    displays.append({
+                        "name": disp.get("_name", disp.get("spdisplays_display-product-name", "Unknown Display")),
+                        "resolution": res,
+                        "gpu": gpu_name,
+                    })
+    except Exception as e:
+        logger.debug("Display detection error: %s", e)
+    return displays
+
+
+def get_printers() -> list:
+    """Get installed printers via lpstat."""
+    printers = []
+    try:
+        r = subprocess.run(["lpstat", "-p"], capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            if line.startswith("printer "):
+                parts = line.split()
+                if len(parts) >= 2:
+                    printers.append(parts[1])
+    except Exception as e:
+        logger.debug("Printer detection error: %s", e)
+    return printers
+
+
+def get_listening_ports() -> list:
+    """Get listening ports with process names via lsof."""
+    ports = []
+    seen = set()
+    try:
+        r = subprocess.run(
+            ["lsof", "-iTCP", "-iUDP", "-sTCP:LISTEN", "-n", "-P"],
+            capture_output=True, text=True, timeout=15
+        )
+        for line in r.stdout.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 9:
+                continue
+            name_field = parts[8] if len(parts) > 8 else ""
+            if ":" not in name_field:
+                continue
+            port_str = name_field.rsplit(":", 1)[-1]
+            if not port_str.isdigit():
+                continue
+            key = (port_str, parts[7])
+            if key in seen:
+                continue
+            seen.add(key)
+            ports.append({
+                "port": int(port_str),
+                "process": parts[0],
+                "protocol": parts[7].lower(),
+            })
+            if len(ports) >= 20:
+                break
+    except Exception as e:
+        logger.debug("Listening ports error: %s", e)
+    return ports
+
+
+def get_dns_servers() -> list:
+    """Get DNS servers via scutil."""
+    dns = []
+    try:
+        r = subprocess.run(["scutil", "--dns"], capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("nameserver["):
+                server = line.split(":")[-1].strip()
+                if server and server not in dns:
+                    dns.append(server)
+    except Exception as e:
+        logger.debug("DNS detection error: %s", e)
+    return dns[:5]
+
+
 # ──────────────────────────────────────────────
 # METRICS COLLECTION
 # ──────────────────────────────────────────────
@@ -976,6 +1094,15 @@ def collect_metrics() -> dict:
     # Browsers & processes
     installed_browsers = get_installed_browsers()
     top_processes = get_top_processes(10)
+
+    # Peripherals
+    bluetooth_devices = get_bluetooth_devices()
+    connected_displays = get_connected_displays()
+    printers = get_printers()
+
+    # Network security
+    listening_ports = get_listening_ports()
+    dns_servers = get_dns_servers()
 
     # Extended metrics
     swap = get_swap_info()
@@ -1046,6 +1173,15 @@ def collect_metrics() -> dict:
         "user_sessions": user_sessions,
         "login_history": login_history,
         "top_processes": top_processes,
+
+        # Peripherals
+        "bluetooth_devices": bluetooth_devices,
+        "connected_displays": connected_displays,
+        "printers": printers,
+
+        # Network security
+        "listening_ports": listening_ports,
+        "dns_servers": dns_servers,
 
         # Extended monitoring
         "swap_used_mb": swap.get("swap_used_mb"),
