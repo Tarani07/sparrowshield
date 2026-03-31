@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Send, Check, Loader2, Slack, Zap, ShieldAlert, Package, Trash2, Plus, X } from "lucide-react";
+import { Save, Send, Check, Loader2, Slack, Zap, ShieldAlert, Package, Trash2, Plus, X, Megaphone } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
@@ -69,6 +69,7 @@ const TABS = [
   { key: "remediation", label: "Auto-Remediation", icon: Zap },
   { key: "software-lists", label: "Software Lists", icon: ShieldAlert },
   { key: "software-catalog", label: "Software Catalog", icon: Package },
+  { key: "it-notices", label: "IT Notices", icon: Megaphone },
 ] as const;
 
 /* ─── Fetch settings ─── */
@@ -379,6 +380,9 @@ export default function Settings() {
 
         {/* ─── Tab: Software Catalog ─── */}
         {activeTab === "software-catalog" && <SoftwareCatalogTab />}
+
+        {/* ─── Tab: IT Notices ─── */}
+        {activeTab === "it-notices" && <ITNoticesTab />}
       </div>
     </div>
   );
@@ -1038,6 +1042,191 @@ function SoftwareCatalogTab() {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Tab 5: IT Notices  (push custom messages to Mac tray)
+   ═══════════════════════════════════════════════════════════ */
+
+function ITNoticesTab() {
+  const queryClient = useQueryClient();
+  const [message, setMessage]   = useState("");
+  const [sender, setSender]     = useState("IT Admin");
+  const [expires, setExpires]   = useState("");
+  const [sent, setSent]         = useState(false);
+
+  const { data: notices = [], isLoading } = useQuery({
+    queryKey: ["it-notices"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("it_notices")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const sendNotice = useMutation({
+    mutationFn: async () => {
+      const row: Record<string, unknown> = {
+        message:  message.trim(),
+        sender:   sender.trim() || "IT Admin",
+        active:   true,
+      };
+      if (expires) row.expires_at = new Date(expires).toISOString();
+      const { error } = await supabase.from("it_notices").insert(row);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSent(true);
+      setMessage("");
+      setExpires("");
+      setTimeout(() => setSent(false), 3000);
+      queryClient.invalidateQueries({ queryKey: ["it-notices"] });
+    },
+  });
+
+  const deactivate = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("it_notices")
+        .update({ active: false })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["it-notices"] }),
+  });
+
+  return (
+    <>
+      {/* Compose */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Megaphone className="w-4 h-4 text-indigo-400" />
+          <h2 className="text-sm font-semibold text-slate-200">Send IT Notice to All Macs</h2>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Active notices appear in the SparrowShield tray menu on every Mac within 2 minutes.
+        </p>
+
+        {/* Message */}
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-slate-400 mb-1.5">Message</label>
+          <textarea
+            rows={3}
+            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500 resize-none"
+            placeholder="e.g. VPN required after 5 PM today. Connect to GlobalProtect before leaving the office."
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            maxLength={280}
+          />
+          <p className="text-[10px] text-slate-600 mt-1 text-right">{message.length}/280</p>
+        </div>
+
+        {/* Sender + Expiry row */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">From</label>
+            <input
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              placeholder="IT Admin"
+              value={sender}
+              onChange={e => setSender(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1.5">Auto-expire (optional)</label>
+            <input
+              type="datetime-local"
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+              value={expires}
+              onChange={e => setExpires(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <button
+          disabled={!message.trim() || sendNotice.isPending}
+          onClick={() => sendNotice.mutate()}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+            message.trim()
+              ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+              : "bg-slate-800 text-slate-600 cursor-not-allowed"
+          )}
+        >
+          {sendNotice.isPending ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : sent ? (
+            <Check className="w-4 h-4 text-emerald-400" />
+          ) : (
+            <Send className="w-4 h-4" />
+          )}
+          {sent ? "Sent!" : "Send to All Macs"}
+        </button>
+      </div>
+
+      {/* History */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-800">
+          <h2 className="text-sm font-semibold text-slate-200">Notice History</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Active notices show in the tray. Dismiss to hide.</p>
+        </div>
+
+        {isLoading ? (
+          <div className="py-10 text-center text-slate-600 text-sm">Loading…</div>
+        ) : notices.length === 0 ? (
+          <div className="py-10 text-center text-slate-600 text-sm">No notices sent yet</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-800 text-slate-500">
+                <th className="px-5 py-2 text-left font-medium">Message</th>
+                <th className="px-4 py-2 text-left font-medium">From</th>
+                <th className="px-4 py-2 text-left font-medium">Sent</th>
+                <th className="px-4 py-2 text-left font-medium">Status</th>
+                <th className="px-4 py-2 text-center font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50">
+              {notices.map((n: any) => (
+                <tr key={n.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="px-5 py-3 text-slate-300 max-w-xs">
+                    <span className="line-clamp-2">{n.message}</span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400">{n.sender}</td>
+                  <td className="px-4 py-3 text-slate-500">{timeAgo(n.created_at)}</td>
+                  <td className="px-4 py-3">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-[10px] font-semibold",
+                      n.active
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-slate-700/50 text-slate-500"
+                    )}>
+                      {n.active ? "Active" : "Dismissed"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {n.active && (
+                      <button
+                        onClick={() => deactivate.mutate(n.id)}
+                        className="text-slate-600 hover:text-red-400 transition-colors"
+                        title="Dismiss notice"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
     </>
