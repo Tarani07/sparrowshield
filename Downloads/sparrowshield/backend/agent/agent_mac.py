@@ -664,6 +664,124 @@ def notify_slack(api_url, anon_key, event_type, title, message, severity, fields
 
 
 # ──────────────────────────────────────────────
+# EXTENDED METRICS COLLECTION
+# ──────────────────────────────────────────────
+
+def get_memory_pressure() -> str:
+    try:
+        r = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=5)
+        out = r.stdout.lower()
+        if "critical" in out: return "critical"
+        if "warn" in out: return "warn"
+        return "normal"
+    except Exception:
+        return None
+
+def get_thermal_state() -> str:
+    try:
+        r = subprocess.run(["pmset", "-g", "therm"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines():
+            if "CPU_Speed_Limit" in line:
+                val = line.split("=")[-1].strip()
+                if val == "100": return "nominal"
+                if int(val) >= 50: return "fair"
+                return "serious"
+        return "nominal"
+    except Exception:
+        return None
+
+def get_fan_speed() -> int:
+    try:
+        r = subprocess.run(["system_profiler", "SPHardwareDataType"], capture_output=True, text=True, timeout=10)
+        # fan data not in system_profiler; use powermetrics as fallback
+        r2 = subprocess.run(["sudo", "powermetrics", "-n1", "-i1", "--samplers", "smc"], capture_output=True, text=True, timeout=10)
+        for line in r2.stdout.splitlines():
+            if "Fan" in line and "rpm" in line.lower():
+                parts = line.split()
+                for p in parts:
+                    if p.isdigit(): return int(p)
+    except Exception:
+        pass
+    return None
+
+def get_swap_info() -> dict:
+    try:
+        vm = psutil.swap_memory()
+        return {"swap_used_mb": round(vm.used / (1024**2), 1), "swap_total_mb": round(vm.total / (1024**2), 1)}
+    except Exception:
+        return {"swap_used_mb": None, "swap_total_mb": None}
+
+def get_disk_io() -> dict:
+    try:
+        io = psutil.disk_io_counters()
+        return {"disk_read_mb": round(io.read_bytes / (1024**2), 1), "disk_write_mb": round(io.write_bytes / (1024**2), 1)}
+    except Exception:
+        return {"disk_read_mb": None, "disk_write_mb": None}
+
+def get_open_connections() -> int:
+    try:
+        return len(psutil.net_connections())
+    except Exception:
+        return None
+
+def get_pending_updates() -> dict:
+    try:
+        r = subprocess.run(["softwareupdate", "-l"], capture_output=True, text=True, timeout=30)
+        updates = [l.strip() for l in r.stdout.splitlines() if l.strip().startswith("*")]
+        return {"pending_updates": updates, "pending_update_count": len(updates)}
+    except Exception:
+        return {"pending_updates": [], "pending_update_count": 0}
+
+def get_screen_lock_info() -> dict:
+    try:
+        r = subprocess.run(["defaults", "-currentHost", "read", "com.apple.screensaver", "idleTime"],
+                           capture_output=True, text=True, timeout=5)
+        delay = int(r.stdout.strip()) if r.returncode == 0 else None
+        r2 = subprocess.run(["defaults", "read", "com.apple.screensaver", "askForPassword"],
+                            capture_output=True, text=True, timeout=5)
+        enabled = r2.stdout.strip() == "1" if r2.returncode == 0 else None
+        return {"screen_lock_enabled": enabled, "screen_lock_delay_sec": delay}
+    except Exception:
+        return {"screen_lock_enabled": None, "screen_lock_delay_sec": None}
+
+def get_login_items() -> dict:
+    try:
+        r = subprocess.run(["osascript", "-e",
+            'tell application "System Events" to get the name of every login item'],
+            capture_output=True, text=True, timeout=10)
+        items = [i.strip() for i in r.stdout.split(",") if i.strip()] if r.returncode == 0 else []
+        return {"login_items": items, "login_item_count": len(items)}
+    except Exception:
+        return {"login_items": [], "login_item_count": 0}
+
+def get_proxy_configured() -> bool:
+    try:
+        r = subprocess.run(["networksetup", "-getwebproxy", "Wi-Fi"], capture_output=True, text=True, timeout=5)
+        return "Enabled: Yes" in r.stdout
+    except Exception:
+        return None
+
+def get_timemachine_info() -> dict:
+    try:
+        r = subprocess.run(["tmutil", "status"], capture_output=True, text=True, timeout=10)
+        enabled = r.returncode == 0
+        last = None
+        r2 = subprocess.run(["tmutil", "latestbackup"], capture_output=True, text=True, timeout=10)
+        if r2.returncode == 0 and r2.stdout.strip():
+            last = r2.stdout.strip()
+        return {"timemachine_enabled": enabled, "timemachine_last_backup": last}
+    except Exception:
+        return {"timemachine_enabled": None, "timemachine_last_backup": None}
+
+def get_last_reboot() -> str:
+    try:
+        bt = psutil.boot_time()
+        return __import__("datetime").datetime.utcfromtimestamp(bt).isoformat() + "Z"
+    except Exception:
+        return None
+
+
+# ──────────────────────────────────────────────
 # METRICS COLLECTION
 # ──────────────────────────────────────────────
 
@@ -718,6 +836,14 @@ def collect_metrics() -> dict:
     # Login / session
     active_user = get_active_user()
     remote_session = get_remote_session_active()
+
+    # Extended metrics
+    swap = get_swap_info()
+    disk_io = get_disk_io()
+    screen_lock = get_screen_lock_info()
+    login_items = get_login_items()
+    pending = get_pending_updates()
+    timemachine = get_timemachine_info()
 
     return {
         # Core metrics (existing)
@@ -774,6 +900,25 @@ def collect_metrics() -> dict:
 
         # Installed apps (hourly refresh)
         "installed_apps": _cached_apps,
+
+        # Extended monitoring
+        "swap_used_mb": swap.get("swap_used_mb"),
+        "swap_total_mb": swap.get("swap_total_mb"),
+        "disk_read_mb": disk_io.get("disk_read_mb"),
+        "disk_write_mb": disk_io.get("disk_write_mb"),
+        "open_connections_count": get_open_connections(),
+        "memory_pressure": get_memory_pressure(),
+        "thermal_state": get_thermal_state(),
+        "screen_lock_enabled": screen_lock.get("screen_lock_enabled"),
+        "screen_lock_delay_sec": screen_lock.get("screen_lock_delay_sec"),
+        "login_items": login_items.get("login_items"),
+        "login_item_count": login_items.get("login_item_count"),
+        "pending_updates": pending.get("pending_updates"),
+        "pending_update_count": pending.get("pending_update_count"),
+        "timemachine_enabled": timemachine.get("timemachine_enabled"),
+        "timemachine_last_backup": timemachine.get("timemachine_last_backup"),
+        "proxy_configured": get_proxy_configured(),
+        "last_reboot": get_last_reboot(),
     }
 
 
