@@ -6,7 +6,19 @@
 
 set -e
 
-INSTALL_DIR="$HOME/.sparrow-agent"
+# When run as root (e.g. via JumpCloud), install to /usr/local instead of $HOME
+if [ "$(id -u)" -eq 0 ]; then
+  # Detect the logged-in console user (for LaunchAgents)
+  CONSOLE_USER=$(stat -f "%Su" /dev/console 2>/dev/null || echo "")
+  CONSOLE_HOME=$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}' || echo "")
+  INSTALL_DIR="/usr/local/sparrow-agent"
+  LAUNCH_HOME="${CONSOLE_HOME:-/tmp}"
+else
+  CONSOLE_USER="$(whoami)"
+  CONSOLE_HOME="$HOME"
+  INSTALL_DIR="$HOME/.sparrow-agent"
+  LAUNCH_HOME="$HOME"
+fi
 GH_TOKEN="${GH_TOKEN:-}"
 REPO_API="https://api.github.com/repos/Tarani07/sparrowshield/contents/Downloads/sparrowshield/backend/agent"
 LAUNCH_AGENT_LABEL="com.sparrow.agent"
@@ -21,8 +33,9 @@ gh_download() {
     curl -fsSL "https://raw.githubusercontent.com/Tarani07/sparrowshield/main/Downloads/sparrowshield/backend/agent/${file}" -o "$dest"
   fi
 }
-LAUNCH_AGENT_PLIST="$HOME/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
-MENUBAR_PLIST="$HOME/Library/LaunchAgents/com.sparrow.menubar.plist"
+mkdir -p "${LAUNCH_HOME}/Library/LaunchAgents" 2>/dev/null || true
+LAUNCH_AGENT_PLIST="${LAUNCH_HOME}/Library/LaunchAgents/${LAUNCH_AGENT_LABEL}.plist"
+MENUBAR_PLIST="${LAUNCH_HOME}/Library/LaunchAgents/com.sparrow.menubar.plist"
 
 echo ""
 echo "╔══════════════════════════════════════╗"
@@ -106,19 +119,31 @@ echo "        ✅ Menu bar app registered"
 
 # ── Step 6: Load both services ────────────────────────────────
 echo "[ 6/6 ] Starting services..."
-launchctl unload "$LAUNCH_AGENT_PLIST" 2>/dev/null || true
-launchctl unload "$MENUBAR_PLIST"      2>/dev/null || true
-launchctl load   "$LAUNCH_AGENT_PLIST"
-launchctl load   "$MENUBAR_PLIST"
+if [ "$(id -u)" -eq 0 ] && [ -n "$CONSOLE_USER" ]; then
+  # Running as root (JumpCloud) — load LaunchAgents as the logged-in user
+  CONSOLE_UID=$(id -u "$CONSOLE_USER")
+  launchctl bootout "gui/$CONSOLE_UID/$LAUNCH_AGENT_LABEL" 2>/dev/null || true
+  launchctl bootout "gui/$CONSOLE_UID/com.sparrow.menubar" 2>/dev/null || true
+  launchctl bootstrap "gui/$CONSOLE_UID" "$LAUNCH_AGENT_PLIST"
+  launchctl bootstrap "gui/$CONSOLE_UID" "$MENUBAR_PLIST"
+  # Fix ownership so the user's agent can write logs
+  chown -R "$CONSOLE_USER" "$INSTALL_DIR"
+else
+  launchctl unload "$LAUNCH_AGENT_PLIST" 2>/dev/null || true
+  launchctl unload "$MENUBAR_PLIST"      2>/dev/null || true
+  launchctl load   "$LAUNCH_AGENT_PLIST"
+  launchctl load   "$MENUBAR_PLIST"
+fi
 echo "        ✅ Services started"
 
 echo ""
-echo "╔══════════════════════════════════════╗"
-echo "║   ✅  Installation Complete!         ║"
-echo "╠══════════════════════════════════════╣"
-echo "║  Agent logs : ~/.sparrow-agent/agent.log   ║"
-echo "║  Config     : ~/.sparrow-agent/config.json ║"
-echo "╚══════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════╗"
+echo "║   ✅  Installation Complete!                 ║"
+echo "╠══════════════════════════════════════════════╣"
+echo "║  Agent logs : ${INSTALL_DIR}/agent.log       ║"
+echo "║  Config     : ${INSTALL_DIR}/config.json     ║"
+echo "║  Run as     : ${CONSOLE_USER:-$(whoami)}     ║"
+echo "╚══════════════════════════════════════════════╝"
 echo ""
 echo "  Sparrow IT Admin is now running in your menu bar."
 echo "  The agent will auto-start on every login."
