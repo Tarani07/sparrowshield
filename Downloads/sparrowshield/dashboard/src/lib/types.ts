@@ -193,6 +193,9 @@ export interface Device {
   // Browsers
   installed_browsers: InstalledBrowser[] | null;
 
+  // Top processes
+  top_processes: { process_name: string; cpu_pct: number; ram_mb: number }[] | null;
+
   // Windows-specific
   windows_defender_enabled: boolean | null;
   domain_joined: boolean | null;

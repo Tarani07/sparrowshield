@@ -253,7 +253,7 @@ export default function FleetOverview() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-slate-200 mb-1">Top Memory Hogs</h2>
             <p className="text-xs text-slate-500 mb-4">Fleet-wide most common culprits</p>
-            <TopOffendersWidget reports={reports} />
+            <TopOffendersWidget reports={reports} devices={allDevices} />
           </div>
         </div>
 

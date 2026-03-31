@@ -554,6 +554,140 @@ def get_remote_session_active() -> bool:
 
 
 # ──────────────────────────────────────────────
+# BROWSERS, SESSIONS, TOP PROCESSES
+# ──────────────────────────────────────────────
+
+def get_installed_browsers() -> list:
+    """Detect installed browsers from /Applications."""
+    BROWSER_MAP = {
+        "Google Chrome.app":          {"name": "Google Chrome",  "engine": "Blink"},
+        "Google Chrome Canary.app":   {"name": "Chrome Canary",  "engine": "Blink"},
+        "Chromium.app":               {"name": "Chromium",       "engine": "Blink"},
+        "Microsoft Edge.app":         {"name": "Microsoft Edge", "engine": "Blink"},
+        "Brave Browser.app":          {"name": "Brave",          "engine": "Blink"},
+        "Opera.app":                  {"name": "Opera",          "engine": "Blink"},
+        "Vivaldi.app":                {"name": "Vivaldi",        "engine": "Blink"},
+        "Arc.app":                    {"name": "Arc",            "engine": "Blink"},
+        "Safari.app":                 {"name": "Safari",         "engine": "WebKit"},
+        "Firefox.app":                {"name": "Firefox",        "engine": "Gecko"},
+        "Firefox Developer Edition.app": {"name": "Firefox Dev", "engine": "Gecko"},
+        "Tor Browser.app":            {"name": "Tor Browser",    "engine": "Gecko"},
+        "Orion.app":                  {"name": "Orion",          "engine": "WebKit"},
+    }
+    found = []
+    try:
+        # Get default browser
+        default_result = subprocess.run(
+            ["defaults", "read", "com.apple.LaunchServices/com.apple.launchservices.secure", "LSHandlers"],
+            capture_output=True, text=True, timeout=5
+        )
+        default_bundle = ""
+        for line in default_result.stdout.splitlines():
+            if "LSHandlerURLScheme = https" in line or "LSHandlerURLScheme = http" in line:
+                pass
+            if "LSHandlerRoleAll" in line:
+                default_bundle = line.split("=")[-1].strip().strip(";").strip('"')
+
+        for app_dir in ["/Applications", f"{os.path.expanduser('~')}/Applications"]:
+            if not os.path.exists(app_dir):
+                continue
+            for app_name, meta in BROWSER_MAP.items():
+                app_path = os.path.join(app_dir, app_name)
+                if os.path.exists(app_path):
+                    version = None
+                    try:
+                        r = subprocess.run(
+                            ["defaults", "read", f"{app_path}/Contents/Info", "CFBundleShortVersionString"],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        if r.returncode == 0:
+                            version = r.stdout.strip()
+                    except Exception:
+                        pass
+                    found.append({
+                        "name": meta["name"],
+                        "version": version,
+                        "engine": meta["engine"],
+                        "path": app_path,
+                        "is_default": False,
+                        "profiles": 0,
+                    })
+    except Exception as e:
+        logger.debug("Browser detection error: %s", e)
+    return found
+
+
+def get_user_sessions() -> list:
+    """Get currently logged-in users via `who`."""
+    sessions = []
+    try:
+        r = subprocess.run(["who"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                sessions.append({
+                    "username": parts[0],
+                    "terminal": parts[1] if len(parts) > 1 else "",
+                    "host": parts[-1].strip("()") if "(" in line else "",
+                    "login_time": " ".join(parts[2:4]) if len(parts) >= 4 else "",
+                })
+    except Exception as e:
+        logger.debug("Session collection error: %s", e)
+    return sessions
+
+
+def get_login_history() -> list:
+    """Get recent login/logout events via `last`."""
+    events = []
+    try:
+        r = subprocess.run(["last", "-20"], capture_output=True, text=True, timeout=10)
+        for line in r.stdout.splitlines():
+            if not line.strip() or line.startswith("wtmp"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            username = parts[0]
+            event_type = "login"
+            if "reboot" in username:
+                event_type = "reboot"
+            elif "shutdown" in username:
+                event_type = "logout"
+            events.append({
+                "username": username,
+                "terminal": parts[1] if len(parts) > 1 else "",
+                "time": " ".join(parts[3:7]) if len(parts) >= 7 else " ".join(parts[3:]),
+                "type": event_type,
+            })
+            if len(events) >= 20:
+                break
+    except Exception as e:
+        logger.debug("Login history error: %s", e)
+    return events
+
+
+def get_top_processes(limit: int = 10) -> list:
+    """Return top processes by RAM usage."""
+    procs = []
+    try:
+        for p in psutil.process_iter(["name", "cpu_percent", "memory_info"]):
+            try:
+                info = p.info
+                ram_mb = round(info["memory_info"].rss / (1024 ** 2), 1) if info.get("memory_info") else 0
+                procs.append({
+                    "process_name": info.get("name", "unknown"),
+                    "cpu_pct": round(info.get("cpu_percent") or 0, 1),
+                    "ram_mb": ram_mb,
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        procs.sort(key=lambda x: x["ram_mb"], reverse=True)
+    except Exception as e:
+        logger.debug("Process collection error: %s", e)
+    return procs[:limit]
+
+
+# ──────────────────────────────────────────────
 # CRASH LOGS
 # ──────────────────────────────────────────────
 
@@ -836,6 +970,12 @@ def collect_metrics() -> dict:
     # Login / session
     active_user = get_active_user()
     remote_session = get_remote_session_active()
+    user_sessions = get_user_sessions()
+    login_history = get_login_history()
+
+    # Browsers & processes
+    installed_browsers = get_installed_browsers()
+    top_processes = get_top_processes(10)
 
     # Extended metrics
     swap = get_swap_info()
@@ -900,6 +1040,12 @@ def collect_metrics() -> dict:
 
         # Installed apps (hourly refresh)
         "installed_apps": _cached_apps,
+
+        # Browsers, sessions, top processes
+        "installed_browsers": installed_browsers,
+        "user_sessions": user_sessions,
+        "login_history": login_history,
+        "top_processes": top_processes,
 
         # Extended monitoring
         "swap_used_mb": swap.get("swap_used_mb"),

@@ -88,6 +88,7 @@ interface HeartbeatBody {
   screen_lock_delay_sec?: number;
   printers?: string[];
   installed_browsers?: Record<string, unknown>[];
+  top_processes?: Record<string, unknown>[];
 
   // Windows-specific
   windows_defender_enabled?: boolean;
@@ -198,6 +199,7 @@ Deno.serve(async (req) => {
     screen_lock_delay_sec,
     printers,
     installed_browsers,
+    top_processes,
     // Windows-specific
     windows_defender_enabled,
     domain_joined,
@@ -303,6 +305,7 @@ Deno.serve(async (req) => {
   if (screen_lock_delay_sec != null)   deviceUpdate.screen_lock_delay_sec = screen_lock_delay_sec;
   if (printers != null)                deviceUpdate.printers = printers;
   if (installed_browsers != null)      deviceUpdate.installed_browsers = installed_browsers;
+  if (top_processes != null)           deviceUpdate.top_processes = top_processes;
 
   // Windows-specific fields
   if (windows_defender_enabled != null)  deviceUpdate.windows_defender_enabled = windows_defender_enabled;
