@@ -283,10 +283,238 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── Auto-Remediation Rules Engine ──
+  let remediationTriggered = 0;
+  try {
+    const { data: rules } = await supabase
+      .from("remediation_rules")
+      .select("*")
+      .eq("enabled", true);
+
+    if (rules?.length) {
+      for (const device of devices) {
+        const { data: latestMetric } = await supabase
+          .from("metrics")
+          .select("*")
+          .eq("device_id", device.id)
+          .order("timestamp", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (!latestMetric) continue;
+        const m = latestMetric as Record<string, unknown>;
+
+        for (const rule of rules) {
+          // Check scope
+          if (rule.scope === "device" && rule.scope_value !== device.id) continue;
+
+          const metricValue = m[rule.metric] as number | null;
+          if (metricValue == null) continue;
+
+          // Evaluate condition
+          let breached = false;
+          switch (rule.operator) {
+            case ">": breached = metricValue > rule.threshold; break;
+            case ">=": breached = metricValue >= rule.threshold; break;
+            case "<": breached = metricValue < rule.threshold; break;
+            case "<=": breached = metricValue <= rule.threshold; break;
+            case "==": breached = metricValue === rule.threshold; break;
+          }
+
+          if (breached) {
+            // Upsert beat tracker
+            const { data: tracker } = await supabase
+              .from("remediation_beat_tracker")
+              .select("*")
+              .eq("rule_id", rule.id)
+              .eq("device_id", device.id)
+              .single();
+
+            const newCount = (tracker?.consecutive_count ?? 0) + 1;
+
+            if (tracker) {
+              await supabase
+                .from("remediation_beat_tracker")
+                .update({ consecutive_count: newCount, last_checked_at: new Date().toISOString() })
+                .eq("id", tracker.id);
+            } else {
+              await supabase.from("remediation_beat_tracker").insert({
+                rule_id: rule.id,
+                device_id: device.id,
+                consecutive_count: 1,
+              });
+            }
+
+            // Check if we've hit the threshold
+            if (newCount >= rule.consecutive_beats) {
+              // Check cooldown
+              const { data: recentLog } = await supabase
+                .from("remediation_log")
+                .select("triggered_at")
+                .eq("rule_id", rule.id)
+                .eq("device_id", device.id)
+                .order("triggered_at", { ascending: false })
+                .limit(1)
+                .single();
+
+              const cooldownMs = (rule.cooldown_minutes ?? 30) * 60 * 1000;
+              const canTrigger = !recentLog || (Date.now() - new Date(recentLog.triggered_at).getTime()) > cooldownMs;
+
+              if (canTrigger) {
+                // ── RECOMMEND, DON'T AUTO-EXECUTE ──
+                // Create the command with status "awaiting_approval"
+                // so IT admin must manually click "Approve" on the dashboard.
+                // The agent only picks up commands with status "pending",
+                // so "awaiting_approval" stays dormant until admin approves.
+                const { data: cmd } = await supabase
+                  .from("device_commands")
+                  .insert({
+                    device_id: device.id,
+                    command_type: rule.action_type,
+                    payload: rule.action_payload ?? {},
+                    status: "awaiting_approval",
+                  })
+                  .select("id")
+                  .single();
+
+                // Log the remediation as "recommended" (not triggered)
+                await supabase.from("remediation_log").insert({
+                  rule_id: rule.id,
+                  device_id: device.id,
+                  command_id: cmd?.id ?? null,
+                  metric_value: metricValue,
+                  action_type: rule.action_type,
+                  status: "recommended",
+                });
+
+                // Reset beat counter
+                await supabase
+                  .from("remediation_beat_tracker")
+                  .update({ consecutive_count: 0 })
+                  .eq("rule_id", rule.id)
+                  .eq("device_id", device.id);
+
+                remediationTriggered++;
+
+                // Slack notify — tell IT admin to review & approve
+                if (slackWebhook.url) {
+                  const text = `🔔 Remediation Recommended: "${rule.name}" on ${device.hostname} — ${rule.metric}=${metricValue} (threshold: ${rule.threshold}). Suggested action: ${rule.action_type}. 👉 Go to Dashboard → Alerts to approve or dismiss.`;
+                  try {
+                    await fetch(slackWebhook.url, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ text }),
+                    });
+                  } catch (_e) { /* ignore */ }
+                }
+              }
+            }
+          } else {
+            // Reset beat counter on recovery
+            await supabase
+              .from("remediation_beat_tracker")
+              .update({ consecutive_count: 0 })
+              .eq("rule_id", rule.id)
+              .eq("device_id", device.id);
+          }
+        }
+      }
+    }
+  } catch (_e) {
+    // remediation errors shouldn't block alerts
+  }
+
+  // ── Software Compliance Check ──
+  let violationsCreated = 0;
+  try {
+    const { data: blocklist } = await supabase
+      .from("software_lists")
+      .select("app_name, app_pattern")
+      .eq("list_type", "blocklist");
+
+    if (blocklist?.length) {
+      for (const device of devices) {
+        const { data: deviceData } = await supabase
+          .from("devices")
+          .select("installed_apps")
+          .eq("id", device.id)
+          .single();
+
+        const apps = (deviceData?.installed_apps ?? []) as { name: string; version?: string }[];
+
+        for (const blocked of blocklist) {
+          const pattern = blocked.app_pattern ?? blocked.app_name;
+          const match = apps.find(
+            (a) => a.name?.toLowerCase().includes(pattern.toLowerCase())
+          );
+
+          if (match) {
+            // Check if violation already exists
+            const { data: existing } = await supabase
+              .from("software_violations")
+              .select("id")
+              .eq("device_id", device.id)
+              .eq("app_name", match.name)
+              .eq("resolved", false)
+              .limit(1);
+
+            if (!existing?.length) {
+              await supabase.from("software_violations").insert({
+                device_id: device.id,
+                app_name: match.name,
+                app_version: match.version ?? null,
+                violation_type: "blocklist_hit",
+              });
+              violationsCreated++;
+
+              // Slack notify
+              if (slackWebhook.url) {
+                const text = `⚠️ Software violation: ${match.name} found on ${device.hostname} (blocklisted)`;
+                try {
+                  await fetch(slackWebhook.url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text }),
+                  });
+                } catch (_e) { /* ignore */ }
+                }
+            }
+          }
+        }
+
+        // Auto-resolve violations when app is removed
+        const { data: openViolations } = await supabase
+          .from("software_violations")
+          .select("id, app_name")
+          .eq("device_id", device.id)
+          .eq("resolved", false);
+
+        for (const v of openViolations ?? []) {
+          const stillInstalled = apps.some(
+            (a) => a.name?.toLowerCase().includes(v.app_name.toLowerCase())
+          );
+          if (!stillInstalled) {
+            await supabase
+              .from("software_violations")
+              .update({ resolved: true })
+              .eq("id", v.id);
+          }
+        }
+      }
+    }
+  } catch (_e) {
+    // software compliance errors shouldn't block alerts
+  }
+
   return new Response(
     JSON.stringify({
       success: true,
-      data: { processed: devices.length, newAlerts: newAlerts.length },
+      data: {
+        processed: devices.length,
+        newAlerts: newAlerts.length,
+        remediationTriggered,
+        violationsCreated,
+      },
     }),
     { headers: { "Content-Type": "application/json" } }
   );

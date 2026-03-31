@@ -1,15 +1,18 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings } from "lucide-react";
+import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck, Info } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 
 const nav = [
-  { to: "/", label: "Fleet Overview", icon: LayoutDashboard },
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/devices", label: "Device List", icon: Laptop },
   { to: "/alerts", label: "Alerts", icon: BellRing },
+  { to: "/reports", label: "Reports", icon: FileText },
+  { to: "/compliance", label: "Compliance", icon: ShieldCheck },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/about", label: "About", icon: Info },
 ];
 
 const MAC_AGENT_PATH   = "/agents/sparrowshield-mac-agent.zip";
@@ -42,8 +45,8 @@ export default function Sidebar() {
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-lg">🩺</div>
           <div>
-            <p className="text-sm font-semibold text-white leading-none">HealSparrow</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Fleet Health</p>
+            <p className="text-sm font-semibold text-white leading-none">SparrowIT</p>
+            <p className="text-[10px] text-slate-500 mt-0.5">Fleet Management</p>
           </div>
         </div>
       </div>

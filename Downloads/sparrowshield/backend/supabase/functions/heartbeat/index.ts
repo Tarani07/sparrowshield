@@ -50,7 +50,7 @@ interface HeartbeatBody {
   active_user?: string;
   remote_session_active?: boolean;
 
-  // Location (new)
+  // Location
   public_ip?: string;
   city?: string;
   region?: string;
@@ -58,6 +58,42 @@ interface HeartbeatBody {
   latitude?: number;
   longitude?: number;
   isp?: string;
+
+  // Extended Monitoring
+  last_reboot?: string;
+  swap_used_mb?: number;
+  swap_total_mb?: number;
+  memory_pressure?: string;
+  thermal_state?: string;
+  disk_read_mb?: number;
+  disk_write_mb?: number;
+  fan_speed_rpm?: number;
+  storage_volumes?: Record<string, unknown>[];
+  open_connections_count?: number;
+  listening_ports?: Record<string, unknown>[];
+  user_sessions?: Record<string, unknown>[];
+  login_history?: Record<string, unknown>[];
+  pending_updates?: string[];
+  pending_update_count?: number;
+  bluetooth_devices?: Record<string, unknown>[];
+  connected_displays?: Record<string, unknown>[];
+  timemachine_enabled?: boolean;
+  timemachine_last_backup?: string;
+  third_party_kexts?: string[];
+  login_items?: string[];
+  login_item_count?: number;
+  dns_servers?: string[];
+  proxy_configured?: boolean;
+  screen_lock_enabled?: boolean;
+  screen_lock_delay_sec?: number;
+  printers?: string[];
+  installed_browsers?: Record<string, unknown>[];
+
+  // Windows-specific
+  windows_defender_enabled?: boolean;
+  domain_joined?: boolean;
+  domain_name?: string;
+  activation_status?: string;
 }
 
 Deno.serve(async (req) => {
@@ -133,6 +169,40 @@ Deno.serve(async (req) => {
     latitude,
     longitude,
     isp,
+    // Extended monitoring
+    last_reboot,
+    swap_used_mb,
+    swap_total_mb,
+    memory_pressure,
+    thermal_state,
+    disk_read_mb,
+    disk_write_mb,
+    fan_speed_rpm,
+    storage_volumes,
+    open_connections_count,
+    listening_ports,
+    user_sessions,
+    login_history,
+    pending_updates,
+    pending_update_count,
+    bluetooth_devices,
+    connected_displays,
+    timemachine_enabled,
+    timemachine_last_backup,
+    third_party_kexts,
+    login_items,
+    login_item_count,
+    dns_servers,
+    proxy_configured,
+    screen_lock_enabled,
+    screen_lock_delay_sec,
+    printers,
+    installed_browsers,
+    // Windows-specific
+    windows_defender_enabled,
+    domain_joined,
+    domain_name,
+    activation_status,
   } = body;
 
   if (
@@ -202,6 +272,43 @@ Deno.serve(async (req) => {
   if (latitude != null)              deviceUpdate.latitude = latitude;
   if (longitude != null)             deviceUpdate.longitude = longitude;
   if (isp != null)                   deviceUpdate.isp = isp;
+
+  // Extended monitoring fields
+  if (last_reboot != null)             deviceUpdate.last_reboot = last_reboot;
+  if (uptime_seconds != null)          deviceUpdate.uptime_seconds = uptime_seconds;
+  if (swap_used_mb != null)            deviceUpdate.swap_used_mb = swap_used_mb;
+  if (swap_total_mb != null)           deviceUpdate.swap_total_mb = swap_total_mb;
+  if (memory_pressure != null)         deviceUpdate.memory_pressure = memory_pressure;
+  if (thermal_state != null)           deviceUpdate.thermal_state = thermal_state;
+  if (disk_read_mb != null)            deviceUpdate.disk_read_mb = disk_read_mb;
+  if (disk_write_mb != null)           deviceUpdate.disk_write_mb = disk_write_mb;
+  if (fan_speed_rpm != null)           deviceUpdate.fan_speed_rpm = fan_speed_rpm;
+  if (storage_volumes != null)         deviceUpdate.storage_volumes = storage_volumes;
+  if (open_connections_count != null)  deviceUpdate.open_connections_count = open_connections_count;
+  if (listening_ports != null)         deviceUpdate.listening_ports = listening_ports;
+  if (user_sessions != null)           deviceUpdate.user_sessions = user_sessions;
+  if (login_history != null)           deviceUpdate.login_history = login_history;
+  if (pending_updates != null)         deviceUpdate.pending_updates = pending_updates;
+  if (pending_update_count != null)    deviceUpdate.pending_update_count = pending_update_count;
+  if (bluetooth_devices != null)       deviceUpdate.bluetooth_devices = bluetooth_devices;
+  if (connected_displays != null)      deviceUpdate.connected_displays = connected_displays;
+  if (timemachine_enabled != null)     deviceUpdate.timemachine_enabled = timemachine_enabled;
+  if (timemachine_last_backup != null) deviceUpdate.timemachine_last_backup = timemachine_last_backup;
+  if (third_party_kexts != null)       deviceUpdate.third_party_kexts = third_party_kexts;
+  if (login_items != null)             deviceUpdate.login_items = login_items;
+  if (login_item_count != null)        deviceUpdate.login_item_count = login_item_count;
+  if (dns_servers != null)             deviceUpdate.dns_servers = dns_servers;
+  if (proxy_configured != null)        deviceUpdate.proxy_configured = proxy_configured;
+  if (screen_lock_enabled != null)     deviceUpdate.screen_lock_enabled = screen_lock_enabled;
+  if (screen_lock_delay_sec != null)   deviceUpdate.screen_lock_delay_sec = screen_lock_delay_sec;
+  if (printers != null)                deviceUpdate.printers = printers;
+  if (installed_browsers != null)      deviceUpdate.installed_browsers = installed_browsers;
+
+  // Windows-specific fields
+  if (windows_defender_enabled != null)  deviceUpdate.windows_defender_enabled = windows_defender_enabled;
+  if (domain_joined != null)             deviceUpdate.domain_joined = domain_joined;
+  if (domain_name != null)               deviceUpdate.domain_name = domain_name;
+  if (activation_status != null)         deviceUpdate.activation_status = activation_status;
 
   await supabase
     .from("devices")

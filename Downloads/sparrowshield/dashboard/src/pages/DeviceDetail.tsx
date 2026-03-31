@@ -13,6 +13,14 @@ import ComplianceCard from "../components/device/ComplianceCard";
 import CrashCard from "../components/device/CrashCard";
 import InstalledAppsCard from "../components/device/InstalledAppsCard";
 import LocationCard from "../components/device/LocationCard";
+import SystemInfoCard from "../components/device/SystemInfoCard";
+import StorageCard from "../components/device/StorageCard";
+import NetworkSecurityCard from "../components/device/NetworkSecurityCard";
+import StartupItemsCard from "../components/device/StartupItemsCard";
+import PeripheralsCard from "../components/device/PeripheralsCard";
+import SessionsCard from "../components/device/SessionsCard";
+import UpdatesCard from "../components/device/UpdatesCard";
+import BrowsersCard from "../components/device/BrowsersCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -169,10 +177,48 @@ export default function DeviceDetail() {
           </div>
         )}
 
-        {/* Location + Installed Apps */}
-        {device && <LocationCard device={device} />}
+        {/* System Info + Storage */}
         {device && (
-          <InstalledAppsCard apps={device.installed_apps ?? []} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SystemInfoCard device={device} />
+            <StorageCard device={device} />
+          </div>
+        )}
+
+        {/* Network Security + Startup Items */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <NetworkSecurityCard device={device} />
+            <StartupItemsCard device={device} />
+          </div>
+        )}
+
+        {/* Peripherals + Sessions */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <PeripheralsCard device={device} />
+            <SessionsCard device={device} />
+          </div>
+        )}
+
+        {/* Updates + Location */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <UpdatesCard device={device} />
+            <LocationCard device={device} />
+          </div>
+        )}
+
+        {/* Browsers */}
+        {device && <BrowsersCard device={device} />}
+
+        {/* Installed Apps — with remote uninstall */}
+        {device && (
+          <InstalledAppsCard
+            apps={device.installed_apps ?? []}
+            deviceId={device.id}
+            osType={device.os_type}
+          />
         )}
 
         {/* Optimizer Panel */}
