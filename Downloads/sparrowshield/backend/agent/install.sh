@@ -44,8 +44,16 @@ echo "        ✅ Files downloaded"
 
 # ── Step 3: Install Python dependencies ──────────────────────
 echo "[ 3/6 ] Installing Python dependencies..."
-pip3 install psutil requests rumps --break-system-packages -q 2>/dev/null || pip3 install psutil requests rumps --user -q 2>/dev/null || pip3 install psutil requests rumps -q
-echo "        ✅ Dependencies installed"
+# Core agent only needs psutil + requests (rumps is optional, for menu bar app only)
+pip3 install psutil requests --break-system-packages -q 2>/dev/null \
+  || pip3 install psutil requests --user -q 2>/dev/null \
+  || pip3 install psutil requests -q
+echo "        ✅ Core dependencies installed"
+# Install rumps in background (takes longer, compiles pyobjc)
+(pip3 install rumps --break-system-packages -q 2>/dev/null \
+  || pip3 install rumps --user -q 2>/dev/null \
+  || pip3 install rumps -q) &
+echo "        ⏳ Menu bar dependencies installing in background"
 
 # ── Step 4: LaunchAgent — background agent (auto-start on boot) ──
 echo "[ 4/6 ] Registering background agent service..."
