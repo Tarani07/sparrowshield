@@ -2,6 +2,19 @@ import { Users, Clock, LogIn } from "lucide-react";
 import { cn } from "../../lib/utils";
 import type { Device } from "../../lib/types";
 
+/** Safely format any date value — ISO strings, epoch numbers, or human-readable macOS strings. */
+function fmtDate(raw: string | number | null | undefined): string {
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) return d.toLocaleString();
+  // macOS `last` format: "Mon Mar 31 10:22" — append current year and retry
+  const withYear = `${raw} ${new Date().getFullYear()}`;
+  const d2 = new Date(withYear);
+  if (!isNaN(d2.getTime())) return d2.toLocaleString();
+  // Return the raw string as a last resort rather than "Invalid Date"
+  return String(raw);
+}
+
 interface Props {
   device: Device;
 }
@@ -41,7 +54,7 @@ export default function SessionsCard({ device }: Props) {
                       <p className="text-[10px] text-slate-500">{s.terminal} &middot; {s.host}</p>
                     </div>
                     <span className="text-[10px] font-mono text-slate-500">
-                      {new Date(s.login_time).toLocaleString()}
+                      {fmtDate(s.login_time)}
                     </span>
                   </div>
                 ))}
@@ -71,7 +84,7 @@ export default function SessionsCard({ device }: Props) {
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-slate-500">
-                        {new Date(evt.time).toLocaleString()}
+                        {fmtDate(evt.time)}
                       </span>
                     </div>
                   );
