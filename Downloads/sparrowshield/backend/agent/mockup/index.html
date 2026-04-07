@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SparrowShield — Tray Menu Mockup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1e1e2e;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 40px 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      color: #cdd6f4;
+    }
+
+    h1 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #6c7086;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+
+    /* macOS Menu Bar simulation */
+    .menubar {
+      width: 100%;
+      max-width: 800px;
+      background: rgba(30,30,46,0.95);
+      border-radius: 12px 12px 0 0;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0 12px;
+      gap: 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .menubar-icon {
+      font-size: 11px;
+      color: #a6adc8;
+      cursor: pointer;
+      padding: 2px 5px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+
+    .menubar-icon:hover { background: rgba(255,255,255,0.1); }
+
+    .menubar-icon.active {
+      background: rgba(137,180,250,0.15);
+      color: #89b4fa;
+    }
+
+    /* Desktop area */
+    .desktop {
+      width: 100%;
+      max-width: 800px;
+      background: #181825;
+      min-height: 200px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .desktop-hint {
+      color: #45475a;
+      font-size: 12px;
+    }
+
+    /* Tray dropdown menu */
+    .tray-dropdown {
+      position: absolute;
+      top: 0;
+      right: 80px;
+      width: 280px;
+      background: rgba(24,24,37,0.96);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.7), 0 0 0 0.5px rgba(255,255,255,0.05);
+      overflow: hidden;
+      animation: dropIn 0.15s ease-out;
+    }
+
+    @keyframes dropIn {
+      from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0)   scale(1); }
+    }
+
+    /* ── Header Section ── */
+    .menu-header {
+      padding: 12px 14px 10px;
+      background: rgba(137,180,250,0.04);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .menu-header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .app-name {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .app-icon {
+      width: 22px;
+      height: 22px;
+      background: linear-gradient(135deg, #89b4fa 0%, #b4befe 100%);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+
+    .app-name-text {
+      font-size: 13px;
+      font-weight: 600;
+      color: #cdd6f4;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #a6e3a1;
+      box-shadow: 0 0 6px #a6e3a1;
+    }
+
+    .status-dot.disconnected {
+      background: #f38ba8;
+      box-shadow: 0 0 6px #f38ba8;
+    }
+
+    /* Stat pills row */
+    .stat-pills {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .stat-pill {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-size: 10.5px;
+      color: #a6adc8;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .stat-pill .val {
+      color: #cdd6f4;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-pill.warn .val { color: #fab387; }
+    .stat-pill.ok .val { color: #a6e3a1; }
+    .stat-pill.crit .val { color: #f38ba8; }
+
+    /* Health score */
+    .health-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .health-label {
+      font-size: 10px;
+      color: #6c7086;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .health-bar-wrap {
+      flex: 1;
+      margin: 0 10px;
+      height: 4px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .health-bar {
+      height: 100%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, #a6e3a1, #94e2d5);
+      width: 82%;
+    }
+
+    .health-score {
+      font-size: 12px;
+      font-weight: 700;
+      color: #a6e3a1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Separator ── */
+    .sep {
+      height: 1px;
+      background: rgba(255,255,255,0.06);
+      margin: 3px 0;
+    }
+
+    /* ── Section label ── */
+    .section-label {
+      font-size: 9.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #45475a;
+      padding: 6px 14px 2px;
+    }
+
+    /* ── Menu Item ── */
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: background 0.08s;
+      border-radius: 4px;
+      margin: 1px 4px;
+    }
+
+    .menu-item:hover {
+      background: rgba(137,180,250,0.12);
+    }
+
+    .menu-item:hover .item-label { color: #cdd6f4; }
+    .menu-item:hover .item-icon  { opacity: 1; }
+
+    .item-icon {
+      font-size: 14px;
+      width: 18px;
+      text-align: center;
+      opacity: 0.75;
+      flex-shrink: 0;
+    }
+
+    .item-label {
+      font-size: 12.5px;
+      color: #bac2de;
+      flex: 1;
+    }
+
+    .item-shortcut {
+      font-size: 10px;
+      color: #45475a;
+    }
+
+    .item-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .badge-green { background: rgba(166,227,161,0.15); color: #a6e3a1; }
+    .badge-red   { background: rgba(243,139,168,0.15); color: #f38ba8; }
+    .badge-amber { background: rgba(250,179,135,0.15); color: #fab387; }
+
+    /* Submenu indicator */
+    .item-arrow {
+      font-size: 10px;
+      color: #45475a;
+    }
+
+    /* Footer */
+    .menu-footer {
+      padding: 6px 14px 8px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .menu-footer .menu-item {
+      padding: 5px 6px;
+    }
+
+    /* ── Tabs for Current vs Proposed ── */
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      padding: 6px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+      color: #6c7086;
+      transition: all 0.15s;
+    }
+
+    .tab.active {
+      background: rgba(137,180,250,0.15);
+      border-color: rgba(137,180,250,0.3);
+      color: #89b4fa;
+    }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Version label */
+    .version-tag {
+      font-size: 9px;
+      padding: 1.5px 6px;
+      border-radius: 3px;
+      margin-left: 6px;
+      font-weight: 600;
+    }
+
+    .v-current { background: rgba(108,112,134,0.2); color: #6c7086; }
+    .v-new     { background: rgba(137,180,250,0.15); color: #89b4fa; }
+  </style>
+</head>
+<body>
+
+  <h1>SparrowShield — Menu Bar App Mockup</h1>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('current')">Current <span class="version-tag v-current">TODAY</span></div>
+    <div class="tab" onclick="showTab('proposed')">Proposed Redesign <span class="version-tag v-new">NEW</span></div>
+  </div>
+
+  <!-- ═══════════════════ CURRENT ═══════════════════ -->
+  <div id="panel-current" class="panel active">
+    <div class="menubar">
+      <span class="menubar-icon">wifi</span>
+      <span class="menubar-icon">🔋 84%</span>
+      <span class="menubar-icon">10:42</span>
+      <span class="menubar-icon active">🐦 Sparrow IT Admin</span>
+    </div>
+    <div class="desktop">
+      <span class="desktop-hint">macOS Desktop</span>
+      <div class="tray-dropdown">
+        <!-- plain items, no status info -->
+        <div class="menu-item">
+          <span class="item-icon">⚡</span>
+          <span class="item-label">Optimize All</span>
+        </div>
+        <div class="sep"></div>
+        <div class="menu-item">
+          <span class="item-icon">🧠</span>
+          <span class="item-label">Memory Check</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">💀</span>
+          <span class="item-label">Kill Old Apps</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">📁</span>
+          <span class="item-label">Top 5 Large Files</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">💿</span>
+          <span class="item-label">Disk Health</span>
+        </div>
+        <div class="sep"></div>
+        <div class="menu-item">
+          <span class="item-icon">🛡️</span>
+          <span class="item-label">Security Check</span>
+        </div>
+        <div class="sep"></div>
+        <div class="menu-item">
+          <span class="item-icon">🎫</span>
+          <span class="item-label">Raise IT Ticket</span>
+        </div>
+        <div class="sep"></div>
+        <div class="menu-item">
+          <span class="item-icon">✕</span>
+          <span class="item-label">Quit</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ PROPOSED ═══════════════════ -->
+  <div id="panel-proposed" class="panel">
+    <div class="menubar">
+      <span class="menubar-icon">wifi</span>
+      <span class="menubar-icon">🔋 84%</span>
+      <span class="menubar-icon">10:42</span>
+      <span class="menubar-icon active">🐦 34% · 6.1GB</span>
+    </div>
+    <div class="desktop">
+      <span class="desktop-hint">macOS Desktop</span>
+      <div class="tray-dropdown">
+
+        <!-- Header with device + live stats -->
+        <div class="menu-header">
+          <div class="menu-header-top">
+            <div class="app-name">
+              <div class="app-icon">🐦</div>
+              <span class="app-name-text">SparrowShield</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:10px;color:#6c7086">Connected</span>
+              <div class="status-dot"></div>
+            </div>
+          </div>
+
+          <div class="stat-pills">
+            <div class="stat-pill warn">
+              <span>CPU</span>
+              <span class="val">34%</span>
+            </div>
+            <div class="stat-pill warn">
+              <span>RAM</span>
+              <span class="val">6.1 GB</span>
+            </div>
+            <div class="stat-pill ok">
+              <span>Disk</span>
+              <span class="val">48%</span>
+            </div>
+            <div class="stat-pill ok">
+              <span>Bat</span>
+              <span class="val">84%</span>
+            </div>
+            <div class="stat-pill">
+              <span>WiFi</span>
+              <span class="val">▂▄▆</span>
+            </div>
+          </div>
+
+          <div class="health-row">
+            <span class="health-label">Health</span>
+            <div class="health-bar-wrap">
+              <div class="health-bar"></div>
+            </div>
+            <span class="health-score">82 / 100</span>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section-label">Quick Actions</div>
+        <div class="menu-item">
+          <span class="item-icon">⚡</span>
+          <span class="item-label">Optimize All</span>
+          <span class="item-badge badge-green">1-Click</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">🧠</span>
+          <span class="item-label">Memory Tools</span>
+          <span class="item-arrow">›</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">💿</span>
+          <span class="item-label">Disk Tools</span>
+          <span class="item-arrow">›</span>
+        </div>
+
+        <div class="sep"></div>
+
+        <!-- Security -->
+        <div class="section-label">Security</div>
+        <div class="menu-item">
+          <span class="item-icon">🛡️</span>
+          <span class="item-label">Security Check</span>
+          <span class="item-badge badge-green">All Good</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">🔒</span>
+          <span class="item-label">FileVault</span>
+          <span class="item-badge badge-green">ON</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">🔥</span>
+          <span class="item-label">Firewall</span>
+          <span class="item-badge badge-green">ON</span>
+        </div>
+
+        <div class="sep"></div>
+
+        <!-- Dashboard & Agent -->
+        <div class="section-label">SparrowShield</div>
+        <div class="menu-item">
+          <span class="item-icon">📊</span>
+          <span class="item-label">Open Dashboard</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">🎫</span>
+          <span class="item-label">Raise IT Ticket</span>
+        </div>
+        <div class="menu-item">
+          <span class="item-icon">🔁</span>
+          <span class="item-label">Restart Agent</span>
+          <span style="font-size:9.5px;color:#45475a">Last: 2m ago</span>
+        </div>
+
+        <!-- Footer -->
+        <div class="menu-footer">
+          <div class="menu-item">
+            <span class="item-icon" style="font-size:11px">✕</span>
+            <span class="item-label" style="font-size:11.5px;color:#6c7086">Quit SparrowShield</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showTab(name) {
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', (i === 0 && name === 'current') || (i === 1 && name === 'proposed'));
+      });
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('panel-' + name).classList.add('active');
+    }
+
+    // Live update simulation for proposed view
+    function animateStats() {
+      const cpuVals = ['28%','34%','41%','29%','38%'];
+      const ramVals = ['5.9 GB','6.1 GB','6.4 GB','6.0 GB','6.2 GB'];
+      let i = 0;
+      setInterval(() => {
+        i = (i + 1) % cpuVals.length;
+        const pills = document.querySelectorAll('#panel-proposed .stat-pill .val');
+        if (pills[0]) pills[0].textContent = cpuVals[i];
+        if (pills[1]) pills[1].textContent = ramVals[i];
+        // Update menubar title too
+        const mbActive = document.querySelector('#panel-proposed .menubar-icon.active');
+        if (mbActive) mbActive.textContent = `🐦 ${cpuVals[i]} · ${ramVals[i]}`;
+      }, 2000);
+    }
+    animateStats();
+  </script>
+
+</body>
+</html>
