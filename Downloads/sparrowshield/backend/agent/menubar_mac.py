@@ -2,12 +2,17 @@
 """SparrowShield — macOS Menu Bar App"""
 
 import json
+import logging
 import os
+import platform
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from pathlib import Path
+from typing import Optional
 
 import psutil
 import rumps
@@ -47,7 +52,7 @@ def _fmt_bytes(n: float) -> str:
 def _fmt_gb(n: float) -> str:
     return f"{n / 1_073_741_824:.1f} GB"
 
-def _wifi_bars(rssi: int | None) -> str:
+def _wifi_bars(rssi: Optional[int]) -> str:
     if rssi is None:
         return "—"
     if rssi >= -55: return "▂▄▆█  Excellent"
@@ -79,7 +84,8 @@ def _get_stats() -> dict:
         "bat_charging": bat.power_plugged if bat else None,
     }
 
-def _get_wifi_rssi() -> int | None:
+def _get_wifi_rssi() -> Optional[int]:
+    # Method 1: airport CLI (macOS 13 and below)
     try:
         r = subprocess.run(
             ["/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-I"],
@@ -88,6 +94,24 @@ def _get_wifi_rssi() -> int | None:
         for line in r.stdout.splitlines():
             if "agrCtlRSSI" in line:
                 return int(line.split(":")[1].strip())
+    except Exception:
+        pass
+    # Method 2: system_profiler fallback (macOS 14 Sonoma+ — airport tool removed)
+    try:
+        r = subprocess.run(
+            ["system_profiler", "SPAirPortDataType", "-json"],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(r.stdout)
+        interfaces = data.get("SPAirPortDataType", [{}])[0].get("spairport_airport_interfaces", [])
+        for iface in interfaces:
+            networks = iface.get("spairport_current_network_information", {})
+            if networks:
+                rssi_str = networks.get("spairport_signal_noise", "")
+                # Format: "-48 dBm" or "-48 / -90"
+                if rssi_str:
+                    val = rssi_str.split()[0]
+                    return int(val)
     except Exception:
         pass
     return None
@@ -119,7 +143,7 @@ def _get_health_score() -> int:
 
 _os_update_cache: dict = {"label": None, "checked_at": 0}
 
-def _check_os_updates() -> str | None:
+def _check_os_updates() -> Optional[str]:
     """Returns update label if available, else None. Cached for 1 hour."""
     global _os_update_cache
     now = time.time()
@@ -151,14 +175,13 @@ def _check_os_updates() -> str | None:
 
 _notice_cache: dict = {"text": None, "sender": None, "checked_at": 0}
 
-def _fetch_it_notice() -> dict | None:
+def _fetch_it_notice() -> Optional[dict]:
     """Poll Supabase it_notices table for the latest active message."""
     global _notice_cache
     now = time.time()
     if now - _notice_cache["checked_at"] < NOTICE_SEC:
         return _notice_cache if _notice_cache.get("text") else None
     try:
-        import urllib.request
         cfg      = _load_config()
         api_url  = cfg.get("api_url", "")
         anon_key = cfg.get("anon_key", "")
@@ -181,6 +204,13 @@ def _fetch_it_notice() -> dict | None:
                     "checked_at": now,
                 }
                 return _notice_cache
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # Migration 014_it_notices.sql has not been run yet in Supabase
+            logging.getLogger("sparrow.menubar").warning(
+                "IT Notices: 'it_notices' table not found. "
+                "Run migration 014_it_notices.sql in the Supabase SQL editor to enable this feature."
+            )
     except Exception:
         pass
     _notice_cache = {"text": None, "sender": None, "checked_at": now}
@@ -347,21 +377,29 @@ app.menu = [
 
 # ── Dynamic section visibility helpers ───────────────────────────────────────
 
-def _set_os_section(update_name: str | None):
+def _set_os_section(update_name: Optional[str]):
     if update_name:
         item_os_hdr.title  = "── 🍎 OS Update Available ──"
         item_os_name.title = f"  {update_name}"
         item_os_btn.title  = "  Install Now →"
-        item_os_btn.set_callback(
-            lambda _: subprocess.Popen(["open", "-a", "Software Update"])
-        )
+        def _open_updates(_):
+            # macOS 13+ Ventura/Sonoma: Software Update moved into System Settings
+            mac_ver = int(platform.mac_ver()[0].split(".")[0])
+            if mac_ver >= 13:
+                subprocess.Popen([
+                    "open",
+                    "x-apple.systempreferences:com.apple.Software-Update-Settings.extension"
+                ])
+            else:
+                subprocess.Popen(["open", "-a", "Software Update"])
+        item_os_btn.set_callback(_open_updates)
     else:
         item_os_hdr.title  = ""
         item_os_name.title = ""
         item_os_btn.title  = ""
         item_os_btn.set_callback(None)
 
-def _set_nt_section(notice: dict | None):
+def _set_nt_section(notice: Optional[dict]):
     if notice and notice.get("text"):
         msg = notice["text"]
         # Word-wrap at ~44 chars
