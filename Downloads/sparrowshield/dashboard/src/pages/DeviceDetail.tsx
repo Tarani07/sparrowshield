@@ -84,6 +84,12 @@ export default function DeviceDetail() {
 
   const maxRam = Math.max(...(latest?.culprit_apps?.map((a) => a.ram_mb) ?? [1]));
   const snapshot = latest?.metrics_snapshot;
+  // Fall back to most recent metrics row when no health report exists yet
+  const latestMetric = metrics[metrics.length - 1];
+  const cpu_pct     = snapshot?.cpu_pct            ?? latestMetric?.cpu_pct            ?? null;
+  const ram_pct     = snapshot?.ram_pct            ?? latestMetric?.ram_pct            ?? null;
+  const disk_pct    = snapshot?.disk_pct           ?? latestMetric?.disk_pct           ?? null;
+  const battery_pct = snapshot?.battery_health_pct ?? latestMetric?.battery_health_pct ?? null;
   const isOnline = device?.status === "online";
 
   return (
@@ -152,10 +158,10 @@ export default function DeviceDetail() {
 
         {/* Metric bars */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <MetricBar label="CPU" icon="⚡" value={snapshot?.cpu_pct ?? null} warnAt={75} critAt={90} />
-          <MetricBar label="RAM" icon="🧠" value={snapshot?.ram_pct ?? null} warnAt={80} critAt={90} />
-          <MetricBar label="Disk" icon="💾" value={snapshot?.disk_pct ?? null} warnAt={80} critAt={92} />
-          <MetricBar label="Battery" icon="🔋" value={snapshot?.battery_health_pct ?? null} warnAt={50} critAt={20} />
+          <MetricBar label="CPU" icon="⚡" value={cpu_pct} warnAt={75} critAt={90} />
+          <MetricBar label="RAM" icon="🧠" value={ram_pct} warnAt={80} critAt={90} />
+          <MetricBar label="Disk" icon="💾" value={disk_pct} warnAt={80} critAt={92} />
+          <MetricBar label="Battery" icon="🔋" value={battery_pct} warnAt={50} critAt={20} />
         </div>
 
         {/* Battery + Network row */}
