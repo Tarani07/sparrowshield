@@ -20,7 +20,8 @@ export function useDevice(deviceId: string) {
   });
 }
 
-/** Slim device list — only columns needed for Fleet/List pages */
+/** Slim device list — only columns needed for Fleet/List pages
+ *  NOTE: cpu_pct, ram_pct, disk_pct live in the metrics table, NOT devices */
 const FLEET_COLS = [
   "id", "hostname", "serial_number", "os_type", "os_version",
   "assigned_user", "department", "cpu_model", "cpu_cores", "ram_total_gb",
@@ -28,7 +29,7 @@ const FLEET_COLS = [
   "battery_pct", "battery_health",
   "filevault_enabled", "firewall_enabled", "sip_enabled",
   "gatekeeper_enabled", "mdm_enrolled", "antivirus_installed",
-  "pending_update_count", "cpu_pct", "ram_pct", "disk_pct",
+  "pending_update_count",
 ].join(", ");
 
 export function useAllDevices() {
