@@ -18,13 +18,15 @@ export function useFleetReports() {
       if (error) throw error;
 
       // Latest report per device
+      const rows = (data ?? []) as unknown as HealthReport[];
       const latest = new Map<string, HealthReport>();
-      for (const row of (data ?? []) as HealthReport[]) {
+      for (const row of rows) {
         if (!latest.has(row.device_id)) latest.set(row.device_id, row);
       }
       return Array.from(latest.values());
     },
-    refetchInterval: 30_000,
+    staleTime: 5 * 60_000,
+    refetchInterval: 5 * 60_000, // AI reports only generate every 15 min — no need to poll fast
   });
 }
 

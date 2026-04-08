@@ -6,7 +6,13 @@ import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 30_000, refetchInterval: 30_000, retry: 2 },
+    queries: {
+      staleTime: 5 * 60_000,   // 5 min — data is fresh, no unnecessary refetch
+      gcTime:    10 * 60_000,  // 10 min — keep cache alive after unmount
+      refetchInterval: false,  // disable global polling; each hook opts in explicitly
+      refetchOnWindowFocus: false, // don't blast requests on tab switch
+      retry: 1,                // one retry is enough for transient errors
+    },
   },
 });
 

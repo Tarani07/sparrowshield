@@ -2,14 +2,13 @@ import { useState, useMemo } from "react";
 import { Shield, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import { useFrameworks, useControls, useComplianceSnapshots } from "../hooks/useCompliance";
-import { useAllDevices } from "../hooks/useDevices";
 import { cn } from "../lib/utils";
 import { supabase } from "../lib/supabase";
 import { timeAgo } from "../lib/utils";
 
 export default function Compliance() {
   const { data: frameworks = [] } = useFrameworks();
-  const { data: devices = [] } = useAllDevices();
+  // devices data is embedded in snapshots via join — no separate useAllDevices needed
 
   const [selectedFramework, setSelectedFramework] = useState<string>("SOC2");
   const [evaluating, setEvaluating] = useState(false);
@@ -22,16 +21,14 @@ export default function Compliance() {
   const { data: controls = [] } = useControls(frameworkObj?.id);
   const { data: snapshots = [] } = useComplianceSnapshots(selectedFramework);
 
-  // Compute latest snapshot per device for selected framework
+  // Query already orders by device_id + snapshot_at desc — first occurrence per device is latest
   const latestPerDevice = useMemo(() => {
-    const map = new Map<string, (typeof snapshots)[0]>();
-    for (const s of snapshots) {
-      const existing = map.get(s.device_id);
-      if (!existing || new Date(s.snapshot_at) > new Date(existing.snapshot_at)) {
-        map.set(s.device_id, s);
-      }
-    }
-    return Array.from(map.values());
+    const seen = new Set<string>();
+    return snapshots.filter(s => {
+      if (seen.has(s.device_id)) return false;
+      seen.add(s.device_id);
+      return true;
+    });
   }, [snapshots]);
 
   // Fleet average score

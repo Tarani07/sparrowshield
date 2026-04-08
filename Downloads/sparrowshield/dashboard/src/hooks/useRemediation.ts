@@ -66,6 +66,7 @@ export function useRemediationLog(deviceId?: string) {
       if (error) throw error;
       return data as unknown as RemediationLogEntry[];
     },
-    refetchInterval: 15_000,
+    staleTime: 60_000,
+    refetchInterval: 2 * 60_000, // was 15s — remediation log changes slowly
   });
 }

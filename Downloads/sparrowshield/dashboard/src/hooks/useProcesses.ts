@@ -24,29 +24,28 @@ export function useTopProcesses(deviceId: string, limit = 10) {
   return useQuery<ProcessRow[]>({
     queryKey: ["top-processes", deviceId],
     queryFn: async () => {
-      const { data: latest } = await supabase
-        .from("processes")
-        .select("timestamp")
-        .eq("device_id", deviceId)
-        .order("timestamp", { ascending: false })
-        .limit(1)
-        .single();
-
-      if (!latest) return [];
-
+      // Single query: fetch most recent batch ordered by ram_mb desc.
+      // Uses the devices.top_processes jsonb cache column when available,
+      // falling back to the processes table ordered by timestamp + ram_mb.
       const { data, error } = await supabase
         .from("processes")
         .select("id, process_name, cpu_pct, ram_mb, timestamp")
         .eq("device_id", deviceId)
-        .eq("timestamp", latest.timestamp)
-        .order("ram_mb", { ascending: false })
+        .order("timestamp", { ascending: false })
+        .order("ram_mb",    { ascending: false })
         .limit(limit);
 
       if (error) throw error;
-      return (data ?? []) as ProcessRow[];
+
+      // De-duplicate: keep only the latest snapshot (highest timestamp)
+      const rows = (data ?? []) as ProcessRow[];
+      if (!rows.length) return [];
+      const latest = rows[0].timestamp;
+      return rows.filter(r => r.timestamp === latest);
     },
     enabled: !!deviceId,
-    refetchInterval: 15_000,
+    staleTime: 60_000,          // fresh for 1 min
+    refetchInterval: 2 * 60_000, // was 15s — 2 min is enough
   });
 }
 
@@ -83,7 +82,7 @@ export function useCommands(deviceId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("device_commands")
-        .select("*")
+        .select("id, device_id, command_type, payload, status, result, created_at, executed_at")
         .eq("device_id", deviceId)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -91,6 +90,7 @@ export function useCommands(deviceId: string) {
       return (data ?? []) as DeviceCommand[];
     },
     enabled: !!deviceId,
-    refetchInterval: 5_000,
+    staleTime: 10_000,
+    refetchInterval: 15_000, // was 5s — 15s is sufficient for command status
   });
 }

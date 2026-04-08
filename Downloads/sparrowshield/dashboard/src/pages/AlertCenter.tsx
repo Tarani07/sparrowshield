@@ -50,8 +50,11 @@ export default function AlertCenter() {
   const [showResolved, setShowResolved] = useState(false);
   const [severityFilter, setSeverityFilter] = useState("all");
 
-  const { data: openAlerts = [], isLoading: loadingOpen } = useAlerts(undefined, false);
-  const { data: resolvedAlerts = [], isLoading: loadingResolved } = useAlerts(undefined, true);
+  // Single query for ALL alerts — split client-side (avoids 2 network calls)
+  const { data: allAlerts = [], isLoading: loadingOpen } = useAlerts(undefined, undefined);
+  const openAlerts     = allAlerts.filter(a => !a.resolved);
+  const resolvedAlerts = allAlerts.filter(a =>  a.resolved);
+  const loadingResolved = false; // derived from same query
   const { mutate: resolve, isPending } = useResolveAlert();
 
   // ── Pending Approval Commands ──
@@ -66,7 +69,8 @@ export default function AlertCenter() {
       if (error) throw error;
       return (data ?? []) as unknown as PendingCommand[];
     },
-    refetchInterval: 10_000,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 
   // Approve mutation

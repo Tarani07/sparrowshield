@@ -1,5 +1,6 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import { useAllDevices } from "../hooks/useDevices";
 import type { Device } from "../lib/types";
 import { useNavigate } from "react-router-dom";
 import { Monitor, Apple, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle, RefreshCw, Trash2 } from "lucide-react";
@@ -53,18 +54,7 @@ export default function DeviceList() {
     }
   }
 
-  const { data: devices = [], isLoading, refetch, isFetching } = useQuery<Device[]>({
-    queryKey: ["all-devices"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("devices")
-        .select("*")
-        .order("last_seen", { ascending: false });
-      if (error) throw error;
-      return (data ?? []) as Device[];
-    },
-    refetchInterval: 30_000,
-  });
+  const { data: devices = [], isLoading, refetch, isFetching } = useAllDevices();
 
   const total    = devices.length;
   const online   = devices.filter(d => d.status === "online").length;
