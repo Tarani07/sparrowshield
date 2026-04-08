@@ -402,7 +402,7 @@ export default function About() {
                 [53,"Login / Authentication","❌","❌","❌","❌","notbuilt","No auth on any route or endpoint"],
                 [54,"Role-Based Access Control (RBAC)","❌","❌","❌","❌","notbuilt","Admin vs Viewer vs Agent roles"],
                 [55,"Audit Log","❌","❌","❌","❌","notbuilt","Track who did what, when"],
-              ] as const).map(([n,name,ag,be,db,da,st,note]) => (
+              ] as [number,string,string,string,string,string,string,string|null][]).map(([n,name,ag,be,db,da,st,note]) => (
                 <tr key={n} className="hover:bg-slate-800/20">
                   <td className="px-3 py-2 text-slate-600 font-mono">{n}</td>
                   <td className="px-3 py-2">
