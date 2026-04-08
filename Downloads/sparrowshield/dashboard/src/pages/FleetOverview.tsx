@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { RefreshCw, Wifi, WifiOff, Apple, Monitor, Download, ShieldAlert, Bell, Gauge } from "lucide-react";
+import { RefreshCw, Wifi, Apple, Monitor, Bell, Gauge, ChevronRight } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import StatCard from "../components/fleet/StatCard";
 import FleetHealthChart from "../components/fleet/FleetHealthChart";
@@ -9,7 +9,8 @@ import DeviceTable from "../components/fleet/DeviceTable";
 import { useFleetReports } from "../hooks/useHealthReports";
 import { useAllDevices } from "../hooks/useDevices";
 import { useAlerts } from "../hooks/useAlerts";
-import { cn } from "../lib/utils";
+import { cn, timeAgo } from "../lib/utils";
+import type { Device } from "../lib/types";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -73,6 +74,85 @@ function DonutChart({ slices, size = 120 }: { slices: { value: number; color: st
   );
 }
 
+/* Shown when health reports haven't run yet — lists enrolled devices from the devices table */
+function FallbackDeviceTable({ devices, search }: { devices: Device[]; search: string }) {
+  const navigate = useNavigate();
+  let rows = devices;
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(
+      (d) => d.hostname?.toLowerCase().includes(q) || d.assigned_user?.toLowerCase().includes(q)
+    );
+  }
+  if (rows.length === 0) {
+    return <div className="py-12 text-center text-slate-500 text-sm">No devices match your search</div>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20">
+        <p className="text-[11px] text-amber-400">AI health reports haven't generated yet — showing raw device data. Reports generate every 15 min.</p>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-800">
+            <th className="text-left py-3 px-4 font-medium">Device</th>
+            <th className="text-left py-3 px-4 font-medium">Status</th>
+            <th className="text-left py-3 px-4 font-medium">OS</th>
+            <th className="text-left py-3 px-4 font-medium">Battery</th>
+            <th className="text-left py-3 px-4 font-medium">Last Seen</th>
+            <th className="py-3 px-4" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((d) => (
+            <tr
+              key={d.id}
+              onClick={() => navigate(`/device/${d.id}`)}
+              className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors group"
+            >
+              <td className="py-3 px-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="relative flex-shrink-0">
+                    {(d.os_type === "mac" || d.os_type === "macos" || d.os_type === "darwin")
+                      ? <Apple className="w-4 h-4 text-slate-400" />
+                      : <Monitor className="w-4 h-4 text-slate-400" />}
+                    <span className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900",
+                      d.status === "online" ? "bg-green-500" : "bg-slate-600"
+                    )} />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-200 text-xs">{d.hostname ?? "—"}</p>
+                    <p className="text-slate-500 text-[10px]">{d.assigned_user ?? "unassigned"}</p>
+                  </div>
+                </div>
+              </td>
+              <td className="py-3 px-4">
+                <span className={cn(
+                  "text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase",
+                  d.status === "online" ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-700 text-slate-400"
+                )}>
+                  {d.status ?? "unknown"}
+                </span>
+              </td>
+              <td className="py-3 px-4 text-xs text-slate-400">{d.os_version ?? "—"}</td>
+              <td className="py-3 px-4 text-xs text-slate-400">
+                {d.battery_pct != null ? `${d.battery_pct}%` : "—"}
+              </td>
+              <td className="py-3 px-4 text-[10px] text-slate-500 font-mono">
+                {d.last_seen ? timeAgo(d.last_seen) : "—"}
+              </td>
+              <td className="py-3 px-4">
+                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function FleetOverview() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -83,7 +163,7 @@ export default function FleetOverview() {
   const { data: allDevices = [] } = useAllDevices();
   const { data: recentAlerts = [] } = useAlerts(undefined, false);
 
-  const total    = reports.length;
+  const total    = allDevices.length;         // always use real device count
   const healthy  = reports.filter((r) => r.health_status === "healthy").length;
   const warning  = reports.filter((r) => r.health_status === "warning").length;
   const critical = reports.filter((r) => r.health_status === "critical").length;
@@ -108,7 +188,7 @@ export default function FleetOverview() {
   const now = Date.now();
   const onlineDevices  = allDevices.filter((d) => d.last_seen && (now - new Date(d.last_seen).getTime()) < 10 * 60 * 1000).length;
   const offlineDevices = allDevices.length - onlineDevices;
-  const macDevices     = allDevices.filter((d) => d.os_type === "macos" || d.os_type === "darwin").length;
+  const macDevices     = allDevices.filter((d) => d.os_type === "mac" || d.os_type === "macos" || d.os_type === "darwin").length;
   const winDevices     = allDevices.filter((d) => d.os_type === "windows").length;
   const otherDevices   = allDevices.length - macDevices - winDevices;
   const pendingUpdates = allDevices.reduce((sum, d) => sum + (d.pending_update_count ?? 0), 0);
@@ -140,8 +220,8 @@ export default function FleetOverview() {
             <p className={cn("text-4xl font-bold font-mono", healthColor)}>{avgHealthScore}</p>
             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Avg Health</p>
           </div>
-          <StatCard label="Total Devices" value={total} icon="💻" color="default" sub={isLoading ? "Loading…" : "monitored"} />
-          <StatCard label="Healthy" value={healthy} icon="✅" color="green" sub={total ? `${Math.round((healthy / total) * 100)}% of fleet` : undefined} />
+          <StatCard label="Total Devices" value={total} icon="💻" color="default" sub={isLoading ? "Loading…" : "enrolled"} />
+          <StatCard label="Healthy" value={healthy} icon="✅" color="green" sub={reports.length ? `${Math.round((healthy / reports.length) * 100)}% of fleet` : "no reports yet"} />
           <StatCard label="Warning" value={warning} icon="⚠️" color="amber" sub="needs attention" />
           <StatCard label="Critical" value={critical} icon="🔴" color="red" sub="action required" />
         </div>
@@ -262,7 +342,7 @@ export default function FleetOverview() {
           <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
             <div>
               <h2 className="text-sm font-semibold text-slate-200">All Devices</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{total} devices · click a row to view details</p>
+              <p className="text-xs text-slate-500 mt-0.5">{allDevices.length} enrolled · click a row to view details</p>
             </div>
             {/* Filter tabs */}
             <div className="flex gap-1 flex-wrap">
@@ -285,8 +365,13 @@ export default function FleetOverview() {
 
           {isLoading ? (
             <div className="py-16 text-center text-slate-500 text-sm">Loading fleet data…</div>
-          ) : (
+          ) : reports.length > 0 ? (
             <DeviceTable reports={reports} search={search} filter={filter} />
+          ) : allDevices.length > 0 ? (
+            /* Fallback: no health reports yet — show enrolled devices directly */
+            <FallbackDeviceTable devices={allDevices} search={search} />
+          ) : (
+            <div className="py-16 text-center text-slate-500 text-sm">No devices enrolled yet</div>
           )}
         </div>
       </div>
