@@ -2,7 +2,7 @@ import { handleCors } from "../_shared/cors.ts";
 import { success, failure } from "../_shared/response.ts";
 import { getSupabase } from "../_shared/supabase.ts";
 
-const ADMIN_SECRET = Deno.env.get("FLEETPULSE_ADMIN_SECRET") ?? "";
+const ADMIN_SECRET = Deno.env.get("SPARROWSHIELD_ADMIN_SECRET") ?? "";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
