@@ -54,7 +54,7 @@ export default function DeviceList() {
     }
   }
 
-  const { data: devices = [], isLoading, refetch, isFetching } = useAllDevices();
+  const { data: devices = [], isLoading, refetch, isFetching, error } = useAllDevices();
 
   const total    = devices.length;
   const online   = devices.filter(d => d.status === "online").length;
@@ -109,6 +109,12 @@ export default function DeviceList() {
 
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-slate-500 text-sm">Loading devices...</div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+            <Monitor className="w-10 h-10 mb-3 opacity-30" />
+            <p className="text-sm text-red-400">Failed to load devices</p>
+            <p className="text-xs mt-1 text-slate-600 font-mono">{String(error)}</p>
+          </div>
         ) : devices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-500">
             <Monitor className="w-10 h-10 mb-3 opacity-30" />
