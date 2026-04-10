@@ -54,7 +54,7 @@ def load_config():
     if not path.exists():
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Could not load config: %s", e)
