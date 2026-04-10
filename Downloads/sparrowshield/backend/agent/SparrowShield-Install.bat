@@ -1,90 +1,368 @@
 @echo off
-setlocal enabledelayedexpansion
-title SparrowShield — Installing...
+setlocal EnableDelayedExpansion
+title SparrowShield Agent Installer
+echo.
+echo  ============================================
+echo   SparrowShield Agent - One-Click Installer
+echo  ============================================
+echo.
 
-:: ── Self-elevate to Administrator automatically ───────────────────────────────
-net session >/dev/null 2>&1
-if %errorlevel% neq 0 (
-    powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
+:: Run as Administrator
+net session >nul 2>&1
+if %errorLevel% NEQ 0 (
+    echo  Requesting Administrator privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
     exit /b
 )
 
-cls
-echo.
-echo  ================================================================
-echo   SparrowShield Agent  ^|  Windows One-Click Installer
-echo  ================================================================
-echo.
-echo  [1/5] Preparing...
+set INSTALL_DIR=%ProgramData%\SparrowShield
+set AGENT_PY=%INSTALL_DIR%\agent_windows.py
+set CONFIG_JSON=%INSTALL_DIR%\config.json
+set TASK_NAME=SparrowShieldAgent
 
-set "PS=%TEMP%\sparrow_install_%RANDOM%.ps1"
-if exist "%PS%" del "%PS%"
+if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
-echo $AgentB64 = @'>> "%PS%"
-echo IyEvdXNyL2Jpbi9lbnYgcHl0aG9uMwoiIiIKSGVhbFNwYXJyb3cgV2luZG93cyBhZ2VudCDigJQgY29sbGVjdHMgc3lzdGVtIG1ldHJpY3MgYW5kIGludmVudG9yeSwgc2VuZHMgdG8gYmFja2VuZC4KIiIiCgppbXBvcnQganNvbgppbXBvcnQgbG9nZ2luZwppbXBvcnQgb3MKaW1wb3J0IHBsYXRmb3JtCmltcG9ydCBzdWJwcm9jZXNzCmltcG9ydCBzeXMKaW1wb3J0IHRocmVhZGluZwppbXBvcnQgdGltZQpmcm9tIHBhdGhsaWIgaW1wb3J0IFBhdGgKCmltcG9ydCBwc3V0aWwKaW1wb3J0IHJlcXVlc3RzCgpMT0dfRElSID0gb3MuZW52aXJvbi5nZXQoIlByb2dyYW1EYXRhIiwgIkM6XFxQcm9ncmFtRGF0YSIpCkxPR19QQVRIID0gb3MucGF0aC5qb2luKExPR19ESVIsICJIZWFsU3BhcnJvdyIsICJhZ2VudC5sb2ciKQpDT05GSUdfUEFUSCA9IG9zLnBhdGguam9pbihvcy5wYXRoLmRpcm5hbWUob3MucGF0aC5hYnNwYXRoKF9fZmlsZV9fKSksICJjb25maWcuanNvbiIpCkhFQVJUQkVBVF9JTlRFUlZBTCA9IDMwMApJTlZFTlRPUllfSU5URVJWQUwgPSAzNjAwCgoKZGVmIHNldHVwX2xvZ2dpbmcoKToKICAgIHRyeToKICAgICAgICBQYXRoKExPR19ESVIsICJIZWFsU3BhcnJvdyIpLm1rZGlyKHBhcmVudHM9VHJ1ZSwgZXhpc3Rfb2s9VHJ1ZSkKICAgIGV4Y2VwdCBPU0Vycm9yOgogICAgICAgIHBhc3MKICAgIHRyeToKICAgICAgICBsb2dnaW5nLmJhc2ljQ29uZmlnKAogICAgICAgICAgICBsZXZlbD1sb2dnaW5nLklORk8sCiAgICAgICAgICAgIGZvcm1hdD0iJShhc2N0aW1lKXMgWyUobGV2ZWxuYW1lKXNdICUobWVzc2FnZSlzIiwKICAgICAgICAgICAgaGFuZGxlcnM9WwogICAgICAgICAgICAgICAgbG9nZ2luZy5GaWxlSGFuZGxlcihMT0dfUEFUSCwgZW5jb2Rpbmc9InV0Zi04IiksCiAgICAgICAgICAgICAgICBsb2dnaW5nLlN0cmVhbUhhbmRsZXIoc3lzLnN0ZGVyciksCiAgICAgICAgICAgIF0sCiAgICAgICAgKQogICAgZXhjZXB0IE9TRXJyb3I6CiAgICAgICAgbG9nZ2luZy5iYXNpY0NvbmZpZygKICAgICAgICAgICAgbGV2ZWw9bG9nZ2luZy5JTkZPLAogICAgICAgICAgICBmb3JtYXQ9IiUoYXNjdGltZSlzIFslKGxldmVsbmFtZSlzXSAlKG1lc3NhZ2UpcyIsCiAgICAgICAgICAgIGhhbmRsZXJzPVtsb2dnaW5nLlN0cmVhbUhhbmRsZXIoc3lzLnN0ZGVycildLAogICAgICAgICkKICAgIHJldHVybiBsb2dnaW5nLmdldExvZ2dlcihfX25hbWVfXykKCgpsb2dnZXIgPSBzZXR1cF9sb2dnaW5nKCkKCgpkZWYgbG9hZF9jb25maWcoKToKICAgIHBhdGggPSBQYXRoKENPTkZJR19QQVRIKQogICAgaWYgbm90IHBhdGguZXhpc3RzKCk6CiAgICAgICAgcmV0dXJuIHt9CiAgICB0cnk6CiAgICAgICAgd2l0aCBvcGVuKHBhdGgsICJyIiwgZW5jb2Rpbmc9InV0Zi04IikgYXMgZjoKICAgICAgICAgICAgcmV0dXJuIGpzb24ubG9hZChmKQogICAgZXhjZXB0IChqc29uLkpTT05EZWNvZGVFcnJvciwgT1NFcnJvcikgYXMgZToKICAgICAgICBsb2dnZXIud2FybmluZygiQ291bGQgbm90IGxvYWQgY29uZmlnOiAlcyIsIGUpCiAgICAgICAgcmV0dXJuIHt9CgoKZGVmIHNhdmVfY29uZmlnKGNvbmZpZyk6CiAgICBwYXRoID0gUGF0aChDT05GSUdfUEFUSCkKICAgIHRyeToKICAgICAgICB3aXRoIG9wZW4ocGF0aCwgInciLCBlbmNvZGluZz0idXRmLTgiKSBhcyBmOgogICAgICAgICAgICBqc29uLmR1bXAoY29uZmlnLCBmLCBpbmRlbnQ9MikKICAgIGV4Y2VwdCBPU0Vycm9yIGFzIGU6CiAgICAgICAgbG9nZ2VyLmVycm9yKCJDb3VsZCBub3Qgc2F2ZSBjb25maWc6ICVzIiwgZSkKCgpkZWYgZ2V0X3dpbmRvd3Nfc2VyaWFsKCk6CiAgICB0cnk6CiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKAogICAgICAgICAgICBbIndtaWMiLCAiYmlvcyIsICJnZXQiLCAic2VyaWFsbnVtYmVyIl0sCiAgICAgICAgICAgIGNhcHR1cmVfb3V0cHV0PVRydWUsCiAgICAgICAgICAgIHRleHQ9VHJ1ZSwKICAgICAgICAgICAgdGltZW91dD0xMCwKICAgICAgICAgICAgY3JlYXRpb25mbGFncz1zdWJwcm9jZXNzLkNSRUFURV9OT19XSU5ET1cgaWYgc3lzLnBsYXRmb3JtID09ICJ3aW4zMiIgZWxzZSAwLAogICAgICAgICkKICAgICAgICBpZiByLnJldHVybmNvZGUgPT0gMCBhbmQgci5zdGRvdXQ6CiAgICAgICAgICAgIGxpbmVzID0gW2wuc3RyaXAoKSBmb3IgbCBpbiByLnN0ZG91dC5zdHJpcCgpLnNwbGl0bGluZXMoKSBpZiBsLnN0cmlwKCldCiAgICAgICAgICAgIGlmIGxlbihsaW5lcykgPj0gMjoKICAgICAgICAgICAgICAgIHJldHVybiBsaW5lc1stMV0gb3IgInVua25vd24iCiAgICBleGNlcHQgKHN1YnByb2Nlc3MuVGltZW91dEV4cGlyZWQsIEZpbGVOb3RGb3VuZEVycm9yKToKICAgICAgICBwYXNzCiAgICByZXR1cm4gInVua25vd24iCgoKZGVmIGVucm9sbChhcGlfdXJsOiBzdHIsIGNvbmZpZzogZGljdCkgLT4gYm9vbDoKICAgIGhvc3RuYW1lID0gcGxhdGZvcm0ubm9kZSgpCiAgICBzZXJpYWxfbnVtYmVyID0gZ2V0X3dpbmRvd3Nfc2VyaWFsKCkKICAgIG9zX3R5cGUgPSAid2luZG93cyIKICAgIG9zX3ZlcnNpb24gPSBwbGF0Zm9ybS53aW4zMl92ZXIoKVsxXSBvciBwbGF0Zm9ybS5yZWxlYXNlKCkKCiAgICAjIEhhcmR3YXJlIGNvbmZpZwogICAgY3B1X21vZGVsID0gcGxhdGZvcm0ucHJvY2Vzc29yKCkgb3IgInVua25vd24iCiAgICB0cnk6CiAgICAgICAgciA9IHN1YnByb2Nlc3MucnVuKAogICAgICAgICAgICBbIndtaWMiLCAiY3B1IiwgImdldCIsICJOYW1lIiwgIi9mb3JtYXQ6dmFsdWUiXSwKICAgICAgICAgICAgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwgdGV4dD1UcnVlLCB0aW1lb3V0PTEwLAogICAgICAgICAgICBjcmVhdGlvbmZsYWdzPXN1YnByb2Nlc3MuQ1JFQVRFX05PX1dJTkRPVyBpZiBzeXMucGxhdGZvcm0gPT0gIndpbjMyIiBlbHNlIDAsCiAgICAgICAgKQogICAgICAgIGZvciBsaW5lIGluIHIuc3Rkb3V0LnNwbGl0bGluZXMoKToKICAgICAgICAgICAgaWYgbGluZS5zdGFydHN3aXRoKCJOYW1lPSIpIGFuZCBsaW5lWzU6XS5zdHJpcCgpOgogICAgICAgICAgICAgICAgY3B1X21vZGVsID0gbGluZVs1Ol0uc3RyaXAoKQogICAgICAgICAgICAgICAgYnJlYWsKICAgIGV4Y2VwdCAoc3VicHJvY2Vzcy5UaW1lb3V0RXhwaXJlZCwgRmlsZU5vdEZvdW5kRXJyb3IpOgogICAgICAgIHBhc3MKICAgIGNwdV9jb3JlcyA9IHBzdXRpbC5jcHVfY291bnQobG9naWNhbD1GYWxzZSkgb3IgcHN1dGlsLmNwdV9jb3VudCgpCiAgICByYW1fdG90YWxfZ2IgPSByb3VuZChwc3V0aWwudmlydHVhbF9tZW1vcnkoKS50b3RhbCAvICgxMDI0ICoqIDMpLCAyKQoKICAgIGJvZHkgPSB7CiAgICAgICAgImhvc3RuYW1lIjogaG9zdG5hbWUsCiAgICAgICAgInNlcmlhbF9udW1iZXIiOiBzZXJpYWxfbnVtYmVyLAogICAgICAgICJvc190eXBlIjogb3NfdHlwZSwKICAgICAgICAib3NfdmVyc2lvbiI6IG9zX3ZlcnNpb24sCiAgICAgICAgImFzc2lnbmVkX3VzZXIiOiBvcy5lbnZpcm9uLmdldCgiVVNFUk5BTUUiLCAiIiksCiAgICAgICAgImRlcGFydG1lbnQiOiAiIiwKICAgICAgICAiY3B1X21vZGVsIjogY3B1X21vZGVsLAogICAgICAgICJjcHVfY29yZXMiOiBjcHVfY29yZXMsCiAgICAgICAgInJhbV90b3RhbF9nYiI6IHJhbV90b3RhbF9nYiwKICAgIH0KCiAgICBmb3IgYXR0ZW1wdCBpbiByYW5nZSgzKToKICAgICAgICB0cnk6CiAgICAgICAgICAgIHIgPSByZXF1ZXN0cy5wb3N0KAogICAgICAgICAgICAgICAgZiJ7YXBpX3VybH0vZW5yb2xsIiwKICAgICAgICAgICAgICAgIGpzb249Ym9keSwKICAgICAgICAgICAgICAgIGhlYWRlcnM9eyJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiJ9LAogICAgICAgICAgICAgICAgdGltZW91dD0zMCwKICAgICAgICAgICAgKQogICAgICAgICAgICBkYXRhID0gci5qc29uKCkKICAgICAgICAgICAgaWYgci5zdGF0dXNfY29kZSA9PSAyMDAgYW5kIGRhdGEuZ2V0KCJzdWNjZXNzIikgYW5kIGRhdGEuZ2V0KCJkYXRhIik6CiAgICAgICAgICAgICAgICBkID0gZGF0YVsiZGF0YSJdCiAgICAgICAgICAgICAgICBjb25maWdbImRldmljZV9pZCJdID0gc3RyKGRbImRldmljZV9pZCJdKQogICAgICAgICAgICAgICAgY29uZmlnWyJkZXZpY2VfdG9rZW4iXSA9IGRbInRva2VuIl0KICAgICAgICAgICAgICAgIHNhdmVfY29uZmlnKGNvbmZpZykKICAgICAgICAgICAgICAgIGxvZ2dlci5pbmZvKCJFbnJvbGxlZCBzdWNjZXNzZnVsbHk6IGRldmljZV9pZD0lcyIsIGNvbmZpZ1siZGV2aWNlX2lkIl0pCiAgICAgICAgICAgICAgICByZXR1cm4gVHJ1ZQogICAgICAgICAgICBsb2dnZXIud2FybmluZygiRW5yb2xsIGZhaWxlZDogJXMgJXMiLCByLnN0YXR1c19jb2RlLCBkYXRhLmdldCgiZXJyb3IiKSkKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIGxvZ2dlci53YXJuaW5nKCJFbnJvbGwgYXR0ZW1wdCAlcyBmYWlsZWQ6ICVzIiwgYXR0ZW1wdCArIDEsIGUpCiAgICAgICAgdGltZS5zbGVlcCgyICoqIGF0dGVtcHQpCiAgICByZXR1cm4gRmFsc2UKCgpkZWYgcmV0cnlfcmVxdWVzdChtZXRob2QsIHVybCwgKiprd2FyZ3MpOgogICAgbGFzdF9lcnJvciA9IE5vbmUKICAgIGZvciBhdHRlbXB0IGluIHJhbmdlKDUpOgogICAgICAgIHRyeToKICAgICAgICAgICAgciA9IG1ldGhvZCh1cmwsICoqa3dhcmdzKQogICAgICAgICAgICBpZiByLnN0YXR1c19jb2RlIGluICgyMDAsIDIwMSwgMjA0KToKICAgICAgICAgICAgICAgIHJldHVybiByCiAgICAgICAgICAgIGlmIHIuc3RhdHVzX2NvZGUgaW4gKDQwMSwgNDAzLCA0MDQpOgogICAgICAgICAgICAgICAgcmV0dXJuIHIKICAgICAgICAgICAgbGFzdF9lcnJvciA9IHIudGV4dAogICAgICAgIGV4Y2VwdCByZXF1ZXN0cy5SZXF1ZXN0RXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIGxhc3RfZXJyb3IgPSBlCiAgICAgICAgdGltZS5zbGVlcCgyICoqIGF0dGVtcHQpCiAgICByYWlzZSBsYXN0X2Vycm9yCgoKZGVmIGdldF9iaXRsb2NrZXJfc3RhdHVzKCkgLT4gYm9vbDoKICAgIHRyeToKICAgICAgICByID0gc3VicHJvY2Vzcy5ydW4oCiAgICAgICAgICAgIFsibWFuYWdlLWJkZSIsICItc3RhdHVzIiwgIkM6Il0sCiAgICAgICAgICAgIGNhcHR1cmVfb3V0cHV0PVRydWUsCiAgICAgICAgICAgIHRleHQ9VHJ1ZSwKICAgICAgICAgICAgdGltZW91dD0xNSwKICAgICAgICAgICAgY3JlYXRpb25mbGFncz1zdWJwcm9jZXNzLkNSRUFURV9OT19XSU5ET1cgaWYgc3lzLnBsYXRmb3JtID09ICJ3aW4zMiIgZWxzZSAwLAogICAgICAgICkKICAgICAgICBpZiByLnJldHVybmNvZGUgPT0gMDoKICAgICAgICAgICAgcmV0dXJuICJQcm90ZWN0aW9uIE9uIiBpbiByLnN0ZG91dCBvciAiRnVsbHkgRW5jcnlwdGVkIiBpbiByLnN0ZG91dAogICAgZXhjZXB0IChzdWJwcm9jZXNzLlRpbWVvdXRFeHBpcmVkLCBGaWxlTm90Rm91bmRFcnJvcik6CiAgICAgICAgcGFzcwogICAgcmV0dXJuIEZhbHNlCgoKZGVmIGdldF9maXJld2FsbF9zdGF0dXMoKSAtPiBib29sOgogICAgdHJ5OgogICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bigKICAgICAgICAgICAgWwogICAgICAgICAgICAgICAgInBvd2Vyc2hlbGwiLAogICAgICAgICAgICAgICAgIi1Ob1Byb2ZpbGUiLAogICAgICAgICAgICAgICAgIi1Db21tYW5kIiwKICAgICAgICAgICAgICAgICJHZXQtTmV0RmlyZXdhbGxQcm9maWxlIHwgU2VsZWN0LU9iamVjdCBOYW1lLCBFbmFibGVkIiwKICAgICAgICAgICAgXSwKICAgICAgICAgICAgY2FwdHVyZV9vdXRwdXQ9VHJ1ZSwKICAgICAgICAgICAgdGV4dD1UcnVlLAogICAgICAgICAgICB0aW1lb3V0PTE1LAogICAgICAgICAgICBjcmVhdGlvbmZsYWdzPXN1YnByb2Nlc3MuQ1JFQVRFX05PX1dJTkRPVyBpZiBzeXMucGxhdGZvcm0gPT0gIndpbjMyIiBlbHNlIDAsCiAgICAgICAgKQogICAgICAgIGlmIHIucmV0dXJuY29kZSA9PSAwIGFuZCByLnN0ZG91dDoKICAgICAgICAgICAgZm9yIGxpbmUgaW4gci5zdGRvdXQuc3BsaXRsaW5lcygpOgogICAgICAgICAgICAgICAgaWYgIkRvbWFpbiIgaW4gbGluZSBvciAiUHJpdmF0ZSIgaW4gbGluZSBvciAiUHVibGljIiBpbiBsaW5lOgogICAgICAgICAgICAgICAgICAgIGlmICJUcnVlIiBpbiBsaW5lOgogICAgICAgICAgICAgICAgICAgICAgICByZXR1cm4gVHJ1ZQogICAgICAgICAgICByZXR1cm4gIlRydWUiIGluIHIuc3Rkb3V0CiAgICBleGNlcHQgKHN1YnByb2Nlc3MuVGltZW91dEV4cGlyZWQsIEZpbGVOb3RGb3VuZEVycm9yKToKICAgICAgICBwYXNzCiAgICByZXR1cm4gRmFsc2UKCgpkZWYgY29sbGVjdF9tZXRyaWNzKCkgLT4gZGljdDoKICAgIHZtID0gcHN1dGlsLnZpcnR1YWxfbWVtb3J5KCkKICAgIGRpc2sgPSBwc3V0aWwuZGlza191c2FnZSgiQzpcXCIpCiAgICBjcHVfcGN0ID0gcHN1dGlsLmNwdV9wZXJjZW50KGludGVydmFsPTIpCiAgICB1cHRpbWVfc2Vjb25kcyA9IGludCh0aW1lLnRpbWUoKSAtIHBzdXRpbC5ib290X3RpbWUoKSkgaWYgaGFzYXR0cihwc3V0aWwsICJib290X3RpbWUiKSBlbHNlIDAKCiAgICBiYXR0ZXJ5X2hlYWx0aF9wY3QgPSBOb25lCiAgICBiYXR0ZXJ5X2N5Y2xlcyA9IE5vbmUKICAgIGlmIGhhc2F0dHIocHN1dGlsLCAic2Vuc29yc19iYXR0ZXJ5IikgYW5kIHBzdXRpbC5zZW5zb3JzX2JhdHRlcnkoKToKICAgICAgICBiYXQgPSBwc3V0aWwuc2Vuc29yc19iYXR0ZXJ5KCkKICAgICAgICBiYXR0ZXJ5X2hlYWx0aF9wY3QgPSBnZXRhdHRyKGJhdCwgInBlcmNlbnQiLCBOb25lKQoKICAgIHJldHVybiB7CiAgICAgICAgImNwdV9wY3QiOiByb3VuZChjcHVfcGN0LCAyKSwKICAgICAgICAicmFtX3BjdCI6IHJvdW5kKHZtLnBlcmNlbnQsIDIpLAogICAgICAgICJyYW1fdG90YWxfZ2IiOiByb3VuZCh2bS50b3RhbCAvICgxMDI0ICoqIDMpLCAyKSwKICAgICAgICAiZGlza19wY3QiOiByb3VuZChkaXNrLnBlcmNlbnQsIDIpLAogICAgICAgICJkaXNrX3RvdGFsX2diIjogcm91bmQoZGlzay50b3RhbCAvICgxMDI0ICoqIDMpLCAyKSwKICAgICAgICAiYmF0dGVyeV9oZWFsdGhfcGN0IjogYmF0dGVyeV9oZWFsdGhfcGN0LAogICAgICAgICJiYXR0ZXJ5X2N5Y2xlcyI6IGJhdHRlcnlfY3ljbGVzLAogICAgICAgICJ1cHRpbWVfc2Vjb25kcyI6IHVwdGltZV9zZWNvbmRzLAogICAgICAgICJmaWxldmF1bHRfZW5hYmxlZCI6IE5vbmUsCiAgICAgICAgImJpdGxvY2tlcl9lbmFibGVkIjogZ2V0X2JpdGxvY2tlcl9zdGF0dXMoKSwKICAgICAgICAiZmlyZXdhbGxfZW5hYmxlZCI6IGdldF9maXJld2FsbF9zdGF0dXMoKSwKICAgIH0KCgpkZWYgaGVhcnRiZWF0X2xvb3AoYXBpX3VybDogc3RyLCB0b2tlbjogc3RyKToKICAgIHdoaWxlIFRydWU6CiAgICAgICAgdHJ5OgogICAgICAgICAgICBtZXRyaWNzID0gY29sbGVjdF9tZXRyaWNzKCkKICAgICAgICAgICAgciA9IHJldHJ5X3JlcXVlc3QoCiAgICAgICAgICAgICAgICByZXF1ZXN0cy5wb3N0LAogICAgICAgICAgICAgICAgZiJ7YXBpX3VybH0vaGVhcnRiZWF0IiwKICAgICAgICAgICAgICAgIGpzb249bWV0cmljcywKICAgICAgICAgICAgICAgIGhlYWRlcnM9ewogICAgICAgICAgICAgICAgICAgICJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsCiAgICAgICAgICAgICAgICAgICAgIkF1dGhvcml6YXRpb24iOiBmIkJlYXJlciB7dG9rZW59IiwKICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICB0aW1lb3V0PTMwLAogICAgICAgICAgICApCiAgICAgICAgICAgIGlmIHIuc3RhdHVzX2NvZGUgPT0gMjAwOgogICAgICAgICAgICAgICAgbG9nZ2VyLmRlYnVnKCJIZWFydGJlYXQgT0siKQogICAgICAgICAgICBlbGlmIHIuc3RhdHVzX2NvZGUgPT0gNDAxOgogICAgICAgICAgICAgICAgbG9nZ2VyLmVycm9yKCJUb2tlbiBpbnZhbGlkIG9yIHJldm9rZWQ7IHJlLWVucm9sbCByZXF1aXJlZCIpCiAgICAgICAgZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgICAgICAgICBsb2dnZXIuZXhjZXB0aW9uKCJIZWFydGJlYXQgZmFpbGVkOiAlcyIsIGUpCiAgICAgICAgdGltZS5zbGVlcChIRUFSVEJFQVRfSU5URVJWQUwpCgoKZGVmIGdldF9zb2Z0d2FyZV9saXN0KCk6CiAgICByZXN1bHQgPSBbXQogICAgdHJ5OgogICAgICAgIHIgPSBzdWJwcm9jZXNzLnJ1bigKICAgICAgICAgICAgWyJ3bWljIiwgInByb2R1Y3QiLCAiZ2V0IiwgIm5hbWUsdmVyc2lvbiIsICIvZm9ybWF0OmNzdiJdLAogICAgICAgICAgICBjYXB0dXJlX291dHB1dD1UcnVlLAogICAgICAgICAgICB0ZXh0PVRydWUsCiAgICAgICAgICAgIHRpbWVvdXQ9NjAsCiAgICAgICAgICAgIGNyZWF0aW9uZmxhZ3M9c3VicHJvY2Vzcy5DUkVBVEVfTk9fV0lORE9XIGlmIHN5cy5wbGF0Zm9ybSA9PSAid2luMzIiIGVsc2UgMCwKICAgICAgICApCiAgICAgICAgaWYgci5yZXR1cm5jb2RlICE9IDAgb3Igbm90IHIuc3Rkb3V0OgogICAgICAgICAgICByZXR1cm4gW10KICAgICAgICBsaW5lcyA9IFtsLnN0cmlwKCkgZm9yIGwgaW4gci5zdGRvdXQuc3RyaXAoKS5zcGxpdGxpbmVzKCkgaWYgbC5zdHJpcCgpXQogICAgICAgIGlmIGxlbihsaW5lcykgPCAyOgogICAgICAgICAgICByZXR1cm4gW10KICAgICAgICBrZXlzID0gW2suc3RyaXAoKSBmb3IgayBpbiBsaW5lc1swXS5zcGxpdCgiLCIpXQogICAgICAgIG5hbWVfaWR4ID0gbmV4dCgoaSBmb3IgaSwgayBpbiBlbnVtZXJhdGUoa2V5cykgaWYgIm5hbWUiIGluIGsubG93ZXIoKSksIDApCiAgICAgICAgdmVyc2lvbl9pZHggPSBuZXh0KChpIGZvciBpLCBrIGluIGVudW1lcmF0ZShrZXlzKSBpZiAidmVyc2lvbiIgaW4gay5sb3dlcigpKSwgMSkKICAgICAgICBmb3IgbGluZSBpbiBsaW5lc1sxOl06CiAgICAgICAgICAgIHBhcnRzID0gW3Auc3RyaXAoKSBmb3IgcCBpbiBsaW5lLnNwbGl0KCIsIildCiAgICAgICAgICAgIGlmIGxlbihwYXJ0cykgPiBtYXgobmFtZV9pZHgsIHZlcnNpb25faWR4KToKICAgICAgICAgICAgICAgIG5hbWUgPSBwYXJ0c1tuYW1lX2lkeF0gb3IgIiIKICAgICAgICAgICAgICAgIHZlcnNpb24gPSBwYXJ0c1t2ZXJzaW9uX2lkeF0gaWYgdmVyc2lvbl9pZHggPCBsZW4ocGFydHMpIGVsc2UgIiIKICAgICAgICAgICAgICAgIGlmIG5hbWU6CiAgICAgICAgICAgICAgICAgICAgcmVzdWx0LmFwcGVuZCh7ImFwcF9uYW1lIjogbmFtZVs6MjU2XSwgInZlcnNpb24iOiBzdHIodmVyc2lvbilbOjEyOF19KQogICAgICAgIHJldHVybiByZXN1bHRbOjUwMF0KICAgIGV4Y2VwdCAoc3VicHJvY2Vzcy5UaW1lb3V0RXhwaXJlZCwgRmlsZU5vdEZvdW5kRXJyb3IpIGFzIGU6CiAgICAgICAgbG9nZ2VyLndhcm5pbmcoIlNvZnR3YXJlIGludmVudG9yeSBmYWlsZWQ6ICVzIiwgZSkKICAgICAgICByZXR1cm4gW10KCgpkZWYgZ2V0X3RvcF9wcm9jZXNzZXMobGltaXQ9MjApOgogICAgcmVzdWx0ID0gW10KICAgIHRyeToKICAgICAgICBwcm9jcyA9IFtdCiAgICAgICAgZm9yIHAgaW4gcHN1dGlsLnByb2Nlc3NfaXRlcihbIm5hbWUiLCAiY3B1X3BlcmNlbnQiLCAibWVtb3J5X2luZm8iXSk6CiAgICAgICAgICAgIHRyeToKICAgICAgICAgICAgICAgIHBpbmZvID0gcC5pbmZvCiAgICAgICAgICAgICAgICBjcHUgPSBwaW5mby5nZXQoImNwdV9wZXJjZW50Iikgb3IgMAogICAgICAgICAgICAgICAgbWVtID0gKHBpbmZvLmdldCgibWVtb3J5X2luZm8iKSBvciB0eXBlKCJNIiwgKCksIHsicnNzIjogMH0pKCkpLnJzcwogICAgICAgICAgICAgICAgcHJvY3MuYXBwZW5kKChwaW5mby5nZXQoIm5hbWUiKSBvciBwLm5hbWUoKSwgY3B1LCBtZW0gLyAoMTAyNCAqIDEwMjQpKSkKICAgICAgICAgICAgZXhjZXB0IChwc3V0aWwuTm9TdWNoUHJvY2VzcywgcHN1dGlsLkFjY2Vzc0RlbmllZCk6CiAgICAgICAgICAgICAgICBjb250aW51ZQogICAgICAgIHByb2NzLnNvcnQoa2V5PWxhbWJkYSB4OiB4WzJdLCByZXZlcnNlPVRydWUpICAjIHNvcnQgYnkgUkFNICh4WzJdKSwgbm90IENQVQogICAgICAgIGZvciBuYW1lLCBjcHVfcGN0LCByYW1fbWIgaW4gcHJvY3NbOmxpbWl0XToKICAgICAgICAgICAgcmVzdWx0LmFwcGVuZCh7CiAgICAgICAgICAgICAgICAicHJvY2Vzc19uYW1lIjogKG5hbWUgb3IgInVua25vd24iKVs6MjU2XSwKICAgICAgICAgICAgICAgICJjcHVfcGN0Ijogcm91bmQoY3B1X3BjdCwgMiksCiAgICAgICAgICAgICAgICAicmFtX21iIjogcm91bmQocmFtX21iLCAyKSwKICAgICAgICAgICAgfSkKICAgIGV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgICAgICBsb2dnZXIud2FybmluZygiUHJvY2VzcyBsaXN0IGZhaWxlZDogJXMiLCBlKQogICAgcmV0dXJuIHJlc3VsdAoKCmRlZiBpbnZlbnRvcnlfbG9vcChhcGlfdXJsOiBzdHIsIHRva2VuOiBzdHIpOgogICAgd2hpbGUgVHJ1ZToKICAgICAgICB0aW1lLnNsZWVwKElOVkVOVE9SWV9JTlRFUlZBTCkKICAgICAgICB0cnk6CiAgICAgICAgICAgIHNvZnR3YXJlID0gZ2V0X3NvZnR3YXJlX2xpc3QoKQogICAgICAgICAgICBwcm9jZXNzZXMgPSBnZXRfdG9wX3Byb2Nlc3NlcygyMCkKICAgICAgICAgICAgciA9IHJldHJ5X3JlcXVlc3QoCiAgICAgICAgICAgICAgICByZXF1ZXN0cy5wb3N0LAogICAgICAgICAgICAgICAgZiJ7YXBpX3VybH0vaW52ZW50b3J5IiwKICAgICAgICAgICAgICAgIGpzb249eyJzb2Z0d2FyZSI6IHNvZnR3YXJlLCAicHJvY2Vzc2VzIjogcHJvY2Vzc2VzfSwKICAgICAgICAgICAgICAgIGhlYWRlcnM9ewogICAgICAgICAgICAgICAgICAgICJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsCiAgICAgICAgICAgICAgICAgICAgIkF1dGhvcml6YXRpb24iOiBmIkJlYXJlciB7dG9rZW59IiwKICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICB0aW1lb3V0PTYwLAogICAgICAgICAgICApCiAgICAgICAgICAgIGlmIHIuc3RhdHVzX2NvZGUgPT0gMjAwOgogICAgICAgICAgICAgICAgbG9nZ2VyLmluZm8oIkludmVudG9yeSBzZW50OiAlcyBhcHBzLCAlcyBwcm9jZXNzZXMiLCBsZW4oc29mdHdhcmUpLCBsZW4ocHJvY2Vzc2VzKSkKICAgICAgICAgICAgZWxpZiByLnN0YXR1c19jb2RlID09IDQwMToKICAgICAgICAgICAgICAgIGxvZ2dlci5lcnJvcigiVG9rZW4gaW52YWxpZDsgcmUtZW5yb2xsIHJlcXVpcmVkIikKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIGxvZ2dlci5leGNlcHRpb24oIkludmVudG9yeSBmYWlsZWQ6ICVzIiwgZSkKCgpkZWYgbWFpbigpOgogICAgY29uZmlnID0gbG9hZF9jb25maWcoKQogICAgYXBpX3VybCA9IChjb25maWcuZ2V0KCJhcGlfdXJsIikgb3IgIiIpLnJzdHJpcCgiLyIpCiAgICBpZiBub3QgYXBpX3VybDoKICAgICAgICBsb2dnZXIuZXJyb3IoImNvbmZpZy5qc29uIG1pc3NpbmcgYXBpX3VybC4gU2V0IGFwaV91cmwgdG8geW91ciBTdXBhYmFzZSBmdW5jdGlvbnMgVVJMLiIpCiAgICAgICAgc3lzLmV4aXQoMSkKCiAgICBkZXZpY2VfaWQgPSBjb25maWcuZ2V0KCJkZXZpY2VfaWQiKQogICAgdG9rZW4gPSBjb25maWcuZ2V0KCJkZXZpY2VfdG9rZW4iKQoKICAgIGlmIG5vdCB0b2tlbiBvciBub3QgZGV2aWNlX2lkOgogICAgICAgIGxvZ2dlci5pbmZvKCJObyBkZXZpY2VfaWQvdG9rZW47IGVucm9sbGluZy4uLiIpCiAgICAgICAgaWYgbm90IGVucm9sbChhcGlfdXJsLCBjb25maWcpOgogICAgICAgICAgICBsb2dnZXIuZXJyb3IoIkVucm9sbG1lbnQgZmFpbGVkLiBDaGVjayBhcGlfdXJsIGFuZCBuZXR3b3JrLiIpCiAgICAgICAgICAgIHN5cy5leGl0KDEpCiAgICAgICAgdG9rZW4gPSBjb25maWcuZ2V0KCJkZXZpY2VfdG9rZW4iKQogICAgICAgIGRldmljZV9pZCA9IGNvbmZpZy5nZXQoImRldmljZV9pZCIpCgogICAgbG9nZ2VyLmluZm8oIlN0YXJ0aW5nIGFnZW50IGZvciBkZXZpY2VfaWQ9JXMiLCBkZXZpY2VfaWQpCgogICAgdCA9IHRocmVhZGluZy5UaHJlYWQodGFyZ2V0PWludmVudG9yeV9sb29wLCBhcmdzPShhcGlfdXJsLCB0b2tlbiksIGRhZW1vbj1UcnVlKQogICAgdC5zdGFydCgpCgogICAgaGVhcnRiZWF0X2xvb3AoYXBpX3VybCwgdG9rZW4pCgoKaWYgX19uYW1lX18gPT0gIl9fbWFpbl9fIjoKICAgIG1haW4oKQo=>> "%PS%"
-echo '@>> "%PS%"
-echo $InstallDir = 'C:\ProgramData\SparrowShield'>> "%PS%"
-echo $AgentPy    = "$InstallDir\agent_windows.py">> "%PS%"
-echo $ConfigJson = "$InstallDir\config.json">> "%PS%"
-echo $TaskName   = 'SparrowShieldAgent'>> "%PS%"
-echo >> "%PS%"
-echo Write-Host '  [2/5] Extracting agent...' -ForegroundColor Yellow>> "%PS%"
-echo New-Item -ItemType Directory -Force -Path $InstallDir ^| Out-Null>> "%PS%"
-echo $bytes = [Convert]::FromBase64String($AgentB64.Trim())>> "%PS%"
-echo [System.IO.File]::WriteAllBytes($AgentPy, $bytes)>> "%PS%"
-echo Write-Host '        agent_windows.py extracted  OK' -ForegroundColor Green>> "%PS%"
-echo >> "%PS%"
-echo $cfg = '{"api_url":"https://hevcfhxmjgbpozqtescm.supabase.co/functions/v1","anon_key":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhldmNmaHhtamdicG96cXRlc2NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyMjk4NDYsImV4cCI6MjA4NjgwNTg0Nn0.CaXbG8F54bXV0_biNka7vp6Cl1s7vvQsRogNoz7jB28","device_id":"","device_token":""}' >> "%PS%"
-echo Set-Content -Path $ConfigJson -Value $cfg -Encoding UTF8>> "%PS%"
-echo Write-Host '        config.json created  OK' -ForegroundColor Green>> "%PS%"
-echo >> "%PS%"
-echo Write-Host '  [3/5] Checking Python...' -ForegroundColor Yellow>> "%PS%"
-echo $python = $null>> "%PS%"
-echo foreach ($p in @('python','python3','py')) {>> "%PS%"
-echo     try { $v = (^& $p --version 2^>^&1); if ($v -match 'Python 3') { $python = $p; break } } catch {}>> "%PS%"
-echo }>> "%PS%"
-echo if (-not $python) {>> "%PS%"
-echo     Write-Host '        Python not found - installing via winget...' -ForegroundColor Yellow>> "%PS%"
-echo     winget install --id Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements 2^>^&1 ^| Out-Null>> "%PS%"
-echo     $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('PATH','User')>> "%PS%"
-echo     $python = 'python'>> "%PS%"
-echo     Write-Host '        Python installed  OK' -ForegroundColor Green>> "%PS%"
-echo } else {>> "%PS%"
-echo     $ver = (^& $python --version 2^>^&1)>> "%PS%"
-echo     Write-Host "        $ver found" -ForegroundColor Green>> "%PS%"
-echo }>> "%PS%"
-echo ^& $python -m pip install psutil requests --quiet --disable-pip-version-check 2^>^&1 ^| Out-Null>> "%PS%"
-echo Write-Host '        psutil + requests installed  OK' -ForegroundColor Green>> "%PS%"
-echo >> "%PS%"
-echo Write-Host '  [4/5] Registering auto-start task...' -ForegroundColor Yellow>> "%PS%"
-echo Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue>> "%PS%"
-echo $pythonExe = (^& $python -c 'import sys; print(sys.executable)' 2^>^&1).Trim()>> "%PS%"
-echo $action   = New-ScheduledTaskAction -Execute $pythonExe -Argument "`"$AgentPy`"" -WorkingDirectory $InstallDir>> "%PS%"
-echo $triggers = @($(New-ScheduledTaskTrigger -AtLogOn), $(New-ScheduledTaskTrigger -AtStartup))>> "%PS%"
-echo $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Days 365) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable>> "%PS%"
-echo $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest -LogonType ServiceAccount>> "%PS%"
-echo Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggers -Settings $settings -Principal $principal -Description 'SparrowShield IT monitoring agent' -Force ^| Out-Null>> "%PS%"
-echo Write-Host '        Scheduled task registered  OK' -ForegroundColor Green>> "%PS%"
-echo >> "%PS%"
-echo Write-Host '  [5/5] Starting agent...' -ForegroundColor Yellow>> "%PS%"
-echo Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue>> "%PS%"
-echo Start-Sleep -Seconds 2>> "%PS%"
-echo $state = (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue).State>> "%PS%"
-echo Write-Host "        Agent state: $state" -ForegroundColor Green>> "%PS%"
-echo >> "%PS%"
-echo Write-Host '' >> "%PS%"
-echo Write-Host '================================================================' -ForegroundColor Green>> "%PS%"
-echo Write-Host '   Installation Complete!' -ForegroundColor Green>> "%PS%"
-echo Write-Host '   Install dir : C:\ProgramData\SparrowShield' -ForegroundColor Green>> "%PS%"
-echo Write-Host '   Log file    : C:\ProgramData\SparrowShield\agent.log' -ForegroundColor Green>> "%PS%"
-echo Write-Host '   Device appears in the SparrowShield dashboard within 5 min.' -ForegroundColor Green>> "%PS%"
-echo Write-Host '================================================================' -ForegroundColor Green>> "%PS%"
-echo Write-Host ''>> "%PS%"
-echo Read-Host 'Press Enter to close'>> "%PS%"
+:: ── Step 1: Write config.json ─────────────────────────────────────────────────
+echo  [1/5] Writing config...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+ "$c = [ordered]@{ api_url='https://hevcfhxmjgbpozqtescm.supabase.co/functions/v1'; anon_key='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhldmNmaHhtamdicG96cXRlc2NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyMjk4NDYsImV4cCI6MjA4NjgwNTg0Nn0.CaXbG8F54bXV0_biNka7vp6Cl1s7vvQsRogNoz7jB28'; device_id=''; device_token='' }; $c | ConvertTo-Json | Set-Content -Path '%CONFIG_JSON%' -Encoding UTF8"
+
+:: ── Step 2: Write agent_windows.py ───────────────────────────────────────────
+echo  [2/5] Writing agent script...
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+ "$code = @'" ^& echo. ^& ^
+"#!/usr/bin/env python3" ^& echo. ^& ^
+"'@; Set-Content -Path '%AGENT_PY%' -Value '' -Encoding UTF8"
+
+:: Write Python source via PowerShell here-string (most reliable for special chars)
+set PS_TMP=%TEMP%\ss_write_agent.ps1
+(
+echo $dest = '%AGENT_PY%'
+echo $code = @'
+echo #!/usr/bin/env python3
+echo """SparrowShield Windows Agent"""
+echo import json, logging, os, platform, subprocess, sys, threading, time
+echo from pathlib import Path
+echo import psutil, requests
+echo.
+echo LOG_DIR = os.environ.get("ProgramData", "C:\\ProgramData")
+echo LOG_PATH = os.path.join(LOG_DIR, "HealSparrow", "agent.log")
+echo CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+echo HEARTBEAT_INTERVAL = 300
+echo INVENTORY_INTERVAL = 3600
+echo.
+echo def setup_logging():
+echo     try:
+echo         Path(LOG_DIR, "HealSparrow").mkdir(parents=True, exist_ok=True)
+echo     except OSError:
+echo         pass
+echo     try:
+echo         logging.basicConfig(level=logging.INFO,
+echo             format="%(asctime)s [%(levelname)s] %(message)s",
+echo             handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8"),
+echo                       logging.StreamHandler(sys.stderr)])
+echo     except OSError:
+echo         logging.basicConfig(level=logging.INFO,
+echo             format="%(asctime)s [%(levelname)s] %(message)s",
+echo             handlers=[logging.StreamHandler(sys.stderr)])
+echo     return logging.getLogger(__name__)
+echo.
+echo logger = setup_logging()
+echo.
+echo def load_config():
+echo     path = Path(CONFIG_PATH)
+echo     if not path.exists():
+echo         return {}
+echo     try:
+echo         with open(path, "r", encoding="utf-8") as f:
+echo             return json.load(f)
+echo     except (json.JSONDecodeError, OSError) as e:
+echo         logger.warning("Could not load config: %%s", e)
+echo         return {}
+echo.
+echo def save_config(config):
+echo     try:
+echo         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+echo             json.dump(config, f, indent=2)
+echo     except OSError as e:
+echo         logger.error("Could not save config: %%s", e)
+echo.
+echo def get_windows_serial():
+echo     try:
+echo         r = subprocess.run(["wmic", "bios", "get", "serialnumber"],
+echo             capture_output=True, text=True, timeout=10,
+echo             creationflags=subprocess.CREATE_NO_WINDOW)
+echo         if r.returncode == 0 and r.stdout:
+echo             lines = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
+echo             if len(lines) >= 2:
+echo                 return lines[-1] or "unknown"
+echo     except (subprocess.TimeoutExpired, FileNotFoundError):
+echo         pass
+echo     return "unknown"
+echo.
+echo def enroll(api_url, config):
+echo     cpu_model = platform.processor() or "unknown"
+echo     try:
+echo         r = subprocess.run(["wmic", "cpu", "get", "Name", "/format:value"],
+echo             capture_output=True, text=True, timeout=10,
+echo             creationflags=subprocess.CREATE_NO_WINDOW)
+echo         for line in r.stdout.splitlines():
+echo             if line.startswith("Name=") and line[5:].strip():
+echo                 cpu_model = line[5:].strip(); break
+echo     except (subprocess.TimeoutExpired, FileNotFoundError):
+echo         pass
+echo     body = {
+echo         "hostname": platform.node(),
+echo         "serial_number": get_windows_serial(),
+echo         "os_type": "windows",
+echo         "os_version": platform.win32_ver()[1] or platform.release(),
+echo         "assigned_user": os.environ.get("USERNAME", ""),
+echo         "department": "",
+echo         "cpu_model": cpu_model,
+echo         "cpu_cores": psutil.cpu_count(logical=False) or psutil.cpu_count(),
+echo         "ram_total_gb": round(psutil.virtual_memory().total / (1024 ** 3), 2),
+echo     }
+echo     anon_key = config.get("anon_key", "")
+echo     hdrs = {"Content-Type": "application/json", "apikey": anon_key,
+echo             "Authorization": f"Bearer {anon_key}"}
+echo     for attempt in range(3):
+echo         try:
+echo             r = requests.post(f"{api_url}/enroll", json=body, headers=hdrs, timeout=30)
+echo             data = r.json()
+echo             if r.status_code == 200 and data.get("success") and data.get("data"):
+echo                 d = data["data"]
+echo                 config["device_id"] = str(d["device_id"])
+echo                 config["device_token"] = d["token"]
+echo                 save_config(config)
+echo                 logger.info("Enrolled: device_id=%%s", config["device_id"])
+echo                 return True
+echo             logger.warning("Enroll failed: %%s %%s", r.status_code, data.get("error"))
+echo         except Exception as e:
+echo             logger.warning("Enroll attempt %%s failed: %%s", attempt + 1, e)
+echo         time.sleep(2 ** attempt)
+echo     return False
+echo.
+echo def retry_request(method, url, **kwargs):
+echo     last_error = None
+echo     for attempt in range(5):
+echo         try:
+echo             r = method(url, **kwargs)
+echo             if r.status_code in (200, 201, 204): return r
+echo             if r.status_code in (401, 403, 404): return r
+echo             last_error = r.text
+echo         except requests.RequestException as e:
+echo             last_error = e
+echo         time.sleep(2 ** attempt)
+echo     raise last_error
+echo.
+echo def get_bitlocker_status():
+echo     try:
+echo         r = subprocess.run(["manage-bde", "-status", "C:"],
+echo             capture_output=True, text=True, timeout=15,
+echo             creationflags=subprocess.CREATE_NO_WINDOW)
+echo         if r.returncode == 0:
+echo             return "Protection On" in r.stdout or "Fully Encrypted" in r.stdout
+echo     except (subprocess.TimeoutExpired, FileNotFoundError):
+echo         pass
+echo     return False
+echo.
+echo def get_firewall_status():
+echo     try:
+echo         r = subprocess.run(
+echo             ["powershell", "-NoProfile", "-Command",
+echo              "Get-NetFirewallProfile | Select-Object Name, Enabled"],
+echo             capture_output=True, text=True, timeout=15,
+echo             creationflags=subprocess.CREATE_NO_WINDOW)
+echo         if r.returncode == 0 and r.stdout:
+echo             for line in r.stdout.splitlines():
+echo                 if ("Domain" in line or "Private" in line or "Public" in line) and "True" in line:
+echo                     return True
+echo     except (subprocess.TimeoutExpired, FileNotFoundError):
+echo         pass
+echo     return False
+echo.
+echo def collect_metrics():
+echo     vm = psutil.virtual_memory()
+echo     disk = psutil.disk_usage("C:\\")
+echo     cpu_pct = psutil.cpu_percent(interval=2)
+echo     uptime_seconds = int(time.time() - psutil.boot_time())
+echo     battery_health_pct = None
+echo     if hasattr(psutil, "sensors_battery") and psutil.sensors_battery():
+echo         battery_health_pct = getattr(psutil.sensors_battery(), "percent", None)
+echo     return {
+echo         "cpu_pct": round(cpu_pct, 2),
+echo         "ram_pct": round(vm.percent, 2),
+echo         "ram_total_gb": round(vm.total / (1024 ** 3), 2),
+echo         "disk_pct": round(disk.percent, 2),
+echo         "disk_total_gb": round(disk.total / (1024 ** 3), 2),
+echo         "battery_health_pct": battery_health_pct,
+echo         "battery_cycles": None,
+echo         "uptime_seconds": uptime_seconds,
+echo         "filevault_enabled": None,
+echo         "bitlocker_enabled": get_bitlocker_status(),
+echo         "firewall_enabled": get_firewall_status(),
+echo     }
+echo.
+echo def heartbeat_loop(api_url, token, anon_key=""):
+echo     while True:
+echo         try:
+echo             r = retry_request(requests.post, f"{api_url}/heartbeat",
+echo                 json=collect_metrics(),
+echo                 headers={"Content-Type": "application/json",
+echo                          "apikey": anon_key,
+echo                          "Authorization": f"Bearer {token}"},
+echo                 timeout=30)
+echo             if r.status_code == 200: logger.debug("Heartbeat OK")
+echo             elif r.status_code == 401: logger.error("Token invalid; re-enroll required")
+echo         except Exception as e:
+echo             logger.exception("Heartbeat failed: %%s", e)
+echo         time.sleep(HEARTBEAT_INTERVAL)
+echo.
+echo def get_software_list():
+echo     try:
+echo         r = subprocess.run(
+echo             ["wmic", "product", "get", "name,version", "/format:csv"],
+echo             capture_output=True, text=True, timeout=60,
+echo             creationflags=subprocess.CREATE_NO_WINDOW)
+echo         if r.returncode != 0 or not r.stdout: return []
+echo         lines = [l.strip() for l in r.stdout.strip().splitlines() if l.strip()]
+echo         if len(lines) < 2: return []
+echo         keys = [k.strip() for k in lines[0].split(",")]
+echo         ni = next((i for i,k in enumerate(keys) if "name" in k.lower()), 0)
+echo         vi = next((i for i,k in enumerate(keys) if "version" in k.lower()), 1)
+echo         result = []
+echo         for line in lines[1:]:
+echo             parts = [p.strip() for p in line.split(",")]
+echo             if len(parts) > max(ni, vi) and parts[ni]:
+echo                 result.append({"app_name": parts[ni][:256],
+echo                                "version": str(parts[vi] if vi < len(parts) else "")[:128]})
+echo         return result[:500]
+echo     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+echo         logger.warning("Software inventory failed: %%s", e)
+echo         return []
+echo.
+echo def get_top_processes(limit=20):
+echo     result = []
+echo     try:
+echo         procs = []
+echo         for p in psutil.process_iter(["name", "cpu_percent", "memory_info"]):
+echo             try:
+echo                 pi = p.info
+echo                 mem = (pi.get("memory_info") or type("M",(),{"rss":0})()).rss
+echo                 procs.append((pi.get("name") or p.name(), pi.get("cpu_percent") or 0, mem/1048576))
+echo             except (psutil.NoSuchProcess, psutil.AccessDenied):
+echo                 continue
+echo         procs.sort(key=lambda x: x[2], reverse=True)
+echo         for name, cpu, ram in procs[:limit]:
+echo             result.append({"process_name": (name or "unknown")[:256],
+echo                            "cpu_pct": round(cpu, 2), "ram_mb": round(ram, 2)})
+echo     except Exception as e:
+echo         logger.warning("Process list failed: %%s", e)
+echo     return result
+echo.
+echo def inventory_loop(api_url, token, anon_key=""):
+echo     while True:
+echo         time.sleep(INVENTORY_INTERVAL)
+echo         try:
+echo             r = retry_request(requests.post, f"{api_url}/inventory",
+echo                 json={"software": get_software_list(), "processes": get_top_processes(20)},
+echo                 headers={"Content-Type": "application/json",
+echo                          "apikey": anon_key,
+echo                          "Authorization": f"Bearer {token}"},
+echo                 timeout=60)
+echo             if r.status_code == 200: logger.info("Inventory sent OK")
+echo             elif r.status_code == 401: logger.error("Token invalid; re-enroll required")
+echo         except Exception as e:
+echo             logger.exception("Inventory failed: %%s", e)
+echo.
+echo def main():
+echo     config = load_config()
+echo     api_url = (config.get("api_url") or "").rstrip("/")
+echo     if not api_url:
+echo         logger.error("config.json missing api_url")
+echo         sys.exit(1)
+echo     if not config.get("device_token") or not config.get("device_id"):
+echo         logger.info("Enrolling device...")
+echo         if not enroll(api_url, config):
+echo             logger.error("Enrollment failed. Check api_url and network.")
+echo             sys.exit(1)
+echo     token = config.get("device_token")
+echo     anon_key = config.get("anon_key", "")
+echo     logger.info("Agent started for device_id=%%s", config.get("device_id"))
+echo     t = threading.Thread(target=inventory_loop, args=(api_url, token, anon_key), daemon=True)
+echo     t.start()
+echo     heartbeat_loop(api_url, token, anon_key)
+echo.
+echo if __name__ == "__main__":
+echo     main()
+echo '@
+echo Set-Content -Path $dest -Value $code -Encoding UTF8
+) > "%PS_TMP%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_TMP%"
+del "%PS_TMP%" >nul 2>&1
+
+:: ── Step 3: Check / Install Python ───────────────────────────────────────────
+echo  [3/5] Checking Python...
+python --version >nul 2>&1
+if %errorLevel% NEQ 0 (
+    echo      Python not found - installing via winget...
+    winget install --id Python.Python.3.11 --silent --accept-package-agreements --accept-source-agreements
+    if %errorLevel% NEQ 0 (
+        echo      winget failed - downloading Python 3.11 installer...
+        powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+          "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile '%TEMP%\python_setup.exe' -UseBasicParsing"
+        "%TEMP%\python_setup.exe" /quiet InstallAllUsers=1 PrependPath=1
+        del "%TEMP%\python_setup.exe" >nul 2>&1
+    )
+    :: Refresh PATH after install
+    for /f "usebackq tokens=*" %%i in (`powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('PATH','Machine')"`) do set PATH=%%i;%PATH%
+)
+python --version >nul 2>&1
+if %errorLevel% NEQ 0 (
+    echo  [ERROR] Python not found after install. Please install Python 3.11 manually from python.org and re-run.
+    pause & exit /b 1
+)
+
+:: ── Step 4: Install pip packages ─────────────────────────────────────────────
+echo  [4/5] Installing dependencies...
+python -m pip install --quiet --upgrade pip >nul 2>&1
+python -m pip install --quiet psutil requests
+if %errorLevel% NEQ 0 (
+    echo  [ERROR] Failed to install dependencies. Check your internet connection.
+    pause & exit /b 1
+)
+
+:: ── Step 5: Register Windows Scheduled Task ───────────────────────────────────
+echo  [5/5] Registering startup task...
+schtasks /query /tn "%TASK_NAME%" >nul 2>&1
+if %errorLevel% EQU 0 schtasks /delete /tn "%TASK_NAME%" /f >nul 2>&1
+
+schtasks /create ^
+  /tn "%TASK_NAME%" ^
+  /tr "pythonw \"%AGENT_PY%\"" ^
+  /sc ONLOGON ^
+  /rl HIGHEST ^
+  /f >nul 2>&1
+
+if %errorLevel% EQU 0 (
+    echo      Auto-start registered - agent will run on every login.
+) else (
+    echo      Could not register task - start the agent manually if needed.
+)
+
+:: ── Launch agent now ──────────────────────────────────────────────────────────
+echo.
+echo  Starting SparrowShield agent...
+start "" pythonw "%AGENT_PY%"
+timeout /t 3 >nul
 
 echo.
-echo  Running installer — this may take 1-2 minutes...
+echo  ============================================
+echo   Done! SparrowShield agent is running.
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%PS%"
-del "%PS%" 2>/dev/null
+echo   Install path : %INSTALL_DIR%
+echo   Log file     : %ProgramData%\HealSparrow\agent.log
+echo   Auto-start   : On every Windows login
+echo  ============================================
+echo.
 pause
