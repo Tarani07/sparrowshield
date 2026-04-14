@@ -12,6 +12,13 @@ import { useAlerts } from "../hooks/useAlerts";
 import { cn, timeAgo } from "../lib/utils";
 import type { Device } from "../lib/types";
 
+function computeDeviceStatus(device: Device): string {
+  if (!device.last_seen) return "offline";
+  const minutesAgo = (Date.now() - new Date(device.last_seen).getTime()) / 60000;
+  if (minutesAgo > 15) return "offline";
+  return device.status || "online";
+}
+
 const FILTERS = [
   { key: "all", label: "All" },
   { key: "critical", label: "🔴 Critical" },
@@ -118,7 +125,7 @@ function FallbackDeviceTable({ devices, search }: { devices: Device[]; search: s
                       : <Monitor className="w-4 h-4 text-slate-400" />}
                     <span className={cn(
                       "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900",
-                      d.status === "online" ? "bg-green-500" : "bg-slate-600"
+                      computeDeviceStatus(d) === "online" ? "bg-green-500" : "bg-slate-600"
                     )} />
                   </div>
                   <div>
@@ -130,9 +137,9 @@ function FallbackDeviceTable({ devices, search }: { devices: Device[]; search: s
               <td className="py-3 px-4">
                 <span className={cn(
                   "text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase",
-                  d.status === "online" ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-700 text-slate-400"
+                  computeDeviceStatus(d) === "online" ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-700 text-slate-400"
                 )}>
-                  {d.status ?? "unknown"}
+                  {computeDeviceStatus(d)}
                 </span>
               </td>
               <td className="py-3 px-4 text-xs text-slate-400">{d.os_version ?? "—"}</td>
@@ -186,7 +193,7 @@ export default function FleetOverview() {
 
   // ── New stats ──
   const now = Date.now();
-  const onlineDevices  = allDevices.filter((d) => d.last_seen && (now - new Date(d.last_seen).getTime()) < 10 * 60 * 1000).length;
+  const onlineDevices  = allDevices.filter((d) => computeDeviceStatus(d) === "online").length;
   const offlineDevices = allDevices.length - onlineDevices;
   const macDevices     = allDevices.filter((d) => d.os_type === "mac" || d.os_type === "macos" || d.os_type === "darwin").length;
   const winDevices     = allDevices.filter((d) => d.os_type === "windows").length;

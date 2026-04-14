@@ -7,6 +7,14 @@ import { Monitor, Apple, Wifi, WifiOff, AlertTriangle, CheckCircle, XCircle, Ref
 import { cn } from "../lib/utils";
 import { useState } from "react";
 
+// Compute real status from last_seen — don't trust the DB field which never resets
+function computeStatus(device: Device): string {
+  if (!device.last_seen) return "offline";
+  const minutesAgo = (Date.now() - new Date(device.last_seen).getTime()) / 60000;
+  if (minutesAgo > 15) return "offline";
+  return device.status || "online";
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
     online:   { label: "Online",   icon: Wifi,          cls: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30" },
@@ -57,10 +65,10 @@ export default function DeviceList() {
   const { data: devices = [], isLoading, refetch, isFetching, error } = useAllDevices();
 
   const total    = devices.length;
-  const online   = devices.filter(d => d.status === "online").length;
-  const offline  = devices.filter(d => d.status === "offline").length;
-  const warning  = devices.filter(d => d.status === "warning").length;
-  const critical = devices.filter(d => d.status === "critical").length;
+  const online   = devices.filter(d => computeStatus(d) === "online").length;
+  const offline  = devices.filter(d => computeStatus(d) === "offline").length;
+  const warning  = devices.filter(d => computeStatus(d) === "warning").length;
+  const critical = devices.filter(d => computeStatus(d) === "critical").length;
   const macs     = devices.filter(d => d.os_type === "mac").length;
   const windows  = devices.filter(d => d.os_type === "windows").length;
 
@@ -155,7 +163,7 @@ export default function DeviceList() {
                   <td className="px-4 py-3.5 text-slate-400">{d.os_version || d.os_type}</td>
                   <td className="px-4 py-3.5 text-slate-400 max-w-[160px] truncate">{(d as any).cpu_model || "—"}</td>
                   <td className="px-4 py-3.5 text-slate-400">{(d as any).ram_total_gb ? `${(d as any).ram_total_gb} GB` : "—"}</td>
-                  <td className="px-4 py-3.5"><StatusBadge status={d.status} /></td>
+                  <td className="px-4 py-3.5"><StatusBadge status={computeStatus(d)} /></td>
                   <td className="px-4 py-3.5 text-slate-500 text-xs">
                     {d.last_seen ? new Date(d.last_seen).toLocaleString() : "Never"}
                   </td>
