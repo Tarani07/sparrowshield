@@ -17,7 +17,7 @@ from pathlib import Path
 import psutil
 import requests
 
-LOG_PATH = "/var/log/healsparrow-agent.log"
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600

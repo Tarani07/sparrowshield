@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck, Info } from "lucide-react";
+import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck, Info, LogOut } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "@tanstack/react-query";
@@ -19,7 +19,7 @@ const MAC_AGENT_PATH   = "/agents/sparrowshield-mac-agent.zip";
 const WIN_AGENT_PATH   = "/agents/sparrowshield-windows-agent.zip";
 const CONFIG_PATH      = "/agents/config.json";
 
-export default function Sidebar() {
+export default function Sidebar({ onSignOut, userEmail }: { onSignOut?: () => void; userEmail?: string }) {
   const [expanded, setExpanded] = useState(false);
 
   const { data: deviceCount = 0 } = useQuery<number>({
@@ -151,11 +151,28 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-5 py-4 border-t border-slate-800">
+      <div className="px-4 py-4 border-t border-slate-800 space-y-2">
         <div className="flex items-center gap-2 text-xs text-slate-600">
           <Activity className="w-3 h-3" />
           <span>Auto-refresh 30s</span>
         </div>
+        {userEmail && (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded-full bg-indigo-600/30 border border-indigo-600/50 flex items-center justify-center flex-shrink-0">
+              <span className="text-[10px] text-indigo-400 font-bold">{userEmail[0].toUpperCase()}</span>
+            </div>
+            <span className="text-[10px] text-slate-500 truncate flex-1">{userEmail}</span>
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                title="Sign out"
+                className="flex-shrink-0 text-slate-600 hover:text-red-400 transition-colors"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </aside>
   );
