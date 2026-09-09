@@ -798,6 +798,245 @@ def notify_slack(api_url, anon_key, event_type, title, message, severity, fields
 
 
 # ──────────────────────────────────────────────
+# DETECTION ENGINE
+# ──────────────────────────────────────────────
+
+# Known indicators of compromise
+_CRYPTO_MINERS = {
+    "xmrig", "cpuminer", "minerd", "nbminer", "cgminer", "bfgminer",
+    "ethminer", "t-rex", "lolminer", "gminer", "phoenixminer",
+    "teamredminer", "nanominer", "trex", "srbminer", "wildrig",
+    "jasminer", "rigel", "bzminer", "xmr-stak",
+}
+_TUNNELING_TOOLS = {
+    "ngrok", "frp", "frpc", "chisel", "ligolo", "rpivot", "revsocks",
+    "bore", "rathole", "pwncat", "socat", "cloudflared",
+}
+_SHELL_PROCS = {"bash", "sh", "zsh", "fish", "python", "python3", "python2", "ruby", "perl", "nc", "ncat", "netcat"}
+_BACKDOOR_PORTS = {4444, 1337, 31337, 4545, 6666, 6667, 7777, 12345, 54321, 9999, 1234, 31335, 5555, 2222}
+_MALICIOUS_APPS = {
+    "macstealer", "atomicstealer", "realst", "amos", "cthulhu",
+    "coinminer", "cryptominer", "xmrig", "minerd",
+}
+_SYSTEM_PROCS = {
+    "kernel_task", "launchd", "kextd", "configd", "mds", "mdworker",
+    "WindowServer", "coreaudiod", "coreduetd", "symptomsd",
+}
+
+
+def post_alert(rest_url: str, anon_key: str, device_id: str,
+               rule_id: str, alert_type: str, severity: str,
+               message: str, mitre_technique: str = None):
+    """Insert alert into DB, skipping if an identical open alert already exists."""
+    if not rest_url or not anon_key or not device_id:
+        return
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {anon_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        # Dedup: skip if unresolved alert with same rule_id exists for this device
+        chk = requests.get(
+            f"{rest_url}/alerts?device_id=eq.{device_id}&rule_id=eq.{rule_id}&resolved=eq.false&limit=1",
+            headers=headers, timeout=8,
+        )
+        if chk.status_code == 200 and chk.json():
+            return  # already open — no duplicate
+
+        body = {
+            "device_id":       device_id,
+            "alert_type":      alert_type,
+            "severity":        severity,
+            "message":         message,
+            "rule_id":         rule_id,
+            "resolved":        False,
+        }
+        if mitre_technique:
+            body["mitre_technique"] = mitre_technique
+
+        r = requests.post(f"{rest_url}/alerts", json=body, headers=headers, timeout=10)
+        if r.status_code in (200, 201):
+            logger.info("[DETECTION] Alert posted: %s (%s)", alert_type, severity)
+        else:
+            logger.debug("[DETECTION] Alert post %s: %s", r.status_code, r.text[:200])
+    except Exception as e:
+        logger.debug("[DETECTION] post_alert error: %s", e)
+
+
+def resolve_alert(rest_url: str, anon_key: str, device_id: str, rule_id: str):
+    """Auto-resolve an open alert when the condition clears."""
+    if not rest_url or not anon_key or not device_id:
+        return
+    headers = {"apikey": anon_key, "Authorization": f"Bearer {anon_key}", "Content-Type": "application/json"}
+    try:
+        requests.patch(
+            f"{rest_url}/alerts?device_id=eq.{device_id}&rule_id=eq.{rule_id}&resolved=eq.false",
+            json={"resolved": True, "resolved_at": datetime.now(timezone.utc).isoformat()},
+            headers=headers, timeout=8,
+        )
+    except Exception:
+        pass
+
+
+def run_detection_engine(metrics: dict, rest_url: str, anon_key: str, device_id: str, hostname: str):
+    """Evaluate all detection rules against the current metrics snapshot."""
+    if not rest_url or not device_id:
+        return
+
+    top_procs = metrics.get("top_processes") or []
+    proc_names = {(p.get("process_name") or "").lower() for p in top_procs}
+    listening  = metrics.get("listening_ports") or []
+
+    # ── 1. Security posture ──────────────────────────────────────────────
+
+    if metrics.get("filevault_enabled") is False:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="filevault_disabled", alert_type="filevault_disabled",
+                   severity="critical",
+                   message=f"FileVault disk encryption is disabled on {hostname}. Data at rest is unprotected.",
+                   mitre_technique="T1486")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "filevault_disabled")
+
+    if metrics.get("firewall_enabled") is False:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="firewall_disabled", alert_type="firewall_disabled",
+                   severity="warning",
+                   message=f"Host firewall is disabled on {hostname}. Inbound connections are unrestricted.",
+                   mitre_technique="T1562.004")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "firewall_disabled")
+
+    if metrics.get("sip_enabled") is False:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="sip_disabled", alert_type="sip_disabled",
+                   severity="critical",
+                   message=f"System Integrity Protection (SIP) is disabled on {hostname}. Kernel-level tampering is possible.",
+                   mitre_technique="T1562.001")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "sip_disabled")
+
+    if metrics.get("gatekeeper_enabled") is False:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="gatekeeper_disabled", alert_type="gatekeeper_disabled",
+                   severity="high",
+                   message=f"Gatekeeper is disabled on {hostname}. Unsigned/unnotarized applications can run without warning.",
+                   mitre_technique="T1553.001")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "gatekeeper_disabled")
+
+    screen = metrics.get("screen_lock_delay_sec")
+    if screen is not None and screen == 0:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="screen_lock_disabled", alert_type="screen_lock_disabled",
+                   severity="warning",
+                   message=f"No automatic screen lock is configured on {hostname}. Physical access risk.",
+                   mitre_technique="T1078")
+    elif screen and screen > 0:
+        resolve_alert(rest_url, anon_key, device_id, "screen_lock_disabled")
+
+    # ── 2. Process-based ─────────────────────────────────────────────────
+
+    miner_hit = proc_names & _CRYPTO_MINERS
+    if miner_hit:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="crypto_miner_process", alert_type="crypto_miner_process",
+                   severity="critical",
+                   message=f"Cryptocurrency miner detected on {hostname}: {', '.join(sorted(miner_hit))}. CPU resources are being hijacked.",
+                   mitre_technique="T1496")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "crypto_miner_process")
+
+    tunnel_hit = proc_names & _TUNNELING_TOOLS
+    if tunnel_hit:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="tunneling_tool_detected", alert_type="tunneling_tool_detected",
+                   severity="critical",
+                   message=f"Network tunneling tool running on {hostname}: {', '.join(sorted(tunnel_hit))}. Possible C2 channel.",
+                   mitre_technique="T1572")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "tunneling_tool_detected")
+
+    # High CPU from non-system process
+    for p in top_procs:
+        name = (p.get("process_name") or "").lower()
+        cpu  = p.get("cpu_pct") or 0
+        if cpu > 80 and name not in _SYSTEM_PROCS and name:
+            post_alert(rest_url, anon_key, device_id,
+                       rule_id="high_cpu_non_system", alert_type="high_cpu_non_system",
+                       severity="warning",
+                       message=f"Process '{p.get('process_name')}' on {hostname} is consuming {cpu}% CPU — possible miner or runaway process.",
+                       mitre_technique="T1496")
+            break
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "high_cpu_non_system")
+
+    # Root session
+    sessions = metrics.get("user_sessions") or []
+    root_active = any((s.get("username") or "").lower() == "root" for s in sessions)
+    if root_active:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="root_session_active", alert_type="root_session_active",
+                   severity="critical",
+                   message=f"Root account has an active login session on {hostname}.",
+                   mitre_technique="T1078.003")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "root_session_active")
+
+    # ── 3. Network-based ─────────────────────────────────────────────────
+
+    shell_on_port = False
+    suspicious_port_hit = None
+
+    for entry in listening:
+        port    = entry.get("port") or 0
+        process = (entry.get("process") or "").lower().split()[0]
+
+        # Shell/interpreter listening on any port
+        if process in _SHELL_PROCS:
+            post_alert(rest_url, anon_key, device_id,
+                       rule_id="shell_on_port", alert_type="shell_on_port",
+                       severity="critical",
+                       message=f"Shell process '{entry.get('process')}' is listening on port {port} on {hostname}. Possible reverse shell.",
+                       mitre_technique="T1059")
+            shell_on_port = True
+
+        # Known backdoor port
+        if port in _BACKDOOR_PORTS:
+            suspicious_port_hit = (port, entry.get("process"))
+
+    if not shell_on_port:
+        resolve_alert(rest_url, anon_key, device_id, "shell_on_port")
+
+    if suspicious_port_hit:
+        port, proc = suspicious_port_hit
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="suspicious_port", alert_type="suspicious_port",
+                   severity="high",
+                   message=f"Process '{proc}' is listening on port {port} on {hostname} — commonly used by backdoors and C2 frameworks.",
+                   mitre_technique="T1049")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "suspicious_port")
+
+    # ── 4. Installed-app IOC scan ────────────────────────────────────────
+
+    installed = metrics.get("installed_apps") or []
+    mal_hit = {
+        a.get("name", "") for a in installed
+        if (a.get("name") or "").lower() in _MALICIOUS_APPS
+    }
+    if mal_hit:
+        post_alert(rest_url, anon_key, device_id,
+                   rule_id="malicious_app_installed", alert_type="malicious_app_installed",
+                   severity="critical",
+                   message=f"Known-malicious application found on {hostname}: {', '.join(sorted(mal_hit))}.",
+                   mitre_technique="T1204")
+    else:
+        resolve_alert(rest_url, anon_key, device_id, "malicious_app_installed")
+
+
+# ──────────────────────────────────────────────
 # EXTENDED METRICS COLLECTION
 # ──────────────────────────────────────────────
 
@@ -1201,10 +1440,13 @@ def collect_metrics() -> dict:
         "timemachine_last_backup": timemachine.get("timemachine_last_backup"),
         "proxy_configured": get_proxy_configured(),
         "last_reboot": get_last_reboot(),
+
+        # Patch management
+        "outdated_apps": get_outdated_apps(),
     }
 
 
-def heartbeat_loop(api_url: str, token: str, anon_key: str = ""):
+def heartbeat_loop(api_url: str, token: str, anon_key: str = "", device_id: str = "", rest_url: str = ""):
     # Track previous USB devices to detect new storage devices
     prev_usb_serials: set = set()
     # Track previous installed apps to detect new installs
@@ -1217,6 +1459,10 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = ""):
     while True:
         try:
             metrics = collect_metrics()
+
+            # ── Detection Engine ─────────────────────────────────────────
+            if not first_run and device_id and rest_url:
+                run_detection_engine(metrics, rest_url, anon_key, device_id, hostname)
 
             # ── New App Installed Detection ──
             current_apps = metrics.get("installed_apps") or []
@@ -1530,7 +1776,7 @@ def main():
     t2 = threading.Thread(target=command_loop, args=(device_id, anon_key, supabase_rest_url), daemon=True)
     t2.start()
 
-    heartbeat_loop(api_url, token, anon_key)
+    heartbeat_loop(api_url, token, anon_key, device_id=device_id, rest_url=supabase_rest_url)
 
 
 # ──────────────────────────────────────────────
@@ -1689,12 +1935,145 @@ def handle_kill_background_services(payload):
         return f"Background service kill error: {e}", False
 
 
+def get_outdated_apps() -> list:
+    """Return list of outdated apps from brew, mas, and softwareupdate."""
+    outdated = []
+
+    # Homebrew outdated
+    try:
+        r = subprocess.run(
+            ["brew", "outdated", "--json=v2"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            import json as _json
+            data = _json.loads(r.stdout)
+            for f in data.get("formulae", []):
+                outdated.append({
+                    "name": f["name"],
+                    "current_version": f.get("installed_versions", ["?"])[-1],
+                    "latest_version": f.get("current_version", "?"),
+                    "source": "brew",
+                })
+            for c in data.get("casks", []):
+                outdated.append({
+                    "name": c["name"],
+                    "current_version": c.get("installed_versions", "?"),
+                    "latest_version": c.get("current_version", "?"),
+                    "source": "brew-cask",
+                })
+    except Exception:
+        pass
+
+    # macOS softwareupdate
+    try:
+        r = subprocess.run(
+            ["softwareupdate", "-l"],
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("*") or line.startswith("-"):
+                    name = line.lstrip("*- ").split(",")[0].strip()
+                    if name:
+                        outdated.append({
+                            "name": name,
+                            "current_version": "installed",
+                            "latest_version": "update available",
+                            "source": "softwareupdate",
+                        })
+    except Exception:
+        pass
+
+    # mas (App Store) outdated — optional
+    try:
+        r = subprocess.run(
+            ["mas", "outdated"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if r.returncode == 0:
+            for line in r.stdout.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    app_name = " ".join(parts[1:]).split("(")[0].strip()
+                    outdated.append({
+                        "name": app_name,
+                        "current_version": "installed",
+                        "latest_version": "update available",
+                        "source": "mas",
+                    })
+    except Exception:
+        pass
+
+    return outdated
+
+
+def handle_patch_app(payload):
+    """Update a specific app by name using brew or softwareupdate."""
+    app_name = payload.get("app_name", "")
+    source = payload.get("source", "brew")
+    if not app_name:
+        return "No app_name provided", False
+    try:
+        if source in ("brew", "brew-cask"):
+            cmd = ["brew", "upgrade", app_name]
+        elif source == "softwareupdate":
+            cmd = ["softwareupdate", "-i", app_name]
+        elif source == "mas":
+            cmd = ["mas", "upgrade"]
+        else:
+            cmd = ["brew", "upgrade", app_name]
+
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        output = (r.stdout + r.stderr).strip()[:500]
+        if r.returncode == 0:
+            msg = f"Updated {app_name} successfully. {output}"
+            logger.info(msg)
+            return msg, True
+        else:
+            msg = f"Update failed for {app_name}: {output}"
+            logger.warning(msg)
+            return msg, False
+    except Exception as e:
+        return f"Patch error for {app_name}: {e}", False
+
+
+def handle_patch_all_apps(payload):
+    """Update all outdated brew apps and run softwareupdate."""
+    results = []
+    success = True
+    try:
+        r = subprocess.run(["brew", "upgrade"], capture_output=True, text=True, timeout=600)
+        if r.returncode == 0:
+            results.append("brew upgrade: OK")
+        else:
+            results.append(f"brew upgrade: {r.stderr.strip()[:200]}")
+            success = False
+    except Exception as e:
+        results.append(f"brew upgrade error: {e}")
+        success = False
+    try:
+        r = subprocess.run(
+            ["softwareupdate", "-i", "-a"],
+            capture_output=True, text=True, timeout=600,
+        )
+        results.append("softwareupdate: " + ("OK" if r.returncode == 0 else r.stderr.strip()[:200]))
+    except Exception as e:
+        results.append(f"softwareupdate error: {e}")
+    msg = " | ".join(results)
+    logger.info("Patch all: %s", msg)
+    return msg, success
+
+
 COMMAND_HANDLERS = {
     "kill_process":             handle_kill_process,
     "optimize_memory":          handle_optimize_memory,
     "clear_cache":              handle_clear_cache,
     "restart_ui":               handle_restart_ui,
     "kill_background_services": handle_kill_background_services,
+    "patch_app":                handle_patch_app,
+    "patch_all_apps":           handle_patch_all_apps,
 }
 
 

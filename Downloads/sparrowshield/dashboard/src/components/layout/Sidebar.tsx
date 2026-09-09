@@ -1,25 +1,26 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, BellRing, Activity, Download, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck, Info, LogOut } from "lucide-react";
+import {
+  LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
+  Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
+  Info, Package, Shield, Download,
+} from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 
 const nav = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/devices", label: "Device List", icon: Laptop },
-  { to: "/alerts", label: "Alerts", icon: BellRing },
-  { to: "/reports", label: "Reports", icon: FileText },
-  { to: "/compliance", label: "Compliance", icon: ShieldCheck },
-  { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/about", label: "About", icon: Info },
+  { to: "/",          label: "Overview",    icon: LayoutDashboard },
+  { to: "/devices",   label: "Devices",     icon: Laptop         },
+  { to: "/alerts",    label: "Alerts",      icon: BellRing       },
+  { to: "/patches",   label: "Patches",     icon: Package        },
+  { to: "/reports",   label: "Reports",     icon: FileText       },
+  { to: "/compliance",label: "Compliance",  icon: ShieldCheck    },
+  { to: "/settings",  label: "Settings",    icon: Settings       },
+  { to: "/about",     label: "About",       icon: Info           },
 ];
 
-const MAC_AGENT_PATH   = "/agents/sparrowshield-mac-agent.zip";
-const WIN_AGENT_PATH   = "/agents/sparrowshield-windows-agent.zip";
-const CONFIG_PATH      = "/agents/config.json";
-
-export default function Sidebar({ onSignOut, userEmail }: { onSignOut?: () => void; userEmail?: string }) {
+export default function Sidebar() {
   const [expanded, setExpanded] = useState(false);
 
   const { data: deviceCount = 0 } = useQuery<number>({
@@ -39,20 +40,25 @@ export default function Sidebar({ onSignOut, userEmail }: { onSignOut?: () => vo
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-56 bg-slate-900 border-r border-slate-800 flex flex-col z-20">
+    <aside className="fixed left-0 top-0 h-full w-56 flex flex-col z-20"
+      style={{ background: "#0d0f16", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
+
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-slate-800">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-lg">🩺</div>
+      <div className="px-5 pt-6 pb-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)" }}>
+            <Shield className="w-4 h-4 text-white" />
+          </div>
           <div>
-            <p className="text-sm font-semibold text-white leading-none">SparrowIT</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">Fleet Management</p>
+            <p className="text-sm font-semibold text-white leading-none tracking-tight">SparrowShield</p>
+            <p className="text-[10px] mt-0.5" style={{ color: "#4b5270" }}>Fleet Management</p>
           </div>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {nav.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
@@ -60,119 +66,84 @@ export default function Sidebar({ onSignOut, userEmail }: { onSignOut?: () => vo
             end={to === "/"}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",
                 isActive
-                  ? "bg-indigo-600/20 text-indigo-400 border border-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  ? "text-white"
+                  : "hover:text-slate-200"
               )
             }
+            style={({ isActive }) => isActive
+              ? { background: "rgba(99,102,241,0.15)", color: "#a5b4fc" }
+              : { color: "#4b5270" }
+            }
           >
-            <Icon className="w-4 h-4" />
-            <span className="flex-1">{label}</span>
-            {to === "/devices" && deviceCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-indigo-600/30 text-indigo-400 text-[10px] font-bold border border-indigo-600/40">
-                {deviceCount}
-              </span>
+            {({ isActive }) => (
+              <>
+                <Icon className="w-4 h-4 flex-shrink-0" />
+                <span className="flex-1">{label}</span>
+                {to === "/devices" && deviceCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
+                    style={{
+                      background: isActive ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.06)",
+                      color: isActive ? "#a5b4fc" : "#4b5270",
+                    }}>
+                    {deviceCount}
+                  </span>
+                )}
+              </>
             )}
           </NavLink>
         ))}
 
-        {/* ── Download Agents ── */}
-        <div className="pt-3">
-          <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-600">
+        {/* Download Agents */}
+        <div className="pt-4">
+          <p className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>
             Agents
           </p>
-
-          {/* Toggle button */}
           <button
-            onClick={() => setExpanded((v) => !v)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            onClick={() => setExpanded(v => !v)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] font-medium transition-all"
+            style={{ color: "#4b5270" }}
+            onMouseEnter={e => (e.currentTarget.style.color = "#94a3b8")}
+            onMouseLeave={e => (e.currentTarget.style.color = "#4b5270")}
           >
             <Download className="w-4 h-4" />
             <span className="flex-1 text-left">Download Agent</span>
-            <span className={cn("text-xs transition-transform duration-200", expanded ? "rotate-180" : "")}>▾</span>
+            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
           </button>
 
-          {/* Expanded download options */}
           {expanded && (
-            <div className="mt-1 ml-3 space-y-1 border-l border-slate-700 pl-3">
-
-              {/* macOS */}
-              <button
-                onClick={() => downloadFile(MAC_AGENT_PATH, "sparrowshield-mac-agent.zip")}
-                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
-              >
-                <span className="w-6 h-6 rounded-md bg-slate-800 group-hover:bg-indigo-600/30 flex items-center justify-center transition-colors">
-                  <Apple className="w-3.5 h-3.5" />
-                </span>
-                <div className="text-left">
-                  <p className="text-slate-300 font-medium">macOS Agent</p>
-                  <p className="text-slate-600 text-[10px]">agent + config.json</p>
-                </div>
-              </button>
-
-              {/* Windows */}
-              <button
-                onClick={() => downloadFile(WIN_AGENT_PATH, "sparrowshield-windows-agent.zip")}
-                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
-              >
-                <span className="w-6 h-6 rounded-md bg-slate-800 group-hover:bg-blue-600/30 flex items-center justify-center transition-colors">
-                  <Monitor className="w-3.5 h-3.5" />
-                </span>
-                <div className="text-left">
-                  <p className="text-slate-300 font-medium">Windows Agent</p>
-                  <p className="text-slate-600 text-[10px]">agent + config.json</p>
-                </div>
-              </button>
-
-              {/* Config */}
-              <button
-                onClick={() => downloadFile(CONFIG_PATH, "config.json")}
-                className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors group"
-              >
-                <span className="w-6 h-6 rounded-md bg-slate-800 group-hover:bg-emerald-600/30 flex items-center justify-center transition-colors">
-                  <span className="text-[10px]">⚙️</span>
-                </span>
-                <div className="text-left">
-                  <p className="text-slate-300 font-medium">Config File</p>
-                  <p className="text-slate-600 text-[10px]">config.json</p>
-                </div>
-              </button>
-
-              {/* Install instructions hint */}
-              <div className="px-2 py-2 mt-1 rounded-lg bg-slate-800/60 border border-slate-700/50">
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                  📦 Each ZIP includes the <span className="text-slate-400">agent</span> + <span className="text-slate-400">config.json</span> — unzip and run.
-                </p>
-              </div>
+            <div className="mt-1 ml-4 pl-3 space-y-0.5" style={{ borderLeft: "1px solid rgba(255,255,255,0.05)" }}>
+              {[
+                { label: "macOS Agent", sub: "agent + config", icon: Apple, file: "/agents/sparrowshield-mac-agent.zip", dl: "sparrowshield-mac-agent.zip" },
+                { label: "Windows Agent", sub: "agent + config", icon: Monitor, file: "/agents/sparrowshield-windows-agent.zip", dl: "sparrowshield-windows-agent.zip" },
+              ].map(item => (
+                <button
+                  key={item.label}
+                  onClick={() => downloadFile(item.file, item.dl)}
+                  className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-all text-left"
+                  style={{ color: "#4b5270" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4b5270"; }}
+                >
+                  <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-slate-300" style={{ fontSize: 11 }}>{item.label}</p>
+                    <p style={{ fontSize: 10, color: "#2d3252" }}>{item.sub}</p>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-4 border-t border-slate-800 space-y-2">
-        <div className="flex items-center gap-2 text-xs text-slate-600">
+      <div className="px-4 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="flex items-center gap-2" style={{ color: "#2d3252" }}>
           <Activity className="w-3 h-3" />
-          <span>Auto-refresh 30s</span>
+          <span className="text-[10px]">Auto-refresh every 30s</span>
         </div>
-        {userEmail && (
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-6 h-6 rounded-full bg-indigo-600/30 border border-indigo-600/50 flex items-center justify-center flex-shrink-0">
-              <span className="text-[10px] text-indigo-400 font-bold">{userEmail[0].toUpperCase()}</span>
-            </div>
-            <span className="text-[10px] text-slate-500 truncate flex-1">{userEmail}</span>
-            {onSignOut && (
-              <button
-                onClick={onSignOut}
-                title="Sign out"
-                className="flex-shrink-0 text-slate-600 hover:text-red-400 transition-colors"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </aside>
   );

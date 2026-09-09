@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { RefreshCw, Wifi, Apple, Monitor, Bell, Gauge, ChevronRight } from "lucide-react";
+import {
+  RefreshCw, Wifi, Apple, Monitor, Bell, Gauge, ChevronRight,
+  Laptop, Lock, Battery, ClipboardCheck, Package, WifiOff, Ban,
+} from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import StatCard from "../components/fleet/StatCard";
 import FleetHealthChart from "../components/fleet/FleetHealthChart";
@@ -214,42 +217,48 @@ export default function FleetOverview() {
   const softwareViolations = 0; // Will be populated when software violation detection is active
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" style={{ background: "#0d0f16" }}>
       <TopBar title="Dashboard" />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-        {/* ── Row 1: Avg Health Score (hero) + Health stat cards ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Big health score */}
-          <div className={cn("rounded-xl border p-5 flex flex-col items-center justify-center gap-1", healthBg)}>
-            <Gauge className={cn("w-5 h-5", healthColor)} />
-            <p className={cn("text-4xl font-bold font-mono", healthColor)}>{avgHealthScore}</p>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Avg Health</p>
+        {/* ── Row 1: Hero health score + primary stats ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          {/* Health score hero */}
+          <div className="rounded-xl p-5 flex flex-col items-center justify-center gap-2 transition-all"
+            style={{
+              background: avgHealthScore >= 80 ? "rgba(34,197,94,0.08)" : avgHealthScore >= 60 ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
+              border: `1px solid ${avgHealthScore >= 80 ? "rgba(34,197,94,0.2)" : avgHealthScore >= 60 ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)"}`,
+            }}>
+            <Gauge className="w-5 h-5" style={{ color: avgHealthScore >= 80 ? "#4ade80" : avgHealthScore >= 60 ? "#fbbf24" : "#f87171" }} />
+            <p className="text-4xl font-bold tabular-nums" style={{ color: avgHealthScore >= 80 ? "#4ade80" : avgHealthScore >= 60 ? "#fbbf24" : "#f87171" }}>
+              {avgHealthScore}
+            </p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#3a4060" }}>Avg Health</p>
           </div>
-          <StatCard label="Total Devices" value={total} icon="💻" color="default" sub={isLoading ? "Loading…" : "enrolled"} />
-          <StatCard label="Healthy" value={healthy} icon="✅" color="green" sub={reports.length ? `${Math.round((healthy / reports.length) * 100)}% of fleet` : "no reports yet"} />
-          <StatCard label="Warning" value={warning} icon="⚠️" color="amber" sub="needs attention" />
-          <StatCard label="Critical" value={critical} icon="🔴" color="red" sub="action required" />
+          <StatCard label="Total Devices" value={total} icon="" lucideIcon={Laptop} color="default" sub={isLoading ? "Loading…" : "enrolled"} />
+          <StatCard label="Healthy" value={healthy} icon="" lucideIcon={Gauge} color="green" sub={reports.length ? `${Math.round((healthy / reports.length) * 100)}% of fleet` : "no reports yet"} />
+          <StatCard label="Warning" value={warning} icon="" lucideIcon={Bell} color="amber" sub="needs attention" />
+          <StatCard label="Critical" value={critical} icon="" lucideIcon={Ban} color="red" sub="action required" />
         </div>
 
-        {/* ── Row 2: Security + new stat cards ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
-          <StatCard label="FileVault OFF" value={filevaultOff} icon="🔓" color={filevaultOff > 0 ? "red" : "green"} sub="unencrypted disks" />
-          <StatCard label="Low Battery" value={lowBattery} icon="🪫" color={lowBattery > 0 ? "amber" : "green"} sub="below 20%" />
-          <StatCard label="Compliance Risk" value={complianceAtRisk} icon="📋" color={complianceAtRisk > 0 ? "red" : "green"} sub="score < 50%" />
-          <StatCard label="Pending Updates" value={pendingUpdates} icon="📦" color={pendingUpdates > 5 ? "amber" : "green"} sub="across fleet" />
-          <StatCard label="Devices Offline" value={offlineDevices} icon="📡" color={offlineDevices > 0 ? "red" : "green"} sub={`${onlineDevices} online`} />
-          <StatCard label="SW Violations" value={softwareViolations} icon="🚫" color={softwareViolations > 0 ? "red" : "green"} sub="blocklist hits" />
+        {/* ── Row 2: Security & ops stats ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+          <StatCard label="FileVault Off" value={filevaultOff} icon="" lucideIcon={Lock} color={filevaultOff > 0 ? "red" : "green"} sub="unencrypted disks" />
+          <StatCard label="Low Battery" value={lowBattery} icon="" lucideIcon={Battery} color={lowBattery > 0 ? "amber" : "green"} sub="below 20%" />
+          <StatCard label="Compliance Risk" value={complianceAtRisk} icon="" lucideIcon={ClipboardCheck} color={complianceAtRisk > 0 ? "red" : "green"} sub="score < 50%" />
+          <StatCard label="Pending Updates" value={pendingUpdates} icon="" lucideIcon={Package} color={pendingUpdates > 5 ? "amber" : "green"} sub="across fleet" />
+          <StatCard label="Offline Devices" value={offlineDevices} icon="" lucideIcon={WifiOff} color={offlineDevices > 0 ? "red" : "green"} sub={`${onlineDevices} online`} />
+          <StatCard label="SW Violations" value={softwareViolations} icon="" lucideIcon={Ban} color={softwareViolations > 0 ? "red" : "green"} sub="blocklist hits" />
         </div>
 
         {/* ── Row 3: Donut charts + Recent Alerts ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Online vs Offline donut */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {/* Online vs Offline */}
+          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div className="flex items-center gap-2 mb-4">
-              <Wifi className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-sm font-semibold text-slate-200">Online vs Offline</h2>
+              <Wifi className="w-4 h-4" style={{ color: "#34d399" }} />
+              <h2 className="text-sm font-semibold text-white">Online vs Offline</h2>
             </div>
             <DonutChart slices={[
               { value: onlineDevices, color: "#34d399", label: "Online" },
@@ -257,57 +266,59 @@ export default function FleetOverview() {
             ]} />
           </div>
 
-          {/* OS Distribution donut */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          {/* OS Distribution */}
+          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div className="flex items-center gap-2 mb-4">
-              <Monitor className="w-4 h-4 text-blue-400" />
-              <h2 className="text-sm font-semibold text-slate-200">OS Distribution</h2>
+              <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
+              <h2 className="text-sm font-semibold text-white">OS Distribution</h2>
             </div>
             <DonutChart slices={[
               { value: macDevices, color: "#a78bfa", label: "macOS" },
               { value: winDevices, color: "#60a5fa", label: "Windows" },
-              ...(otherDevices > 0 ? [{ value: otherDevices, color: "#94a3b8", label: "Other" }] : []),
+              ...(otherDevices > 0 ? [{ value: otherDevices, color: "#475569", label: "Other" }] : []),
             ]} />
           </div>
 
-          {/* Recent Alerts feed */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+          {/* Recent Alerts */}
+          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-amber-400" />
-                <h2 className="text-sm font-semibold text-slate-200">Recent Alerts</h2>
+                <Bell className="w-4 h-4" style={{ color: "#fbbf24" }} />
+                <h2 className="text-sm font-semibold text-white">Recent Alerts</h2>
               </div>
-              <button
-                onClick={() => navigate("/alerts")}
-                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-medium"
-              >
+              <button onClick={() => navigate("/alerts")}
+                className="text-[10px] font-medium transition-colors"
+                style={{ color: "#6366f1" }}
+                onMouseEnter={e => (e.currentTarget.style.color = "#a5b4fc")}
+                onMouseLeave={e => (e.currentTarget.style.color = "#6366f1")}>
                 View All →
               </button>
             </div>
             {recentAlerts.length === 0 ? (
-              <p className="text-xs text-slate-600 text-center py-6">No active alerts</p>
+              <p className="text-xs text-center py-8" style={{ color: "#2d3252" }}>No active alerts</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {recentAlerts.slice(0, 5).map((alert) => (
-                  <div
-                    key={alert.id}
-                    className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-800/50 border border-slate-700/30 hover:bg-slate-800/80 transition-colors cursor-pointer"
-                    onClick={() => alert.device_id && navigate(`/device/${alert.device_id}`)}
-                  >
-                    <div className={cn(
-                      "w-2 h-2 rounded-full mt-1.5 flex-shrink-0",
-                      alert.severity === "critical" ? "bg-red-500" : "bg-amber-500"
-                    )} />
+                  <div key={alert.id}
+                    className="flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-colors"
+                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
+                    onClick={() => alert.device_id && navigate(`/device/${alert.device_id}`)}>
+                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                      style={{ background: alert.severity === "critical" ? "#ef4444" : "#f59e0b" }} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium text-slate-300 truncate">{alert.alert_type?.replace(/_/g, " ")}</p>
-                      <p className="text-[10px] text-slate-500 truncate">
-                        {(alert as any).devices?.hostname ?? "Unknown device"} · {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                      <p className="text-[11px] font-medium text-slate-300 truncate capitalize">
+                        {alert.alert_type?.replace(/_/g, " ")}
+                      </p>
+                      <p className="text-[10px] truncate" style={{ color: "#3a4060" }}>
+                        {(alert as any).devices?.hostname ?? "Unknown"} · {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                       </p>
                     </div>
-                    <span className={cn(
-                      "px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0",
-                      alert.severity === "critical" ? "bg-red-500/15 text-red-400" : "bg-amber-500/15 text-amber-400"
-                    )}>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0"
+                      style={alert.severity === "critical"
+                        ? { background: "rgba(239,68,68,0.12)", color: "#f87171" }
+                        : { background: "rgba(245,158,11,0.12)", color: "#fbbf24" }}>
                       {alert.severity}
                     </span>
                   </div>
@@ -318,52 +329,47 @@ export default function FleetOverview() {
         </div>
 
         {/* ── Row 4: Charts row ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Health trend */}
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2 rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-sm font-semibold text-slate-200">Fleet Health Trend</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Device counts by status over 24h</p>
+                <h2 className="text-sm font-semibold text-white">Fleet Health Trend</h2>
+                <p className="text-[11px] mt-0.5" style={{ color: "#3a4060" }}>Device counts by status over 24h</p>
               </div>
-              <button
-                onClick={() => refetch()}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
-              >
+              <button onClick={() => refetch()}
+                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+                style={{ color: "#3a4060" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#94a3b8"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#3a4060"; }}>
                 <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
               </button>
             </div>
             <FleetHealthChart reports={reports} />
           </div>
-
-          {/* Top offenders */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-slate-200 mb-1">Top Memory Hogs</h2>
-            <p className="text-xs text-slate-500 mb-4">Fleet-wide most common culprits</p>
+          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+            <h2 className="text-sm font-semibold text-white mb-1">Top Memory Hogs</h2>
+            <p className="text-[11px] mb-4" style={{ color: "#3a4060" }}>Fleet-wide most common culprits</p>
             <TopOffendersWidget reports={reports} devices={allDevices} />
           </div>
         </div>
 
         {/* ── Row 5: Device table ── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
+        <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3"
+            style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
             <div>
-              <h2 className="text-sm font-semibold text-slate-200">All Devices</h2>
-              <p className="text-xs text-slate-500 mt-0.5">{allDevices.length} enrolled · click a row to view details</p>
+              <h2 className="text-sm font-semibold text-white">All Devices</h2>
+              <p className="text-[11px] mt-0.5" style={{ color: "#3a4060" }}>{allDevices.length} enrolled · click a row to view details</p>
             </div>
-            {/* Filter tabs */}
             <div className="flex gap-1 flex-wrap">
               {FILTERS.map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
-                    filter === f.key
-                      ? "bg-indigo-600 text-white"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                  )}
-                >
+                <button key={f.key} onClick={() => setFilter(f.key)}
+                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                  style={filter === f.key
+                    ? { background: "rgba(99,102,241,0.2)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)" }
+                    : { color: "#3a4060", background: "transparent", border: "1px solid transparent" }}
+                  onMouseEnter={e => { if (filter !== f.key) e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={e => { if (filter !== f.key) e.currentTarget.style.color = "#3a4060"; }}>
                   {f.label}
                 </button>
               ))}
@@ -371,14 +377,13 @@ export default function FleetOverview() {
           </div>
 
           {isLoading ? (
-            <div className="py-16 text-center text-slate-500 text-sm">Loading fleet data…</div>
+            <div className="py-16 text-center text-sm" style={{ color: "#3a4060" }}>Loading fleet data…</div>
           ) : reports.length > 0 ? (
             <DeviceTable reports={reports} search={search} filter={filter} />
           ) : allDevices.length > 0 ? (
-            /* Fallback: no health reports yet — show enrolled devices directly */
             <FallbackDeviceTable devices={allDevices} search={search} />
           ) : (
-            <div className="py-16 text-center text-slate-500 text-sm">No devices enrolled yet</div>
+            <div className="py-16 text-center text-sm" style={{ color: "#3a4060" }}>No devices enrolled yet</div>
           )}
         </div>
       </div>

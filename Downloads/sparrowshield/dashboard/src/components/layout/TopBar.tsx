@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, BellRing } from "lucide-react";
+import { Search, Bell } from "lucide-react";
 import { useAlerts } from "../../hooks/useAlerts";
 
 export default function TopBar({ title }: { title: string }) {
@@ -15,29 +15,44 @@ export default function TopBar({ title }: { title: string }) {
   }
 
   return (
-    <header className="h-14 bg-slate-900/80 backdrop-blur border-b border-slate-800 flex items-center px-6 gap-4 sticky top-0 z-10">
-      <h1 className="text-sm font-semibold text-slate-200 flex-shrink-0">{title}</h1>
+    <header className="h-14 flex items-center px-6 gap-4 sticky top-0 z-10 flex-shrink-0"
+      style={{
+        background: "rgba(13,15,22,0.85)",
+        backdropFilter: "blur(12px)",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+      }}>
 
-      <form onSubmit={handleSearch} className="flex-1 max-w-sm ml-4">
+      <h1 className="text-sm font-semibold text-white flex-shrink-0 tracking-tight">{title}</h1>
+
+      <form onSubmit={handleSearch} className="flex-1 max-w-xs ml-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "#3a4060" }} />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={e => setQuery(e.target.value)}
             placeholder="Search devices…"
-            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+            className="w-full rounded-lg pl-9 pr-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none transition-colors"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.06)",
+            }}
+            onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)")}
           />
         </div>
       </form>
 
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-2">
         <button
           onClick={() => navigate("/alerts")}
-          className="relative p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+          className="relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+          style={{ color: "#4b5270" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#94a3b8"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4b5270"; }}
         >
-          <BellRing className="w-4 h-4" />
+          <Bell className="w-4 h-4" />
           {openCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] font-bold text-white flex items-center justify-center">
+            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
               {openCount > 9 ? "9+" : openCount}
             </span>
           )}
