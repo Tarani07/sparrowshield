@@ -907,5 +907,34 @@ def main():
     # Heartbeat runs in main thread
     heartbeat_loop(device_id)
 
+# ── Self-install as Windows Task Scheduler task ───────────────────────────────
+TASK_NAME = "SparrowShieldAgent"
+
+def install_service():
+    """Register this exe as a SYSTEM-level task that starts at boot."""
+    exe = sys.executable if not getattr(sys, "frozen", False) else sys.executable
+    cmd = (
+        f'schtasks /create /tn "{TASK_NAME}" '
+        f'/tr "{exe}" '
+        f'/sc ONSTART /ru SYSTEM /rl HIGHEST /f'
+    )
+    result = shell(cmd)
+    # Also start it immediately
+    shell(f'schtasks /run /tn "{TASK_NAME}"')
+    print(f"[OK] SparrowShield registered as scheduled task '{TASK_NAME}'")
+    print(f"     Exe: {exe}")
+    print(f"     It will start automatically on every boot (running as SYSTEM).")
+    print(f"     To uninstall: run with --uninstall")
+
+def uninstall_service():
+    shell(f'schtasks /end /tn "{TASK_NAME}"')
+    shell(f'schtasks /delete /tn "{TASK_NAME}" /f')
+    print(f"[OK] Task '{TASK_NAME}' removed.")
+
 if __name__ == "__main__":
-    main()
+    if "--install" in sys.argv:
+        install_service()
+    elif "--uninstall" in sys.argv:
+        uninstall_service()
+    else:
+        main()

@@ -1,0 +1,69 @@
+name: Build Windows Agent EXE
+
+on:
+  push:
+    branches: [main, claude/sweet-pare]
+    paths:
+      - 'Downloads/sparrowshield/backend/agent/agent_windows.py'
+      - '.github/workflows/build-windows-agent.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller psutil requests
+
+      - name: Build EXE
+        run: |
+          pyinstaller `
+            --onefile `
+            --noconsole `
+            --name SparrowShieldAgent `
+            --icon NONE `
+            Downloads/sparrowshield/backend/agent/agent_windows.py
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SparrowShieldAgent-windows
+          path: dist/SparrowShieldAgent.exe
+          retention-days: 30
+
+      - name: Copy to dashboard public
+        run: |
+          copy dist\SparrowShieldAgent.exe Downloads\sparrowshield\dashboard\public\agents\SparrowShieldAgent.exe
+
+      - name: Create GitHub Release (on push to main)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: agent-windows-${{ github.run_number }}
+          name: "SparrowShield Windows Agent (build ${{ github.run_number }})"
+          files: dist/SparrowShieldAgent.exe
+          body: |
+            ### SparrowShield Windows Agent
+
+            **Download:** `SparrowShieldAgent.exe`
+
+            **Install as a background service (run as Administrator):**
+            ```
+            SparrowShieldAgent.exe --install
+            ```
+
+            **Or run directly:**
+            ```
+            SparrowShieldAgent.exe
+            ```
+
+            Built from commit ${{ github.sha }}
