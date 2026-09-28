@@ -9,6 +9,7 @@ import MetricsTrendChart from "../components/device/MetricsTrendChart";
 import BatteryCard from "../components/device/BatteryCard";
 import NetworkCard from "../components/device/NetworkCard";
 import SecurityStatusCard from "../components/device/SecurityStatusCard";
+import SecurityLogCard from "../components/device/SecurityLogCard";
 import ComplianceCard from "../components/device/ComplianceCard";
 import CrashCard from "../components/device/CrashCard";
 import InstalledAppsCard from "../components/device/InstalledAppsCard";
@@ -21,6 +22,8 @@ import PeripheralsCard from "../components/device/PeripheralsCard";
 import SessionsCard from "../components/device/SessionsCard";
 import UpdatesCard from "../components/device/UpdatesCard";
 import BrowsersCard from "../components/device/BrowsersCard";
+import IsolationCard from "../components/device/IsolationCard";
+import WindowsEDRCard from "../components/device/WindowsEDRCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -172,8 +175,21 @@ export default function DeviceDetail() {
           </div>
         )}
 
-        {/* Security Status */}
-        {device && <SecurityStatusCard device={device} />}
+        {/* Security Status + Security Log */}
+        {device && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SecurityStatusCard device={device} />
+            <SecurityLogCard deviceId={device.id} />
+          </div>
+        )}
+
+        {/* Windows EDR posture + Host Isolation */}
+        {device && device.os_type === "windows" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <WindowsEDRCard device={device} />
+            <IsolationCard device={device} />
+          </div>
+        )}
 
         {/* Compliance + Crash row */}
         {device && (

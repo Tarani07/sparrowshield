@@ -201,6 +201,17 @@ export interface Device {
   domain_joined: boolean | null;
   domain_name: string | null;
   activation_status: string | null;
+
+  // Windows EDR (new agent fields)
+  isolated: boolean | null;
+  uac_enabled: boolean | null;
+  rdp_enabled: boolean | null;
+  guest_enabled: boolean | null;
+  autologon_enabled: boolean | null;
+  defender_enabled: boolean | null;
+  defender_mode: string | null;
+  defender_sig_age_days: number | null;
+  bitlocker_enabled: boolean | null;
 }
 
 // Remediation
@@ -338,6 +349,16 @@ export interface Alert {
   created_at: string;
   resolved_at: string | null;
   devices?: { hostname: string };
+}
+
+export interface SecurityEvent {
+  id: string;
+  device_id: string;
+  event_type: string; // 'usb_inserted' | 'failed_login' | 'remote_session' | 'crash' | 'malware_detected'
+  severity: "info" | "warning" | "critical";
+  description: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface MetricRow {
