@@ -17,13 +17,21 @@ interface Alert {
 
 const SEVERITY_ORDER = ["critical", "high", "warning", "info"];
 
-export default function Detections() {
+export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" }) {
   const [filter, setFilter] = useState<"all" | "open" | "resolved">("open");
   const qc = useQueryClient();
 
   const { data: alerts = [], isLoading } = useQuery<Alert[]>({
-    queryKey: ["edr-detections", filter],
+    queryKey: ["edr-detections", filter, osFilter],
     queryFn: async () => {
+      let deviceIds: string[] | null = null;
+      if (osFilter) {
+        const osValues = osFilter === "mac" ? ["mac","macos","darwin"] : ["windows"];
+        const { data: devs } = await supabase
+          .from("devices").select("id").in("os_type", osValues);
+        deviceIds = (devs ?? []).map((d: { id: string }) => d.id);
+        if (deviceIds.length === 0) return [];
+      }
       let q = supabase
         .from("alerts")
         .select("id, hostname, alert_type, severity, message, rule_id, mitre_technique, created_at, resolved")
@@ -31,6 +39,7 @@ export default function Detections() {
         .limit(200);
       if (filter === "open") q = q.eq("resolved", false);
       if (filter === "resolved") q = q.eq("resolved", true);
+      if (deviceIds) q = q.in("device_id", deviceIds);
       const { data } = await q;
       return (data ?? []).sort((a, b) =>
         SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity)
@@ -64,7 +73,7 @@ export default function Detections() {
             EDR Detections
           </h1>
           <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
-            MITRE ATT&CK–tagged alerts from the detection engine
+            {osFilter ? `${osFilter === "mac" ? "macOS" : "Windows"} MITRE ATT&CK detections` : "MITRE ATT&CK–tagged alerts from the detection engine"}
           </p>
         </div>
         <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>

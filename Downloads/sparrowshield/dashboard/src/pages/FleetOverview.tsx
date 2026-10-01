@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import {
   RefreshCw, Wifi, Apple, Monitor, Bell, Gauge, ChevronRight,
   Laptop, Lock, Battery, ClipboardCheck, Package, WifiOff, Ban,
+  Shield, ShieldCheck, Eye,
 } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import StatCard from "../components/fleet/StatCard";
@@ -252,7 +253,99 @@ export default function FleetOverview() {
           <StatCard label="SW Violations" value={softwareViolations} icon="" lucideIcon={Ban} color={softwareViolations > 0 ? "red" : "green"} sub="blocklist hits" />
         </div>
 
-        {/* ── Row 3: Donut charts + Recent Alerts ── */}
+        {/* ── Row 3: Mac vs Windows platform split ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* macOS Panel */}
+          <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(167,139,250,0.15)" }}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(167,139,250,0.1)", background: "rgba(167,139,250,0.05)" }}>
+              <div className="flex items-center gap-2">
+                <Apple className="w-4 h-4" style={{ color: "#a78bfa" }} />
+                <span className="text-sm font-semibold text-white">macOS Fleet</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
+                  {macDevices} devices
+                </span>
+              </div>
+              <Link to="/mac/devices" className="text-[11px] font-medium transition-colors"
+                style={{ color: "#6366f1" }}
+                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#a5b4fc")}
+                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#6366f1")}>
+                View All →
+              </Link>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {[
+                { label: "FileVault Encryption", pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.filevault_enabled).length, total: macDevices, mitre: "T1486" },
+                { label: "Firewall Enabled",     pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.firewall_enabled).length,  total: macDevices, mitre: "T1562.004" },
+                { label: "SIP Enabled",          pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.sip_enabled).length,       total: macDevices, mitre: "T1562.001" },
+                { label: "Gatekeeper On",        pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.gatekeeper_enabled).length,total: macDevices, mitre: "T1553.001" },
+              ].map(c => (
+                <div key={c.label} className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-slate-400">{c.label}</span>
+                      <span className={`text-[11px] font-semibold ${c.pass === c.total ? "text-green-400" : c.pass > 0 ? "text-amber-400" : "text-red-400"}`}>
+                        {c.total > 0 ? `${c.pass}/${c.total}` : "—"}
+                      </span>
+                    </div>
+                    <div className="h-1 rounded-full bg-slate-800">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: c.total > 0 ? `${(c.pass/c.total)*100}%` : "0%", background: c.pass===c.total?"#22c55e":c.pass>0?"#f59e0b":"#ef4444" }} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-700 w-16 text-right">{c.mitre}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Windows Panel */}
+          <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(96,165,250,0.15)" }}>
+            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(96,165,250,0.1)", background: "rgba(96,165,250,0.05)" }}>
+              <div className="flex items-center gap-2">
+                <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
+                <span className="text-sm font-semibold text-white">Windows Fleet</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                  style={{ background: "rgba(96,165,250,0.15)", color: "#60a5fa" }}>
+                  {winDevices} devices
+                </span>
+              </div>
+              <Link to="/windows/devices" className="text-[11px] font-medium transition-colors"
+                style={{ color: "#6366f1" }}
+                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#a5b4fc")}
+                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#6366f1")}>
+                View All →
+              </Link>
+            </div>
+            <div className="px-5 py-4 space-y-2">
+              {[
+                { label: "BitLocker Encryption", pass: allDevices.filter(d => d.os_type==="windows" && d.bitlocker_enabled).length,  total: winDevices, mitre: "T1486" },
+                { label: "Firewall Enabled",     pass: allDevices.filter(d => d.os_type==="windows" && d.firewall_enabled).length,   total: winDevices, mitre: "T1562.004" },
+                { label: "Defender Active",      pass: allDevices.filter(d => d.os_type==="windows" && d.defender_enabled).length,   total: winDevices, mitre: "T1562.001" },
+                { label: "UAC Enabled",          pass: allDevices.filter(d => d.os_type==="windows" && d.uac_enabled).length,       total: winDevices, mitre: "T1548.002" },
+                { label: "RDP Disabled",         pass: allDevices.filter(d => d.os_type==="windows" && !d.rdp_enabled).length,      total: winDevices, mitre: "T1021.001" },
+              ].map(c => (
+                <div key={c.label} className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[11px] text-slate-400">{c.label}</span>
+                      <span className={`text-[11px] font-semibold ${c.pass === c.total ? "text-green-400" : c.pass > 0 ? "text-amber-400" : "text-red-400"}`}>
+                        {c.total > 0 ? `${c.pass}/${c.total}` : "—"}
+                      </span>
+                    </div>
+                    <div className="h-1 rounded-full bg-slate-800">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: c.total > 0 ? `${(c.pass/c.total)*100}%` : "0%", background: c.pass===c.total?"#22c55e":c.pass>0?"#f59e0b":"#ef4444" }} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-700 w-16 text-right">{c.mitre}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Row 5: Donut charts + Recent Alerts ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Online vs Offline */}
           <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -328,7 +421,7 @@ export default function FleetOverview() {
           </div>
         </div>
 
-        {/* ── Row 4: Charts row ── */}
+        {/* ── Row 6: Charts row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           <div className="lg:col-span-2 rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
             <div className="flex items-center justify-between mb-4">
@@ -353,7 +446,7 @@ export default function FleetOverview() {
           </div>
         </div>
 
-        {/* ── Row 5: Device table ── */}
+        {/* ── Row 7: Device table ── */}
         <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
           <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3"
             style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>

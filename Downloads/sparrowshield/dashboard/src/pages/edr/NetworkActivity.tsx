@@ -13,15 +13,19 @@ interface Device {
 
 const SUSPICIOUS_PORTS = new Set([4444, 1337, 31337, 4545, 6666, 7777, 12345, 54321, 9999, 5555]);
 
-export default function NetworkActivity() {
+export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "windows" }) {
   const { data: devices = [], isLoading } = useQuery<Device[]>({
-    queryKey: ["edr-network"],
+    queryKey: ["edr-network", osFilter],
     queryFn: async () => {
-      const { data } = await supabase
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q: any = supabase
         .from("devices")
         .select("id, hostname, status, listening_ports, open_connections_count, public_ip")
         .order("hostname");
-      return data ?? [];
+      if (osFilter === "mac") q = q.in("os_type", ["mac","macos","darwin"]);
+      if (osFilter === "windows") q = q.eq("os_type", "windows");
+      const { data } = await q;
+      return (data ?? []) as Device[];
     },
     refetchInterval: 30_000,
   });

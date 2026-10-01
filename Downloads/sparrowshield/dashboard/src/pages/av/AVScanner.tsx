@@ -13,18 +13,29 @@ interface ThreatRow {
   resolved: boolean;
 }
 
-export default function AVScanner() {
+export default function AVScanner({ osFilter }: { osFilter?: "mac" | "windows" }) {
   const [scanning, setScanning] = useState(false);
 
   const { data: threats = [], isLoading, refetch } = useQuery<ThreatRow[]>({
-    queryKey: ["av-threats"],
+    queryKey: ["av-threats", osFilter],
     queryFn: async () => {
-      const { data } = await supabase
+      // Resolve device IDs for the requested OS first
+      let deviceIds: string[] | null = null;
+      if (osFilter) {
+        const osValues = osFilter === "mac" ? ["mac","macos","darwin"] : ["windows"];
+        const { data: devs } = await supabase
+          .from("devices").select("id").in("os_type", osValues);
+        deviceIds = (devs ?? []).map((d: { id: string }) => d.id);
+        if (deviceIds.length === 0) return [];
+      }
+      let q = supabase
         .from("alerts")
         .select("id, hostname, alert_type, severity, message, created_at, resolved")
         .in("alert_type", ["crypto_miner_process", "malicious_app_installed", "tunneling_tool_detected", "shell_on_port"])
         .order("created_at", { ascending: false })
         .limit(50);
+      if (deviceIds) q = q.in("device_id", deviceIds);
+      const { data } = await q;
       return data ?? [];
     },
     refetchInterval: 30_000,
@@ -55,7 +66,7 @@ export default function AVScanner() {
             Threat Scanner
           </h1>
           <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
-            Real-time AV threat detections from all enrolled endpoints
+            {osFilter ? `${osFilter === "mac" ? "macOS" : "Windows"} AV detections` : "Real-time AV threat detections from all enrolled endpoints"}
           </p>
         </div>
         <button

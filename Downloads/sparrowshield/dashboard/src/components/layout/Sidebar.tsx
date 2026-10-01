@@ -1,9 +1,9 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2, BookOpen,
-  Network, Cpu, ListChecks,
+  Network, Cpu, ListChecks, WifiOff,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
@@ -12,40 +12,30 @@ import { supabase } from "../../lib/supabase";
 
 type NavItem = { to: string; label: string; icon: React.ElementType };
 
-const fleetNav: NavItem[] = [
-  { to: "/",         label: "Overview",  icon: LayoutDashboard },
-  { to: "/devices",  label: "Devices",   icon: Laptop          },
-];
-
-const avNav: NavItem[] = [
-  { to: "/av/scanner",    label: "Threat Scanner", icon: ScanLine  },
-  { to: "/av/quarantine", label: "Quarantine",     icon: Trash2    },
-  { to: "/av/definitions",label: "Definitions",    icon: BookOpen  },
-];
-
-const edrNav: NavItem[] = [
-  { to: "/edr/detections", label: "Detections",      icon: BellRing  },
-  { to: "/edr/rules",      label: "Detection Rules",  icon: ListChecks},
-  { to: "/edr/processes",  label: "Process Monitor",  icon: Cpu       },
-  { to: "/edr/network",    label: "Network Activity", icon: Network   },
-];
-
-const mgmtNav: NavItem[] = [
-  { to: "/patches",    label: "Patches",    icon: Package    },
-  { to: "/compliance", label: "Compliance", icon: ShieldCheck},
-  { to: "/reports",    label: "Reports",    icon: FileText   },
-];
-
-const systemNav: NavItem[] = [
-  { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/about",    label: "About",    icon: Info     },
-];
-
-function SectionLabel({ label }: { label: string }) {
+function SectionLabel({ label, color }: { label: string; color?: string }) {
   return (
-    <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>
+    <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest"
+      style={{ color: color ?? "#2d3252" }}>
       {label}
     </p>
+  );
+}
+
+function OsSectionHeader({ icon: Icon, label, count, color }: {
+  icon: React.ElementType; label: string; count: number; color: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-3 mb-1">
+      <Icon className="w-3 h-3" style={{ color }} />
+      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>{label}</p>
+      <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
+      {count > 0 && (
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
+          style={{ background: "rgba(255,255,255,0.06)", color: "#4b5270" }}>
+          {count}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -92,19 +82,47 @@ function NavGroup({ items, badge }: { items: NavItem[]; badge?: Record<string, n
 export default function Sidebar() {
   const [expanded, setExpanded] = useState(false);
 
-  const { data: deviceCount = 0 } = useQuery<number>({
-    queryKey: ["device-count"],
+  const { data: macCount = 0 } = useQuery<number>({
+    queryKey: ["mac-device-count"],
     queryFn: async () => {
-      const { count } = await supabase.from("devices").select("*", { count: "exact", head: true });
+      const { count } = await supabase.from("devices")
+        .select("*", { count: "exact", head: true })
+        .in("os_type", ["mac", "macos", "darwin"]);
       return count ?? 0;
     },
     refetchInterval: 30_000,
   });
 
-  const { data: openAlerts = 0 } = useQuery<number>({
-    queryKey: ["open-alerts-count"],
+  const { data: winCount = 0 } = useQuery<number>({
+    queryKey: ["win-device-count"],
     queryFn: async () => {
-      const { count } = await supabase.from("alerts").select("*", { count: "exact", head: true }).eq("resolved", false);
+      const { count } = await supabase.from("devices")
+        .select("*", { count: "exact", head: true })
+        .eq("os_type", "windows");
+      return count ?? 0;
+    },
+    refetchInterval: 30_000,
+  });
+
+  const { data: macAlerts = 0 } = useQuery<number>({
+    queryKey: ["mac-alert-count"],
+    queryFn: async () => {
+      const { count } = await supabase.from("alerts")
+        .select("*, devices!inner(os_type)", { count: "exact", head: true })
+        .eq("resolved", false)
+        .in("devices.os_type", ["mac", "macos", "darwin"]);
+      return count ?? 0;
+    },
+    refetchInterval: 30_000,
+  });
+
+  const { data: winAlerts = 0 } = useQuery<number>({
+    queryKey: ["win-alert-count"],
+    queryFn: async () => {
+      const { count } = await supabase.from("alerts")
+        .select("*, devices!inner(os_type)", { count: "exact", head: true })
+        .eq("resolved", false)
+        .eq("devices.os_type", "windows");
       return count ?? 0;
     },
     refetchInterval: 30_000,
@@ -117,9 +135,41 @@ export default function Sidebar() {
     a.click();
   }
 
-  const badge: Record<string, number> = {};
-  if (deviceCount > 0) badge["/devices"] = deviceCount;
-  if (openAlerts > 0) badge["/edr/detections"] = openAlerts;
+  const macBadge: Record<string, number> = {};
+  if (macAlerts > 0) macBadge["/mac/edr"] = macAlerts;
+
+  const winBadge: Record<string, number> = {};
+  if (winAlerts > 0) winBadge["/windows/edr"] = winAlerts;
+
+  const fleetNav: NavItem[] = [
+    { to: "/",        label: "Overview",    icon: LayoutDashboard },
+    { to: "/devices", label: "All Devices", icon: Laptop          },
+  ];
+
+  const macNav: NavItem[] = [
+    { to: "/mac/devices", label: "Mac Devices",      icon: Apple    },
+    { to: "/mac/av",      label: "AV Scanner",       icon: ScanLine },
+    { to: "/mac/edr",     label: "EDR Detections",   icon: BellRing },
+    { to: "/mac/network", label: "Network Activity", icon: Network  },
+  ];
+
+  const winNav: NavItem[] = [
+    { to: "/windows/devices",   label: "Win Devices",     icon: Monitor    },
+    { to: "/windows/av",        label: "AV Scanner",      icon: ScanLine   },
+    { to: "/windows/edr",       label: "EDR Detections",  icon: BellRing   },
+    { to: "/windows/isolation", label: "Host Isolation",  icon: WifiOff    },
+  ];
+
+  const mgmtNav: NavItem[] = [
+    { to: "/patches",    label: "Patches",    icon: Package    },
+    { to: "/compliance", label: "Compliance", icon: ShieldCheck},
+    { to: "/reports",    label: "Reports",    icon: FileText   },
+  ];
+
+  const systemNav: NavItem[] = [
+    { to: "/settings", label: "Settings", icon: Settings },
+    { to: "/about",    label: "About",    icon: Info     },
+  ];
 
   return (
     <aside className="fixed left-0 top-0 h-full w-56 flex flex-col z-20"
@@ -141,32 +191,23 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-4 overflow-y-auto">
+
         {/* Fleet */}
         <div>
           <SectionLabel label="Fleet" />
-          <NavGroup items={fleetNav} badge={badge} />
+          <NavGroup items={fleetNav} />
         </div>
 
-        {/* AV */}
+        {/* macOS section */}
         <div>
-          <div className="flex items-center gap-2 px-3 mb-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>AV</p>
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-              style={{ background: "rgba(34,197,94,0.1)", color: "#4ade80" }}>Antivirus</span>
-          </div>
-          <NavGroup items={avNav} />
+          <OsSectionHeader icon={Apple} label="macOS" count={macCount} color="#a78bfa" />
+          <NavGroup items={macNav} badge={macBadge} />
         </div>
 
-        {/* EDR */}
+        {/* Windows section */}
         <div>
-          <div className="flex items-center gap-2 px-3 mb-1">
-            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>EDR</p>
-            <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-              style={{ background: "rgba(239,68,68,0.1)", color: "#f87171" }}>Detection</span>
-          </div>
-          <NavGroup items={edrNav} badge={badge} />
+          <OsSectionHeader icon={Monitor} label="Windows" count={winCount} color="#60a5fa" />
+          <NavGroup items={winNav} badge={winBadge} />
         </div>
 
         {/* Management */}
@@ -199,8 +240,9 @@ export default function Sidebar() {
           {expanded && (
             <div className="mt-1 ml-4 pl-3 space-y-0.5" style={{ borderLeft: "1px solid rgba(255,255,255,0.05)" }}>
               {[
-                { label: "macOS Agent", sub: "agent + config", icon: Apple, file: "/agents/sparrowshield-mac-agent.zip", dl: "sparrowshield-mac-agent.zip" },
-                { label: "Windows Agent", sub: "agent + config", icon: Monitor, file: "/agents/sparrowshield-windows-agent.zip", dl: "sparrowshield-windows-agent.zip" },
+                { label: "macOS Agent (.py)", icon: Apple,   file: "/agents/sparrowshield_agent.py",   dl: "sparrowshield_agent.py" },
+                { label: "Windows EXE",       icon: Monitor, file: "/agents/SparrowShieldAgent.exe",   dl: "SparrowShieldAgent.exe" },
+                { label: "Windows (.py)",      icon: Monitor, file: "/agents/agent_windows.py",         dl: "agent_windows.py" },
               ].map(item => (
                 <button
                   key={item.label}
@@ -211,10 +253,7 @@ export default function Sidebar() {
                   onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4b5270"; }}
                 >
                   <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium text-slate-300" style={{ fontSize: 11 }}>{item.label}</p>
-                    <p style={{ fontSize: 10, color: "#2d3252" }}>{item.sub}</p>
-                  </div>
+                  <p className="font-medium" style={{ fontSize: 11, color: "#94a3b8" }}>{item.label}</p>
                 </button>
               ))}
             </div>

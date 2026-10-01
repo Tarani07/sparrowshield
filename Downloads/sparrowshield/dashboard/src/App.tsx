@@ -10,12 +10,22 @@ import About from "./pages/About";
 import PatchManager from "./pages/PatchManager";
 import AlertCenter from "./pages/AlertCenter";
 
-// AV
+// macOS
+import MacDevices from "./pages/mac/MacDevices";
+import MacAV from "./pages/mac/MacAV";
+import MacEDR from "./pages/mac/MacEDR";
+import MacNetwork from "./pages/mac/MacNetwork";
+
+// Windows
+import WindowsDevices from "./pages/windows/WindowsDevices";
+import WindowsAV from "./pages/windows/WindowsAV";
+import WindowsEDR from "./pages/windows/WindowsEDR";
+import HostIsolation from "./pages/windows/HostIsolation";
+
+// Shared AV + EDR (legacy / all-platform)
 import AVScanner from "./pages/av/AVScanner";
 import Quarantine from "./pages/av/Quarantine";
 import Definitions from "./pages/av/Definitions";
-
-// EDR
 import Detections from "./pages/edr/Detections";
 import DetectionRules from "./pages/edr/DetectionRules";
 import ProcessMonitor from "./pages/edr/ProcessMonitor";
@@ -33,18 +43,28 @@ export default function App() {
             <Route path="/devices" element={<DeviceList />} />
             <Route path="/device/:id" element={<DeviceDetail />} />
 
-            {/* AV */}
+            {/* macOS */}
+            <Route path="/mac/devices" element={<MacDevices />} />
+            <Route path="/mac/av" element={<MacAV />} />
+            <Route path="/mac/edr" element={<MacEDR />} />
+            <Route path="/mac/network" element={<MacNetwork />} />
+
+            {/* Windows */}
+            <Route path="/windows/devices" element={<WindowsDevices />} />
+            <Route path="/windows/av" element={<WindowsAV />} />
+            <Route path="/windows/edr" element={<WindowsEDR />} />
+            <Route path="/windows/isolation" element={<HostIsolation />} />
+
+            {/* Shared / all-platform AV + EDR */}
             <Route path="/av/scanner" element={<AVScanner />} />
             <Route path="/av/quarantine" element={<Quarantine />} />
             <Route path="/av/definitions" element={<Definitions />} />
-
-            {/* EDR */}
             <Route path="/edr/detections" element={<Detections />} />
             <Route path="/edr/rules" element={<DetectionRules />} />
             <Route path="/edr/processes" element={<ProcessMonitor />} />
             <Route path="/edr/network" element={<NetworkActivity />} />
 
-            {/* Legacy redirect for old /alerts route */}
+            {/* Legacy */}
             <Route path="/alerts" element={<AlertCenter />} />
 
             {/* Management */}
