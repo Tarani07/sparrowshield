@@ -67,7 +67,7 @@ function ScoreRing({ pct }: { pct: number }) {
   const dash    = (pct / 100) * circ;
   return (
     <svg width={90} height={90} viewBox="0 0 90 90">
-      <circle cx={45} cy={45} r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
+      <circle cx={45} cy={45} r={radius} fill="none" stroke="var(--c-border2)" strokeWidth={8} />
       <circle cx={45} cy={45} r={radius} fill="none" stroke={col.text} strokeWidth={8}
         strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
         transform="rotate(-90 45 45)" />
@@ -83,7 +83,7 @@ function DeviceComplianceCard({ snap }: { snap: Snapshot }) {
   const failed = checks.filter(([, v]) => !v);
 
   return (
-    <div className="rounded-xl p-4 space-y-3" style={{ background: "#13141a", border: `1px solid ${col.border}` }}>
+    <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--c-card)", border: `1px solid ${col.border}` }}>
       <div className="flex items-center gap-3">
         {snap.os_type === "mac" || snap.os_type === "macos"
           ? <Apple className="w-4 h-4 flex-shrink-0" style={{ color: "#a855f7" }} />
@@ -91,7 +91,7 @@ function DeviceComplianceCard({ snap }: { snap: Snapshot }) {
         }
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-white truncate">{snap.hostname}</p>
-          <p className="text-[11px]" style={{ color: "#4b5270" }}>{snap.framework}</p>
+          <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>{snap.framework}</p>
         </div>
         <ScoreRing pct={snap.score_pct} />
       </div>
@@ -115,7 +115,7 @@ function DeviceComplianceCard({ snap }: { snap: Snapshot }) {
         </div>
       )}
 
-      <p className="text-[10px]" style={{ color: "#2d3252" }}>
+      <p className="text-[10px]" style={{ color: "var(--c-faint)" }}>
         Last check: {new Date(snap.snapshot_at).toLocaleString()}
       </p>
     </div>
@@ -165,14 +165,14 @@ export default function Compliance() {
   const winSnaps = snapshots.filter(s => s.os_type === "windows");
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <ShieldCheck className="w-5 h-5" style={{ color: "#4ade80" }} />
           Compliance
         </h1>
-        <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+        <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
           CIS macOS &amp; Windows Benchmark — per-device control pass/fail
         </p>
       </div>
@@ -196,7 +196,7 @@ export default function Compliance() {
       {(macSnaps.length > 0 || winSnaps.length > 0) && (
         <div className="grid grid-cols-2 gap-4">
           {/* Mac */}
-          <div className="rounded-xl p-4 space-y-2" style={{ background: "#13141a", border: "1px solid rgba(168,85,247,0.15)" }}>
+          <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--c-card)", border: "1px solid rgba(168,85,247,0.15)" }}>
             <div className="flex items-center gap-2">
               <Apple className="w-4 h-4" style={{ color: "#a855f7" }} />
               <span className="text-sm font-semibold text-white">macOS Fleet</span>
@@ -204,12 +204,12 @@ export default function Compliance() {
             </div>
             <div className="text-2xl font-bold" style={{ color: "#a855f7" }}>
               {macSnaps.length ? Math.round(macSnaps.reduce((a,s) => a + s.score_pct, 0) / macSnaps.length) : 0}%
-              <span className="text-sm font-normal ml-1" style={{ color: "#4b5270" }}>avg score</span>
+              <span className="text-sm font-normal ml-1" style={{ color: "var(--c-muted)" }}>avg score</span>
             </div>
-            <p className="text-[11px]" style={{ color: "#4b5270" }}>Framework: CIS macOS Benchmark</p>
+            <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Framework: CIS macOS Benchmark</p>
           </div>
           {/* Windows */}
-          <div className="rounded-xl p-4 space-y-2" style={{ background: "#13141a", border: "1px solid rgba(96,165,250,0.15)" }}>
+          <div className="rounded-xl p-4 space-y-2" style={{ background: "var(--c-card)", border: "1px solid rgba(96,165,250,0.15)" }}>
             <div className="flex items-center gap-2">
               <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
               <span className="text-sm font-semibold text-white">Windows Fleet</span>
@@ -217,30 +217,30 @@ export default function Compliance() {
             </div>
             <div className="text-2xl font-bold" style={{ color: "#60a5fa" }}>
               {winSnaps.length ? Math.round(winSnaps.reduce((a,s) => a + s.score_pct, 0) / winSnaps.length) : 0}%
-              <span className="text-sm font-normal ml-1" style={{ color: "#4b5270" }}>avg score</span>
+              <span className="text-sm font-normal ml-1" style={{ color: "var(--c-muted)" }}>avg score</span>
             </div>
-            <p className="text-[11px]" style={{ color: "#4b5270" }}>Framework: CIS Windows Benchmark</p>
+            <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Framework: CIS Windows Benchmark</p>
           </div>
         </div>
       )}
 
       {/* Device cards */}
       {isLoading ? (
-        <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading compliance data…</div>
+        <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading compliance data…</div>
       ) : snapshots.length === 0 ? (
-        <div className="rounded-xl p-10 text-center" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
-          <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: "#4b5270" }} />
+        <div className="rounded-xl p-10 text-center" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+          <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--c-muted)" }} />
           <p className="text-sm font-medium text-white">No compliance data yet</p>
-          <p className="text-xs mt-1" style={{ color: "#4b5270" }}>
+          <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>
             Agent v2.0 pushes CIS snapshots every 6 hours. Data appears after the first check.
           </p>
         </div>
       ) : (
         <>
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" style={{ color: "#4b5270" }} />
+            <TrendingUp className="w-4 h-4" style={{ color: "var(--c-muted)" }} />
             <span className="text-sm font-semibold text-white">Device Compliance</span>
-            <span className="ml-auto text-xs" style={{ color: "#4b5270" }}>{snapshots.length} devices</span>
+            <span className="ml-auto text-xs" style={{ color: "var(--c-muted)" }}>{snapshots.length} devices</span>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {[...snapshots].sort((a, b) => a.score_pct - b.score_pct).map(snap => (

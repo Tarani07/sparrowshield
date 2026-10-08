@@ -3,19 +3,20 @@ import {
   LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2, BookOpen,
-  Network, Cpu, ListChecks, WifiOff, Bug,
+  Network, Cpu, ListChecks, WifiOff, Bug, Sun, Moon,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../../lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
+import { useTheme } from "../../lib/ThemeContext";
 
 type NavItem = { to: string; label: string; icon: React.ElementType };
 
 function SectionLabel({ label, color }: { label: string; color?: string }) {
   return (
     <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest"
-      style={{ color: color ?? "#2d3252" }}>
+      style={{ color: color ?? "var(--c-faint)" }}>
       {label}
     </p>
   );
@@ -27,11 +28,11 @@ function OsSectionHeader({ icon: Icon, label, count, color }: {
   return (
     <div className="flex items-center gap-2 px-3 mb-1">
       <Icon className="w-3 h-3" style={{ color }} />
-      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#2d3252" }}>{label}</p>
-      <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.04)" }} />
+      <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>{label}</p>
+      <div className="flex-1 h-px" style={{ background: "var(--c-divider)" }} />
       {count > 0 && (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-          style={{ background: "rgba(255,255,255,0.06)", color: "#4b5270" }}>
+          style={{ background: "var(--c-border2)", color: "var(--c-muted)" }}>
           {count}
         </span>
       )}
@@ -55,7 +56,7 @@ function NavGroup({ items, badge }: { items: NavItem[]; badge?: Record<string, n
           }
           style={({ isActive }) => isActive
             ? { background: "rgba(99,102,241,0.15)", color: "#a5b4fc" }
-            : { color: "#4b5270" }
+            : { color: "var(--c-muted)" }
           }
         >
           {({ isActive }) => (
@@ -65,8 +66,8 @@ function NavGroup({ items, badge }: { items: NavItem[]; badge?: Record<string, n
               {badge?.[to] ? (
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
                   style={{
-                    background: isActive ? "rgba(99,102,241,0.3)" : "rgba(255,255,255,0.06)",
-                    color: isActive ? "#a5b4fc" : "#4b5270",
+                    background: isActive ? "rgba(99,102,241,0.3)" : "var(--c-border2)",
+                    color: isActive ? "#a5b4fc" : "var(--c-muted)",
                   }}>
                   {badge[to]}
                 </span>
@@ -80,6 +81,7 @@ function NavGroup({ items, badge }: { items: NavItem[]; badge?: Record<string, n
 }
 
 export default function Sidebar() {
+  const { theme, toggle } = useTheme();
   const [expanded, setExpanded] = useState(false);
 
   const { data: macCount = 0 } = useQuery<number>({
@@ -174,10 +176,10 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 h-full w-56 flex flex-col z-20"
-      style={{ background: "#0d0f16", borderRight: "1px solid rgba(255,255,255,0.05)" }}>
+      style={{ background: "#0d0f16", borderRight: "1px solid rgba(255,255,255,0.06)" }}>
 
       {/* Logo */}
-      <div className="px-5 pt-6 pb-5" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      <div className="px-5 pt-6 pb-5" style={{ borderBottom: "1px solid var(--c-border)" }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center"
             style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)" }}>
@@ -185,7 +187,7 @@ export default function Sidebar() {
           </div>
           <div>
             <p className="text-sm font-semibold text-white leading-none tracking-tight">SparrowShield</p>
-            <p className="text-[10px] mt-0.5" style={{ color: "#4b5270" }}>Security Platform</p>
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-muted)" }}>Security Platform</p>
           </div>
         </div>
       </div>
@@ -229,9 +231,9 @@ export default function Sidebar() {
           <button
             onClick={() => setExpanded(v => !v)}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all"
-            style={{ color: "#4b5270" }}
+            style={{ color: "var(--c-muted)" }}
             onMouseEnter={e => (e.currentTarget.style.color = "#94a3b8")}
-            onMouseLeave={e => (e.currentTarget.style.color = "#4b5270")}
+            onMouseLeave={e => (e.currentTarget.style.color = "var(--c-muted)")}
           >
             <Download className="w-4 h-4" />
             <span className="flex-1 text-left">Download Agent</span>
@@ -239,7 +241,7 @@ export default function Sidebar() {
           </button>
 
           {expanded && (
-            <div className="mt-1 ml-4 pl-3 space-y-0.5" style={{ borderLeft: "1px solid rgba(255,255,255,0.05)" }}>
+            <div className="mt-1 ml-4 pl-3 space-y-0.5" style={{ borderLeft: "1px solid var(--c-border)" }}>
               {[
                 { label: "macOS Agent (.py)", icon: Apple,   file: "/agents/sparrowshield_agent.py",   dl: "sparrowshield_agent.py" },
                 { label: "Windows EXE",       icon: Monitor, file: "/agents/SparrowShieldAgent.exe",   dl: "SparrowShieldAgent.exe" },
@@ -249,9 +251,9 @@ export default function Sidebar() {
                   key={item.label}
                   onClick={() => downloadFile(item.file, item.dl)}
                   className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-xs transition-all text-left"
-                  style={{ color: "#4b5270" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "#94a3b8"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4b5270"; }}
+                  style={{ color: "var(--c-muted)" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "var(--c-divider)"; e.currentTarget.style.color = "#94a3b8"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--c-muted)"; }}
                 >
                   <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
                   <p className="font-medium" style={{ fontSize: 11, color: "#94a3b8" }}>{item.label}</p>
@@ -263,8 +265,34 @@ export default function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-4 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="flex items-center gap-2" style={{ color: "#2d3252" }}>
+      <div className="px-4 py-4 space-y-3" style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+        {/* Theme toggle */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2" style={{ color: "rgba(148,163,184,0.7)" }}>
+            {theme === "dark" ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+            <span className="text-[11px] font-medium">{theme === "dark" ? "Dark" : "Light"}</span>
+          </div>
+          <button
+            onClick={toggle}
+            className="relative flex-shrink-0 rounded-full transition-all"
+            style={{
+              width: 36, height: 20,
+              background: theme === "dark" ? "rgba(99,102,241,0.4)" : "rgba(99,102,241,0.8)",
+              border: "1px solid rgba(99,102,241,0.5)",
+            }}
+            aria-label="Toggle theme"
+          >
+            <span
+              className="absolute top-0.5 rounded-full transition-all duration-200"
+              style={{
+                width: 16, height: 16,
+                background: "#ffffff",
+                left: theme === "dark" ? 2 : 18,
+              }}
+            />
+          </button>
+        </div>
+        <div className="flex items-center gap-2" style={{ color: "rgba(148,163,184,0.5)" }}>
           <Activity className="w-3 h-3" />
           <span className="text-[10px]">Auto-refresh every 30s</span>
         </div>

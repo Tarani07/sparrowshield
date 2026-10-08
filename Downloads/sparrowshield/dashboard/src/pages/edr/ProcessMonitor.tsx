@@ -28,56 +28,56 @@ export default function ProcessMonitor() {
   ).sort((a, b) => b.cpu - a.cpu);
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
       <div>
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <Cpu className="w-5 h-5" style={{ color: "#a5b4fc" }} />
           Process Monitor
         </h1>
-        <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+        <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
           Top processes across all online endpoints, sorted by CPU
         </p>
       </div>
 
-      <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-3" style={{ borderBottom: "1px solid var(--c-border)" }}>
           <span className="text-sm font-semibold text-white">
             {devices.length} online device{devices.length !== 1 ? "s" : ""}
           </span>
-          <span className="ml-2 text-xs" style={{ color: "#4b5270" }}>· {allProcs.length} processes</span>
+          <span className="ml-2 text-xs" style={{ color: "var(--c-muted)" }}>· {allProcs.length} processes</span>
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading…</div>
+          <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading…</div>
         ) : allProcs.length === 0 ? (
           <div className="p-10 text-center">
-            <AlertTriangle className="w-10 h-10 mx-auto mb-3" style={{ color: "#4b5270" }} />
+            <AlertTriangle className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--c-muted)" }} />
             <p className="text-sm font-medium text-white">No process data available</p>
-            <p className="text-xs mt-1" style={{ color: "#4b5270" }}>
+            <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>
               Agent must be running and reporting top_processes
             </p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
                 {["Process", "PID", "Device", "CPU %", "Mem %"].map(h => (
                   <th key={h} className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider"
-                    style={{ color: "#2d3252" }}>{h}</th>
+                    style={{ color: "var(--c-faint)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+            <tbody className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
               {allProcs.slice(0, 50).map((p, i) => (
                 <tr key={i} className="group hover:bg-white/[0.02] transition-colors">
                   <td className="px-5 py-2.5">
                     <span className="font-medium text-white font-mono text-xs">{p.name}</span>
                   </td>
-                  <td className="px-5 py-2.5 text-xs font-mono" style={{ color: "#4b5270" }}>{p.pid}</td>
+                  <td className="px-5 py-2.5 text-xs font-mono" style={{ color: "var(--c-muted)" }}>{p.pid}</td>
                   <td className="px-5 py-2.5 text-xs" style={{ color: "#94a3b8" }}>{p.hostname}</td>
                   <td className="px-5 py-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--c-border2)" }}>
                         <div className="h-full rounded-full"
                           style={{
                             width: `${Math.min(p.cpu, 100)}%`,
@@ -92,7 +92,7 @@ export default function ProcessMonitor() {
                   </td>
                   <td className="px-5 py-2.5">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--c-border2)" }}>
                         <div className="h-full rounded-full"
                           style={{
                             width: `${Math.min(p.mem, 100)}%`,

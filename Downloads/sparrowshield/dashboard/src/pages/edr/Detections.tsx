@@ -65,24 +65,24 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
   };
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <BellRing className="w-5 h-5" style={{ color: "#f87171" }} />
             EDR Detections
           </h1>
-          <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
             {osFilter ? `${osFilter === "mac" ? "macOS" : "Windows"} MITRE ATT&CK detections` : "MITRE ATT&CK–tagged alerts from the detection engine"}
           </p>
         </div>
-        <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           {(["all","open","resolved"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className="px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all"
               style={filter === f
                 ? { background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }
-                : { color: "#4b5270" }
+                : { color: "var(--c-muted)" }
               }>
               {f}
             </button>
@@ -103,23 +103,23 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
       </div>
 
       {/* Alert list */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-          <Filter className="w-4 h-4" style={{ color: "#4b5270" }} />
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--c-border)" }}>
+          <Filter className="w-4 h-4" style={{ color: "var(--c-muted)" }} />
           <span className="text-sm font-semibold text-white capitalize">{filter} Detections</span>
-          <span className="ml-auto text-xs" style={{ color: "#4b5270" }}>{alerts.length} results</span>
+          <span className="ml-auto text-xs" style={{ color: "var(--c-muted)" }}>{alerts.length} results</span>
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading…</div>
+          <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading…</div>
         ) : alerts.length === 0 ? (
           <div className="p-10 text-center">
             <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: "#4ade80" }} />
             <p className="text-sm font-medium text-white">No detections</p>
-            <p className="text-xs mt-1" style={{ color: "#4b5270" }}>All clear for the selected filter</p>
+            <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>All clear for the selected filter</p>
           </div>
         ) : (
-          <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+          <div className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
             {alerts.map(alert => (
               <div key={alert.id} className="px-5 py-4 flex items-start gap-4 group">
                 <div className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
@@ -139,12 +139,12 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
                         {alert.mitre_technique}
                       </span>
                     )}
-                    <span className="text-xs" style={{ color: "#4b5270" }}>{alert.hostname}</span>
+                    <span className="text-xs" style={{ color: "var(--c-muted)" }}>{alert.hostname}</span>
                   </div>
-                  <p className="text-xs mt-1" style={{ color: "#4b5270" }}>{alert.message}</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>{alert.message}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                  <div className="flex items-center gap-1 text-[11px]" style={{ color: "#2d3252" }}>
+                  <div className="flex items-center gap-1 text-[11px]" style={{ color: "var(--c-faint)" }}>
                     <Clock className="w-3 h-3" />
                     {new Date(alert.created_at).toLocaleString()}
                   </div>

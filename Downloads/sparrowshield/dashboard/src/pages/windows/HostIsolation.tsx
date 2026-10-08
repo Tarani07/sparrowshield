@@ -38,7 +38,7 @@ export default function HostIsolation() {
   }
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0d0f16" }}>
+    <div className="flex flex-col h-full" style={{ background: "var(--c-bg)" }}>
       <TopBar title="Host Isolation" />
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
@@ -64,7 +64,7 @@ export default function HostIsolation() {
             { label: "Not Isolated",     value: notIsolated.length, color: "#34d399" },
           ].map(s => (
             <div key={s.label} className="rounded-xl p-4 text-center"
-              style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+              style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
               <p className="text-3xl font-bold tabular-nums mb-1" style={{ color: s.color }}>{s.value}</p>
               <p className="text-xs text-slate-500">{s.label}</p>
             </div>
@@ -74,7 +74,7 @@ export default function HostIsolation() {
         {/* Isolated devices */}
         {isolated.length > 0 && (
           <div className="rounded-xl overflow-hidden"
-            style={{ background: "#13141a", border: "1px solid rgba(239,68,68,0.25)" }}>
+            style={{ background: "var(--c-card)", border: "1px solid rgba(239,68,68,0.25)" }}>
             <div className="px-5 py-4 border-b border-red-900/40 flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
               <h2 className="text-sm font-semibold text-red-300">Isolated Devices ({isolated.length})</h2>
@@ -92,7 +92,7 @@ export default function HostIsolation() {
 
         {/* Active devices */}
         <div className="rounded-xl overflow-hidden"
-          style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="px-5 py-4 border-b border-slate-800/60">
             <h2 className="text-sm font-semibold text-white">Active Devices ({notIsolated.length})</h2>
             <p className="text-[11px] text-slate-600 mt-0.5">Click Isolate to immediately cut off network access</p>

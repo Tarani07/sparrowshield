@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "./lib/ThemeContext";
 import Sidebar from "./components/layout/Sidebar";
 import FleetOverview from "./pages/FleetOverview";
 import DeviceDetail from "./pages/DeviceDetail";
@@ -34,8 +35,9 @@ import NetworkActivity from "./pages/edr/NetworkActivity";
 
 export default function App() {
   return (
+    <ThemeProvider>
     <BrowserRouter>
-      <div className="flex h-screen overflow-hidden font-sans" style={{ background: "#0d0f16" }}>
+      <div className="flex h-screen overflow-hidden font-sans" style={{ background: "var(--c-bg)" }}>
         <Sidebar />
         <main className="flex-1 ml-56 flex flex-col overflow-y-auto">
           <Routes>
@@ -81,5 +83,6 @@ export default function App() {
         </main>
       </div>
     </BrowserRouter>
+    </ThemeProvider>
   );
 }

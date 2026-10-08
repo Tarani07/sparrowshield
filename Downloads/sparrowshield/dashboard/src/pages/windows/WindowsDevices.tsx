@@ -35,7 +35,7 @@ export default function WindowsDevices() {
   const defOff   = devices.filter(d => d.defender_enabled === false).length;
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0d0f16" }}>
+    <div className="flex flex-col h-full" style={{ background: "var(--c-bg)" }}>
       <TopBar title="Windows Devices" />
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
@@ -48,7 +48,7 @@ export default function WindowsDevices() {
             { label: "Defender Off",    value: defOff,         icon: ShieldCheck, color: defOff ? "#f87171" : "#34d399", sub: "unprotected" },
           ].map(s => (
             <div key={s.label} className="rounded-xl p-4 flex items-center gap-3"
-              style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+              style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
               <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
                 style={{ background: `${s.color}15` }}>
                 <s.icon className="w-4 h-4" style={{ color: s.color }} />
@@ -64,7 +64,7 @@ export default function WindowsDevices() {
         {/* Security Summary Bar */}
         {devices.length > 0 && (
           <div className="rounded-xl p-4 flex flex-wrap gap-6"
-            style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+            style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <p className="text-xs font-semibold text-slate-400 self-center">Security Posture</p>
             {[
               { label: "BitLocker",  pass: devices.filter(d => d.bitlocker_enabled).length,  total: devices.length },
@@ -92,7 +92,7 @@ export default function WindowsDevices() {
 
         {/* Device Table */}
         <div className="rounded-xl overflow-hidden"
-          style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="px-5 py-4 border-b border-slate-800/60">
             <h2 className="text-sm font-semibold text-white">{devices.length} Windows Devices</h2>
           </div>

@@ -22,8 +22,8 @@ export default function StatCard({ label, value, sub, color, icon, lucideIcon: L
     <div
       className="rounded-xl p-5 flex flex-col gap-3 transition-all duration-200 hover:translate-y-[-1px]"
       style={{
-        background: "#13141a",
-        border: "1px solid rgba(255,255,255,0.05)",
+        background: "var(--c-card)",
+        border: "1px solid var(--c-border)",
         boxShadow: value > 0 && color !== "default" ? `0 0 0 1px ${p.accent}18 inset` : undefined,
       }}
     >

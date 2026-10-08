@@ -4,12 +4,57 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Color tokens ─────────────────────────────────────────────
+   Dark mode is the default. Light mode overrides are set on
+   [data-theme="light"]. The sidebar always stays dark.
+─────────────────────────────────────────────────────────────── */
+:root {
+  --c-bg:       #0d0f16;
+  --c-card:     #13141a;
+  --c-card2:    #1a1d28;
+  --c-text:     #c8d0e8;
+  --c-strong:   #ffffff;
+  --c-muted:    #4b5270;
+  --c-faint:    #2d3252;
+  --c-border:   rgba(255,255,255,0.05);
+  --c-border2:  rgba(255,255,255,0.08);
+  --c-divider:  rgba(255,255,255,0.04);
+}
+
+[data-theme="light"] {
+  --c-bg:       #f0f4f8;
+  --c-card:     #ffffff;
+  --c-card2:    #f8fafc;
+  --c-text:     #475569;
+  --c-strong:   #0f172a;
+  --c-muted:    #94a3b8;
+  --c-faint:    #cbd5e1;
+  --c-border:   rgba(0,0,0,0.08);
+  --c-border2:  rgba(0,0,0,0.12);
+  --c-divider:  rgba(0,0,0,0.06);
+}
+
+/* ── Tailwind overrides for light mode ─────────────────────── */
+[data-theme="light"] .text-white {
+  color: var(--c-strong) !important;
+}
+
+[data-theme="light"] .divide-y > * + * {
+  border-color: var(--c-divider) !important;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
 @layer base {
   * { box-sizing: border-box; }
-  body { font-family: 'Inter', system-ui, sans-serif; }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--c-bg);
+    color: var(--c-text);
+    transition: background 0.2s, color 0.2s;
+  }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #1e2130; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: #2a2f45; }
+  ::-webkit-scrollbar-thumb { background: var(--c-card2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--c-muted); }
 }

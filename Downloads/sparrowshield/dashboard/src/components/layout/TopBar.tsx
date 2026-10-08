@@ -19,7 +19,7 @@ export default function TopBar({ title }: { title: string }) {
       style={{
         background: "rgba(13,15,22,0.85)",
         backdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        borderBottom: "1px solid var(--c-border)",
       }}>
 
       <h1 className="text-sm font-semibold text-white flex-shrink-0 tracking-tight">{title}</h1>
@@ -33,11 +33,11 @@ export default function TopBar({ title }: { title: string }) {
             placeholder="Search devices…"
             className="w-full rounded-lg pl-9 pr-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none transition-colors"
             style={{
-              background: "rgba(255,255,255,0.04)",
-              border: "1px solid rgba(255,255,255,0.06)",
+              background: "var(--c-divider)",
+              border: "1px solid var(--c-border2)",
             }}
             onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)")}
-            onBlur={e => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
           />
         </div>
       </form>
@@ -46,9 +46,9 @@ export default function TopBar({ title }: { title: string }) {
         <button
           onClick={() => navigate("/alerts")}
           className="relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-          style={{ color: "#4b5270" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#94a3b8"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#4b5270"; }}
+          style={{ color: "var(--c-muted)" }}
+          onMouseEnter={e => { e.currentTarget.style.background = "var(--c-border2)"; e.currentTarget.style.color = "#94a3b8"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--c-muted)"; }}
         >
           <Bell className="w-4 h-4" />
           {openCount > 0 && (

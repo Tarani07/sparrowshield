@@ -35,14 +35,14 @@ export default function DetectionRules() {
   })).filter(g => g.rules.length > 0);
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <ListChecks className="w-5 h-5" style={{ color: "#a5b4fc" }} />
             Detection Rules
           </h1>
-          <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
             All active detection rules with MITRE ATT&CK mappings
           </p>
         </div>
@@ -53,21 +53,21 @@ export default function DetectionRules() {
       </div>
 
       {isLoading ? (
-        <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading rules…</div>
+        <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading rules…</div>
       ) : (
         <div className="space-y-4">
           {groups.map(({ severity, rules: grpRules }) => (
             <div key={severity} className="rounded-xl overflow-hidden"
-              style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+              style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
               <div className="px-5 py-3 flex items-center gap-3"
-                style={{ borderBottom: "1px solid rgba(255,255,255,0.05)", background: `${severityColor[severity]}08` }}>
+                style={{ borderBottom: "1px solid var(--c-border)", background: `${severityColor[severity]}08` }}>
                 <div className="w-2 h-2 rounded-full" style={{ background: severityColor[severity] }} />
                 <span className="text-xs font-bold uppercase tracking-wider" style={{ color: severityColor[severity] }}>
                   {severity}
                 </span>
-                <span className="text-xs" style={{ color: "#4b5270" }}>{grpRules.length} rules</span>
+                <span className="text-xs" style={{ color: "var(--c-muted)" }}>{grpRules.length} rules</span>
               </div>
-              <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+              <div className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
                 {grpRules.map(rule => (
                   <div key={rule.rule_id} className="px-5 py-4 flex items-start gap-4">
                     <ToggleRight className="w-4 h-4 mt-0.5 flex-shrink-0"
@@ -82,14 +82,14 @@ export default function DetectionRules() {
                           </span>
                         )}
                       </div>
-                      <p className="text-xs mt-0.5" style={{ color: "#4b5270" }}>{rule.description}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--c-muted)" }}>{rule.description}</p>
                       {rule.mitre_name && (
-                        <p className="text-[11px] mt-1" style={{ color: "#2d3252" }}>
+                        <p className="text-[11px] mt-1" style={{ color: "var(--c-faint)" }}>
                           Tactic: {rule.mitre_name}
                         </p>
                       )}
                     </div>
-                    <code className="text-[10px] font-mono flex-shrink-0 mt-0.5" style={{ color: "#2d3252" }}>
+                    <code className="text-[10px] font-mono flex-shrink-0 mt-0.5" style={{ color: "var(--c-faint)" }}>
                       {rule.rule_id}
                     </code>
                   </div>

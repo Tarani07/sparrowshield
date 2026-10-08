@@ -218,7 +218,7 @@ export default function FleetOverview() {
   const softwareViolations = 0; // Will be populated when software violation detection is active
 
   return (
-    <div className="flex flex-col h-full" style={{ background: "#0d0f16" }}>
+    <div className="flex flex-col h-full" style={{ background: "var(--c-bg)" }}>
       <TopBar title="Dashboard" />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
@@ -256,7 +256,7 @@ export default function FleetOverview() {
         {/* ── Row 3: Mac vs Windows platform split ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* macOS Panel */}
-          <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(167,139,250,0.15)" }}>
+          <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(167,139,250,0.15)" }}>
             <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(167,139,250,0.1)", background: "rgba(167,139,250,0.05)" }}>
               <div className="flex items-center gap-2">
                 <Apple className="w-4 h-4" style={{ color: "#a78bfa" }} />
@@ -300,7 +300,7 @@ export default function FleetOverview() {
           </div>
 
           {/* Windows Panel */}
-          <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(96,165,250,0.15)" }}>
+          <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(96,165,250,0.15)" }}>
             <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(96,165,250,0.1)", background: "rgba(96,165,250,0.05)" }}>
               <div className="flex items-center gap-2">
                 <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
@@ -348,7 +348,7 @@ export default function FleetOverview() {
         {/* ── Row 5: Donut charts + Recent Alerts ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Online vs Offline */}
-          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="flex items-center gap-2 mb-4">
               <Wifi className="w-4 h-4" style={{ color: "#34d399" }} />
               <h2 className="text-sm font-semibold text-white">Online vs Offline</h2>
@@ -360,7 +360,7 @@ export default function FleetOverview() {
           </div>
 
           {/* OS Distribution */}
-          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="flex items-center gap-2 mb-4">
               <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
               <h2 className="text-sm font-semibold text-white">OS Distribution</h2>
@@ -373,7 +373,7 @@ export default function FleetOverview() {
           </div>
 
           {/* Recent Alerts */}
-          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4" style={{ color: "#fbbf24" }} />
@@ -388,14 +388,14 @@ export default function FleetOverview() {
               </button>
             </div>
             {recentAlerts.length === 0 ? (
-              <p className="text-xs text-center py-8" style={{ color: "#2d3252" }}>No active alerts</p>
+              <p className="text-xs text-center py-8" style={{ color: "var(--c-faint)" }}>No active alerts</p>
             ) : (
               <div className="space-y-1.5">
                 {recentAlerts.slice(0, 5).map((alert) => (
                   <div key={alert.id}
                     className="flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-colors"
-                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--c-divider)" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--c-border)")}
                     onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
                     onClick={() => alert.device_id && navigate(`/device/${alert.device_id}`)}>
                     <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
@@ -423,7 +423,7 @@ export default function FleetOverview() {
 
         {/* ── Row 6: Charts row ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2 rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="lg:col-span-2 rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h2 className="text-sm font-semibold text-white">Fleet Health Trend</h2>
@@ -432,14 +432,14 @@ export default function FleetOverview() {
               <button onClick={() => refetch()}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
                 style={{ color: "#3a4060" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#94a3b8"; }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--c-border2)"; e.currentTarget.style.color = "#94a3b8"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#3a4060"; }}>
                 <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
               </button>
             </div>
             <FleetHealthChart reports={reports} />
           </div>
-          <div className="rounded-xl p-5" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <h2 className="text-sm font-semibold text-white mb-1">Top Memory Hogs</h2>
             <p className="text-[11px] mb-4" style={{ color: "#3a4060" }}>Fleet-wide most common culprits</p>
             <TopOffendersWidget reports={reports} devices={allDevices} />
@@ -447,9 +447,9 @@ export default function FleetOverview() {
         </div>
 
         {/* ── Row 7: Device table ── */}
-        <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3"
-            style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+            style={{ borderBottom: "1px solid var(--c-border)" }}>
             <div>
               <h2 className="text-sm font-semibold text-white">All Devices</h2>
               <p className="text-[11px] mt-0.5" style={{ color: "#3a4060" }}>{allDevices.length} enrolled · click a row to view details</p>

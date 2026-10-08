@@ -65,12 +65,20 @@ CREATE TABLE IF NOT EXISTS security_events (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   device_id    UUID REFERENCES devices(id) ON DELETE CASCADE,
   hostname     TEXT,
-  event_type   TEXT,            -- "failed_login" | "new_admin" | "lateral_movement" | "off_hours_logon" etc.
+  event_type   TEXT,
   severity     TEXT DEFAULT 'info',
   details      JSONB,
   mitre_technique TEXT,
   occurred_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- Add missing columns if table already existed without them
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS hostname        TEXT;
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS event_type      TEXT;
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS severity        TEXT DEFAULT 'info';
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS details         JSONB;
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS mitre_technique TEXT;
+ALTER TABLE security_events ADD COLUMN IF NOT EXISTS occurred_at     TIMESTAMPTZ DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_security_events_device ON security_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_security_events_at     ON security_events(occurred_at DESC);

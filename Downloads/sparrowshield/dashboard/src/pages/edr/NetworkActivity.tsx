@@ -37,13 +37,13 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
   const suspiciousCount = allPorts.filter(p => p.suspicious).length;
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
       <div>
         <h1 className="text-xl font-bold text-white flex items-center gap-2">
           <Network className="w-5 h-5" style={{ color: "#a5b4fc" }} />
           Network Activity
         </h1>
-        <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+        <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
           Listening ports and connections across all endpoints
         </p>
       </div>
@@ -63,8 +63,8 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
       </div>
 
       {/* Per-device table */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-3" style={{ borderBottom: "1px solid var(--c-border)" }}>
           <span className="text-sm font-semibold text-white">Listening Ports</span>
           {suspiciousCount > 0 && (
             <span className="ml-3 text-[11px] px-2 py-0.5 rounded font-bold"
@@ -75,29 +75,29 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
         </div>
 
         {isLoading ? (
-          <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading…</div>
+          <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading…</div>
         ) : allPorts.length === 0 ? (
           <div className="p-10 text-center">
-            <AlertTriangle className="w-10 h-10 mx-auto mb-3" style={{ color: "#4b5270" }} />
+            <AlertTriangle className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--c-muted)" }} />
             <p className="text-sm font-medium text-white">No port data available</p>
-            <p className="text-xs mt-1" style={{ color: "#4b5270" }}>Agent must be reporting listening_ports</p>
+            <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>Agent must be reporting listening_ports</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+              <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
                 {["Port", "Protocol", "Process", "Device", "Flag"].map(h => (
                   <th key={h} className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider"
-                    style={{ color: "#2d3252" }}>{h}</th>
+                    style={{ color: "var(--c-faint)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+            <tbody className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
               {allPorts.map((p, i) => (
                 <tr key={i} style={{ background: p.suspicious ? "rgba(239,68,68,0.04)" : undefined }}>
                   <td className="px-5 py-2.5 font-mono text-xs font-bold"
                     style={{ color: p.suspicious ? "#f87171" : "#a5b4fc" }}>{p.port}</td>
-                  <td className="px-5 py-2.5 text-xs font-mono uppercase" style={{ color: "#4b5270" }}>{p.protocol}</td>
+                  <td className="px-5 py-2.5 text-xs font-mono uppercase" style={{ color: "var(--c-muted)" }}>{p.protocol}</td>
                   <td className="px-5 py-2.5 text-xs font-mono text-white">{p.process}</td>
                   <td className="px-5 py-2.5 text-xs" style={{ color: "#94a3b8" }}>{p.hostname}</td>
                   <td className="px-5 py-2.5">
@@ -107,7 +107,7 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
                         <AlertTriangle className="w-3 h-3" /> Suspicious
                       </span>
                     ) : (
-                      <span className="text-[10px]" style={{ color: "#2d3252" }}>—</span>
+                      <span className="text-[10px]" style={{ color: "var(--c-faint)" }}>—</span>
                     )}
                   </td>
                 </tr>
@@ -118,17 +118,17 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
       </div>
 
       {/* Device connection summary */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
-        <div className="px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-3" style={{ borderBottom: "1px solid var(--c-border)" }}>
           <span className="text-sm font-semibold text-white">Connection Count by Device</span>
         </div>
-        <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+        <div className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
           {devices.filter(d => d.open_connections_count != null).map(d => (
             <div key={d.id} className="px-5 py-3 flex items-center gap-4">
               <div className="w-2 h-2 rounded-full flex-shrink-0"
                 style={{ background: d.status === "online" ? "#4ade80" : "#334155" }} />
               <span className="text-sm text-white flex-1">{d.hostname}</span>
-              <span className="text-xs" style={{ color: "#4b5270" }}>{d.public_ip ?? "—"}</span>
+              <span className="text-xs" style={{ color: "var(--c-muted)" }}>{d.public_ip ?? "—"}</span>
               <span className="text-sm font-bold tabular-nums" style={{ color: "#a5b4fc" }}>
                 {d.open_connections_count} conns
               </span>
