@@ -1,328 +1,254 @@
-import { useState, useMemo } from "react";
-import { Shield, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
-import TopBar from "../components/layout/TopBar";
-import { useFrameworks, useControls, useComplianceSnapshots } from "../hooks/useCompliance";
-import { cn } from "../lib/utils";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { timeAgo } from "../lib/utils";
+import { ShieldCheck, ShieldAlert, TrendingUp, Monitor, Apple } from "lucide-react";
 
-export default function Compliance() {
-  const { data: frameworks = [] } = useFrameworks();
-  // devices data is embedded in snapshots via join — no separate useAllDevices needed
+interface Snapshot {
+  id: string;
+  device_id: string;
+  hostname: string;
+  os_type: string;
+  framework: string;
+  score_pct: number;
+  passed: number;
+  total: number;
+  details: Record<string, boolean | number>;
+  snapshot_at: string;
+}
 
-  const [selectedFramework, setSelectedFramework] = useState<string>("SOC2");
-  const [evaluating, setEvaluating] = useState(false);
+const CIS_LABELS: Record<string, string> = {
+  filevault:                   "FileVault Encryption",
+  firewall:                    "Host Firewall",
+  firewall_enabled:            "Host Firewall",
+  sip:                         "System Integrity Protection",
+  gatekeeper:                  "Gatekeeper",
+  screen_lock:                 "Screen Lock ≤5 min",
+  bluetooth_managed:           "Bluetooth Managed",
+  ssh_disabled:                "SSH Disabled",
+  ard_disabled:                "ARD/Remote Desktop Off",
+  airdrop_restricted:          "AirDrop Restricted",
+  auto_update:                 "Automatic Updates",
+  auto_update_enabled:         "Automatic Updates",
+  password_policy:             "Password Policy",
+  guest_disabled:              "Guest Account Disabled",
+  no_autologin:                "No Auto-Login",
+  screensaver_password:        "Screensaver Requires Password",
+  firmware_password:           "Firmware/Activation Lock",
+  audit_logging:               "Audit Logging",
+  crash_reporter:              "Crash Reporter",
+  location_services_managed:   "Location Services Managed",
+  uac_enabled:                 "UAC Enabled",
+  no_autologon:                "No Auto-Logon",
+  laps_installed:              "LAPS Installed",
+  smb_signing:                 "SMB Signing Required",
+  llmnr_disabled:              "LLMNR Disabled",
+  rdp_controlled:              "RDP Controlled",
+  bitlocker_enabled:           "BitLocker Encryption",
+  secure_boot:                 "Secure Boot",
+  credential_guard:            "Credential Guard",
+  defender_enabled:            "Windows Defender Active",
+  defender_signatures_fresh:   "Defender Signatures Fresh (<7d)",
+  tamper_protection:           "Tamper Protection",
+  applocker_enabled:           "AppLocker Policy",
+  ps_script_block_logging:     "PowerShell Script Block Logging",
+  ps_module_logging:           "PowerShell Module Logging",
+  windows_hello:               "Windows Hello",
+};
 
-  // Get framework ID for controls query
-  const frameworkObj = frameworks.find(
-    (f) => f.name.toUpperCase().replace(/[^A-Z0-9]/g, "") === selectedFramework.replace(/[^A-Z0-9]/g, "")
+function scoreColor(pct: number) {
+  if (pct >= 80) return { text: "#4ade80", bg: "rgba(34,197,94,0.1)",  border: "rgba(34,197,94,0.2)"  };
+  if (pct >= 60) return { text: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.2)" };
+  return            { text: "#f87171",  bg: "rgba(239,68,68,0.1)",  border: "rgba(239,68,68,0.2)"  };
+}
+
+function ScoreRing({ pct }: { pct: number }) {
+  const col     = scoreColor(pct);
+  const radius  = 36;
+  const circ    = 2 * Math.PI * radius;
+  const dash    = (pct / 100) * circ;
+  return (
+    <svg width={90} height={90} viewBox="0 0 90 90">
+      <circle cx={45} cy={45} r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={8} />
+      <circle cx={45} cy={45} r={radius} fill="none" stroke={col.text} strokeWidth={8}
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
+        transform="rotate(-90 45 45)" />
+      <text x={45} y={45} textAnchor="middle" dominantBaseline="central"
+        fill={col.text} fontSize={16} fontWeight="bold">{pct}%</text>
+    </svg>
   );
+}
 
-  const { data: controls = [] } = useControls(frameworkObj?.id);
-  const { data: snapshots = [] } = useComplianceSnapshots(selectedFramework);
-
-  // Query already orders by device_id + snapshot_at desc — first occurrence per device is latest
-  const latestPerDevice = useMemo(() => {
-    const seen = new Set<string>();
-    return snapshots.filter(s => {
-      if (seen.has(s.device_id)) return false;
-      seen.add(s.device_id);
-      return true;
-    });
-  }, [snapshots]);
-
-  // Fleet average score
-  const fleetAvg = useMemo(() => {
-    if (latestPerDevice.length === 0) return null;
-    const sum = latestPerDevice.reduce((acc, s) => acc + s.score, 0);
-    return Math.round(sum / latestPerDevice.length);
-  }, [latestPerDevice]);
-
-  // Control pass rates across fleet
-  const controlStats = useMemo(() => {
-    const stats = new Map<string, { pass: number; fail: number }>();
-    for (const snap of latestPerDevice) {
-      for (const d of snap.details ?? []) {
-        const entry = stats.get(d.control_id) ?? { pass: 0, fail: 0 };
-        if (d.pass) entry.pass++;
-        else entry.fail++;
-        stats.set(d.control_id, entry);
-      }
-    }
-    return stats;
-  }, [latestPerDevice]);
-
-  const handleEvaluate = async () => {
-    setEvaluating(true);
-    try {
-      await supabase.functions.invoke("compliance-evaluate");
-    } catch {
-      // silently fail
-    } finally {
-      setTimeout(() => setEvaluating(false), 2000);
-    }
-  };
-
-  const FRAMEWORK_TABS = [
-    { key: "SOC2", label: "SOC 2" },
-    { key: "HIPAA", label: "HIPAA" },
-  ];
-
-  const hasData = latestPerDevice.length > 0;
+function DeviceComplianceCard({ snap }: { snap: Snapshot }) {
+  const col    = scoreColor(snap.score_pct);
+  const checks = Object.entries(snap.details).filter(([k]) => !k.startsWith("_"));
+  const failed = checks.filter(([, v]) => !v);
 
   return (
-    <div className="flex flex-col h-full">
-      <TopBar title="Compliance" />
-
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-white">Compliance Overview</h1>
-            <p className="text-sm text-slate-400 mt-1">
-              SOC 2 and HIPAA compliance status across your fleet.
-            </p>
-          </div>
-          <button
-            onClick={handleEvaluate}
-            disabled={evaluating}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-all disabled:opacity-60"
-          >
-            {evaluating ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
-            )}
-            {evaluating ? "Evaluating..." : "Evaluate Now"}
-          </button>
+    <div className="rounded-xl p-4 space-y-3" style={{ background: "#13141a", border: `1px solid ${col.border}` }}>
+      <div className="flex items-center gap-3">
+        {snap.os_type === "mac" || snap.os_type === "macos"
+          ? <Apple className="w-4 h-4 flex-shrink-0" style={{ color: "#a855f7" }} />
+          : <Monitor className="w-4 h-4 flex-shrink-0" style={{ color: "#60a5fa" }} />
+        }
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white truncate">{snap.hostname}</p>
+          <p className="text-[11px]" style={{ color: "#4b5270" }}>{snap.framework}</p>
         </div>
-
-        {/* Framework selector */}
-        <div className="flex items-center gap-2">
-          {FRAMEWORK_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setSelectedFramework(t.key)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                selectedFramework === t.key
-                  ? "bg-indigo-600/20 text-indigo-400 border-indigo-600/30"
-                  : "bg-slate-800/50 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-800"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {!hasData ? (
-          /* Empty state */
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 flex flex-col items-center justify-center text-center">
-            <div className="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center mb-4">
-              <Shield className="w-7 h-7 text-slate-500" />
-            </div>
-            <h3 className="text-sm font-semibold text-white mb-1">No compliance data yet</h3>
-            <p className="text-xs text-slate-500 mb-5 max-w-sm">
-              Compliance evaluation runs every 15 minutes. Click the button below to trigger a manual evaluation now.
-            </p>
-            <button
-              onClick={handleEvaluate}
-              disabled={evaluating}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-all disabled:opacity-60"
-            >
-              {evaluating ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              {evaluating ? "Evaluating..." : "Evaluate Now"}
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Fleet-wide compliance score */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-              <div className="flex items-center gap-4">
-                <div
-                  className={cn(
-                    "w-14 h-14 rounded-xl flex items-center justify-center",
-                    fleetAvg !== null && fleetAvg > 80
-                      ? "bg-green-500/20"
-                      : fleetAvg !== null && fleetAvg > 60
-                      ? "bg-amber-500/20"
-                      : "bg-red-500/20"
-                  )}
-                >
-                  <Shield
-                    className={cn(
-                      "w-7 h-7",
-                      fleetAvg !== null && fleetAvg > 80
-                        ? "text-green-400"
-                        : fleetAvg !== null && fleetAvg > 60
-                        ? "text-amber-400"
-                        : "text-red-400"
-                    )}
-                  />
-                </div>
-                <div>
-                  <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-                    Fleet {selectedFramework} Score
-                  </p>
-                  <p
-                    className={cn(
-                      "text-4xl font-bold",
-                      fleetAvg !== null && fleetAvg > 80
-                        ? "text-green-400"
-                        : fleetAvg !== null && fleetAvg > 60
-                        ? "text-amber-400"
-                        : "text-red-400"
-                    )}
-                  >
-                    {fleetAvg ?? "—"}%
-                  </p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Average across {latestPerDevice.length} device{latestPerDevice.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Controls table */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-800">
-                <h2 className="text-sm font-semibold text-white">Controls</h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Pass/fail rates for each {selectedFramework} control across the fleet.
-                </p>
-              </div>
-
-              {controls.length === 0 ? (
-                <div className="px-5 py-8 text-center text-xs text-slate-500">
-                  No controls defined for this framework.
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-500">
-                        <th className="text-left px-5 py-3 font-medium">Control ID</th>
-                        <th className="text-left px-5 py-3 font-medium">Name</th>
-                        <th className="text-left px-5 py-3 font-medium hidden xl:table-cell">Description</th>
-                        <th className="text-center px-5 py-3 font-medium">Pass</th>
-                        <th className="text-center px-5 py-3 font-medium">Fail</th>
-                        <th className="text-left px-5 py-3 font-medium w-48">Pass Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {controls.map((ctrl) => {
-                        const stats = controlStats.get(ctrl.control_id) ?? { pass: 0, fail: 0 };
-                        const total = stats.pass + stats.fail;
-                        const rate = total > 0 ? Math.round((stats.pass / total) * 100) : 0;
-
-                        return (
-                          <tr key={ctrl.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                            <td className="px-5 py-3 font-mono text-indigo-400 font-medium">{ctrl.control_id}</td>
-                            <td className="px-5 py-3 text-slate-200 font-medium">{ctrl.control_name}</td>
-                            <td className="px-5 py-3 text-slate-500 hidden xl:table-cell max-w-xs truncate">
-                              {ctrl.description ?? "—"}
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <span className="text-green-400 font-medium">{stats.pass}</span>
-                            </td>
-                            <td className="px-5 py-3 text-center">
-                              <span className="text-red-400 font-medium">{stats.fail}</span>
-                            </td>
-                            <td className="px-5 py-3">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 rounded-full bg-slate-800 overflow-hidden">
-                                  <div
-                                    className={cn(
-                                      "h-full rounded-full transition-all",
-                                      rate > 80 ? "bg-green-500" : rate > 60 ? "bg-amber-500" : "bg-red-500"
-                                    )}
-                                    style={{ width: `${rate}%` }}
-                                  />
-                                </div>
-                                <span
-                                  className={cn(
-                                    "text-[11px] font-semibold w-10 text-right",
-                                    rate > 80 ? "text-green-400" : rate > 60 ? "text-amber-400" : "text-red-400"
-                                  )}
-                                >
-                                  {rate}%
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Device compliance table */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-800">
-                <h2 className="text-sm font-semibold text-white">Device Compliance</h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Per-device compliance scores for {selectedFramework}.
-                </p>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-500">
-                      <th className="text-left px-5 py-3 font-medium">Hostname</th>
-                      <th className="text-center px-5 py-3 font-medium">Score</th>
-                      <th className="text-center px-5 py-3 font-medium">Pass</th>
-                      <th className="text-center px-5 py-3 font-medium">Fail</th>
-                      <th className="text-left px-5 py-3 font-medium">Last Evaluated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {latestPerDevice
-                      .sort((a, b) => a.score - b.score)
-                      .map((snap) => (
-                        <tr key={snap.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                          <td className="px-5 py-3 text-slate-200 font-medium">
-                            {snap.devices?.hostname ?? snap.device_id.slice(0, 8)}
-                          </td>
-                          <td className="px-5 py-3 text-center">
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border",
-                                snap.score > 80
-                                  ? "bg-green-500/10 text-green-400 border-green-500/30"
-                                  : snap.score > 60
-                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                                  : "bg-red-500/10 text-red-400 border-red-500/30"
-                              )}
-                            >
-                              {snap.score > 80 ? (
-                                <CheckCircle2 className="w-3 h-3" />
-                              ) : snap.score > 60 ? (
-                                <AlertTriangle className="w-3 h-3" />
-                              ) : (
-                                <XCircle className="w-3 h-3" />
-                              )}
-                              {snap.score}%
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-center text-green-400 font-medium">{snap.pass_count}</td>
-                          <td className="px-5 py-3 text-center text-red-400 font-medium">{snap.fail_count}</td>
-                          <td className="px-5 py-3 text-slate-500">{timeAgo(snap.snapshot_at)}</td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        )}
+        <ScoreRing pct={snap.score_pct} />
       </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {checks.slice(0, 10).map(([key, val]) => (
+          <div key={key} className="flex items-center gap-1.5 text-[11px]">
+            <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+              style={{ background: val ? "#4ade80" : "#f87171" }} />
+            <span style={{ color: val ? "#94a3b8" : "#f87171" }} className="truncate">
+              {CIS_LABELS[key] || key.replace(/_/g, " ")}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {failed.length > 0 && (
+        <div className="text-[11px] px-2 py-1 rounded"
+          style={{ background: "rgba(239,68,68,0.08)", color: "#f87171" }}>
+          {failed.length} control{failed.length > 1 ? "s" : ""} failing
+        </div>
+      )}
+
+      <p className="text-[10px]" style={{ color: "#2d3252" }}>
+        Last check: {new Date(snap.snapshot_at).toLocaleString()}
+      </p>
+    </div>
+  );
+}
+
+export default function Compliance() {
+  const { data: snapshots = [], isLoading } = useQuery<Snapshot[]>({
+    queryKey: ["compliance"],
+    queryFn: async () => {
+      // Get most recent snapshot per device
+      const { data } = await supabase
+        .from("compliance_snapshots")
+        .select("*")
+        .order("snapshot_at", { ascending: false })
+        .limit(200);
+      if (!data) return [];
+      // Deduplicate: keep latest per device
+      const seen = new Set<string>();
+      return data.filter(s => {
+        if (seen.has(s.device_id)) return false;
+        seen.add(s.device_id);
+        return true;
+      });
+    },
+    refetchInterval: 60_000,
+  });
+
+  const { data: deviceScores = [] } = useQuery({
+    queryKey: ["device-cis-scores"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("devices")
+        .select("id, hostname, os_type, cis_score_pct, cis_passed, cis_total")
+        .not("cis_score_pct", "is", null);
+      return data ?? [];
+    },
+    refetchInterval: 60_000,
+  });
+
+  const avgScore = snapshots.length
+    ? Math.round(snapshots.reduce((a, s) => a + s.score_pct, 0) / snapshots.length)
+    : 0;
+  const passing = snapshots.filter(s => s.score_pct >= 80).length;
+  const failing = snapshots.filter(s => s.score_pct < 60).length;
+  const macSnaps = snapshots.filter(s => ["mac","macos","darwin"].includes(s.os_type));
+  const winSnaps = snapshots.filter(s => s.os_type === "windows");
+
+  return (
+    <div className="p-6 space-y-6" style={{ color: "#c8d0e8" }}>
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5" style={{ color: "#4ade80" }} />
+          Compliance
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "#4b5270" }}>
+          CIS macOS &amp; Windows Benchmark — per-device control pass/fail
+        </p>
+      </div>
+
+      {/* Fleet summary */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: "Fleet Avg Score", value: `${avgScore}%`, color: scoreColor(avgScore).text, bg: scoreColor(avgScore).bg },
+          { label: "Passing (≥80%)",  value: passing,        color: "#4ade80", bg: "rgba(34,197,94,0.08)"  },
+          { label: "At Risk (<60%)",  value: failing,        color: "#f87171", bg: "rgba(239,68,68,0.08)"  },
+          { label: "Devices Audited", value: snapshots.length, color: "#a5b4fc", bg: "rgba(99,102,241,0.08)" },
+        ].map(s => (
+          <div key={s.label} className="rounded-xl p-4" style={{ background: s.bg, border: `1px solid ${s.color}18` }}>
+            <p className="text-[11px] uppercase tracking-wider" style={{ color: s.color }}>{s.label}</p>
+            <p className="text-3xl font-bold mt-1" style={{ color: s.color }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* OS breakdown */}
+      {(macSnaps.length > 0 || winSnaps.length > 0) && (
+        <div className="grid grid-cols-2 gap-4">
+          {/* Mac */}
+          <div className="rounded-xl p-4 space-y-2" style={{ background: "#13141a", border: "1px solid rgba(168,85,247,0.15)" }}>
+            <div className="flex items-center gap-2">
+              <Apple className="w-4 h-4" style={{ color: "#a855f7" }} />
+              <span className="text-sm font-semibold text-white">macOS Fleet</span>
+              <span className="ml-auto text-[11px]" style={{ color: "#a855f7" }}>{macSnaps.length} devices</span>
+            </div>
+            <div className="text-2xl font-bold" style={{ color: "#a855f7" }}>
+              {macSnaps.length ? Math.round(macSnaps.reduce((a,s) => a + s.score_pct, 0) / macSnaps.length) : 0}%
+              <span className="text-sm font-normal ml-1" style={{ color: "#4b5270" }}>avg score</span>
+            </div>
+            <p className="text-[11px]" style={{ color: "#4b5270" }}>Framework: CIS macOS Benchmark</p>
+          </div>
+          {/* Windows */}
+          <div className="rounded-xl p-4 space-y-2" style={{ background: "#13141a", border: "1px solid rgba(96,165,250,0.15)" }}>
+            <div className="flex items-center gap-2">
+              <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
+              <span className="text-sm font-semibold text-white">Windows Fleet</span>
+              <span className="ml-auto text-[11px]" style={{ color: "#60a5fa" }}>{winSnaps.length} devices</span>
+            </div>
+            <div className="text-2xl font-bold" style={{ color: "#60a5fa" }}>
+              {winSnaps.length ? Math.round(winSnaps.reduce((a,s) => a + s.score_pct, 0) / winSnaps.length) : 0}%
+              <span className="text-sm font-normal ml-1" style={{ color: "#4b5270" }}>avg score</span>
+            </div>
+            <p className="text-[11px]" style={{ color: "#4b5270" }}>Framework: CIS Windows Benchmark</p>
+          </div>
+        </div>
+      )}
+
+      {/* Device cards */}
+      {isLoading ? (
+        <div className="p-8 text-center" style={{ color: "#4b5270" }}>Loading compliance data…</div>
+      ) : snapshots.length === 0 ? (
+        <div className="rounded-xl p-10 text-center" style={{ background: "#13141a", border: "1px solid rgba(255,255,255,0.05)" }}>
+          <ShieldAlert className="w-10 h-10 mx-auto mb-3" style={{ color: "#4b5270" }} />
+          <p className="text-sm font-medium text-white">No compliance data yet</p>
+          <p className="text-xs mt-1" style={{ color: "#4b5270" }}>
+            Agent v2.0 pushes CIS snapshots every 6 hours. Data appears after the first check.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4" style={{ color: "#4b5270" }} />
+            <span className="text-sm font-semibold text-white">Device Compliance</span>
+            <span className="ml-auto text-xs" style={{ color: "#4b5270" }}>{snapshots.length} devices</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[...snapshots].sort((a, b) => a.score_pct - b.score_pct).map(snap => (
+              <DeviceComplianceCard key={snap.id} snap={snap} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

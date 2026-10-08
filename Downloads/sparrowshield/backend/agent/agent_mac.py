@@ -666,6 +666,41 @@ def get_login_history() -> list:
     return events
 
 
+def get_failed_logins(since_seconds: int = 600) -> list:
+    """Pull recent failed-authentication events (bad password, denied sudo, etc.)
+    from the unified log. Best-effort — some entries need admin/full-disk-access
+    to read; on any failure this just returns an empty list."""
+    events = []
+    try:
+        r = subprocess.run(
+            [
+                "log", "show",
+                "--last", f"{max(60, since_seconds)}s",
+                "--style", "compact",
+                "--predicate",
+                'eventMessage contains[c] "authentication failure" '
+                'or eventMessage contains[c] "failed to authenticate" '
+                'or eventMessage contains[c] "incorrect password" '
+                'or (process == "sudo" and eventMessage contains[c] "denied")',
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Filtering") or line.startswith("Timestamp"):
+                continue
+            parts = line.split(None, 3)
+            events.append({
+                "time":    " ".join(parts[:2]) if len(parts) >= 2 else "",
+                "message": parts[3] if len(parts) >= 4 else line,
+            })
+            if len(events) >= 20:
+                break
+    except Exception as e:
+        logger.debug("Failed-login scan error: %s", e)
+    return events
+
+
 def get_top_processes(limit: int = 10) -> list:
     """Return top processes by RAM usage."""
     procs = []
@@ -879,6 +914,35 @@ def resolve_alert(rest_url: str, anon_key: str, device_id: str, rule_id: str):
         pass
 
 
+def post_security_event(rest_url: str, anon_key: str, device_id: str,
+                         event_type: str, description: str,
+                         severity: str = "info", metadata: dict = None):
+    """Append a row to the security_events log (usb_inserted, failed_login,
+    remote_session, crash, malware_detected, ...). Best-effort, never raises."""
+    if not rest_url or not anon_key or not device_id:
+        return
+    headers = {
+        "apikey": anon_key,
+        "Authorization": f"Bearer {anon_key}",
+        "Content-Type": "application/json",
+    }
+    body = {
+        "device_id":   device_id,
+        "event_type":  event_type,
+        "severity":    severity,
+        "description": description,
+        "metadata":    metadata or {},
+    }
+    try:
+        r = requests.post(f"{rest_url}/security_events", json=body, headers=headers, timeout=10)
+        if r.status_code in (200, 201):
+            logger.info("[SECURITY LOG] %s: %s", event_type, description)
+        else:
+            logger.debug("[SECURITY LOG] post %s: %s", r.status_code, r.text[:200])
+    except Exception as e:
+        logger.debug("[SECURITY LOG] post_security_event error: %s", e)
+
+
 def run_detection_engine(metrics: dict, rest_url: str, anon_key: str, device_id: str, hostname: str):
     """Evaluate all detection rules against the current metrics snapshot."""
     if not rest_url or not device_id:
@@ -1032,6 +1096,10 @@ def run_detection_engine(metrics: dict, rest_url: str, anon_key: str, device_id:
                    severity="critical",
                    message=f"Known-malicious application found on {hostname}: {', '.join(sorted(mal_hit))}.",
                    mitre_technique="T1204")
+        post_security_event(rest_url, anon_key, device_id,
+                             event_type="malware_detected", severity="critical",
+                             description=f"Known-malicious application found on {hostname}: {', '.join(sorted(mal_hit))}.",
+                             metadata={"apps": sorted(mal_hit)})
     else:
         resolve_alert(rest_url, anon_key, device_id, "malicious_app_installed")
 
@@ -1453,6 +1521,8 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = "", device_id: str 
     prev_app_names: set = set()
     # Track consecutive high-CPU heartbeats
     high_cpu_count = 0
+    prev_remote_session = False
+    prev_crash_count = 0
     first_run = True
     hostname = platform.node()
 
@@ -1607,7 +1677,44 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = "", device_id: str 
                                 {"title": "Device", "value": hostname},
                             ],
                         )
+                        post_security_event(
+                            rest_url, anon_key, device_id,
+                            event_type="usb_inserted", severity="warning",
+                            description=f"USB storage device '{usb_id}' connected to {hostname}",
+                            metadata={"usb_id": str(usb_id)},
+                        )
             prev_usb_serials = current_storage
+
+            # ── Remote Session Log (edge-triggered) ──
+            remote_session_now = bool(metrics.get("remote_session_active"))
+            if not first_run and remote_session_now and not prev_remote_session:
+                post_security_event(
+                    rest_url, anon_key, device_id,
+                    event_type="remote_session", severity="warning",
+                    description=f"Remote session (screen sharing/SSH) became active on {hostname}",
+                )
+            prev_remote_session = remote_session_now
+
+            # ── Crash Log (edge-triggered) ──
+            crash_count_now = metrics.get("crash_count_24h") or 0
+            if not first_run and crash_count_now > prev_crash_count:
+                post_security_event(
+                    rest_url, anon_key, device_id,
+                    event_type="crash", severity="info",
+                    description=f"{metrics.get('last_crashed_app') or 'An application'} crashed on {hostname}",
+                    metadata={"crash_count_24h": crash_count_now},
+                )
+            prev_crash_count = crash_count_now
+
+            # ── Failed Login / Authentication Attempts ──
+            if not first_run and device_id and rest_url:
+                for evt in get_failed_logins(since_seconds=HEARTBEAT_INTERVAL + 30):
+                    post_security_event(
+                        rest_url, anon_key, device_id,
+                        event_type="failed_login", severity="warning",
+                        description=evt.get("message") or "Failed authentication attempt",
+                        metadata={"time": evt.get("time")},
+                    )
 
             # ── Disk Health (S.M.A.R.T.) ──
             if not first_run:

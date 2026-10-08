@@ -6,6 +6,7 @@ import DeviceList from "./pages/DeviceList";
 import Settings from "./pages/Settings";
 import Reports from "./pages/Reports";
 import Compliance from "./pages/Compliance";
+import VulnerabilityManager from "./pages/VulnerabilityManager";
 import About from "./pages/About";
 import PatchManager from "./pages/PatchManager";
 import AlertCenter from "./pages/AlertCenter";
@@ -70,6 +71,7 @@ export default function App() {
             {/* Management */}
             <Route path="/patches" element={<PatchManager />} />
             <Route path="/compliance" element={<Compliance />} />
+            <Route path="/vulnerabilities" element={<VulnerabilityManager />} />
             <Route path="/reports" element={<Reports />} />
 
             {/* System */}
