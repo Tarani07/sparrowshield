@@ -1,83 +1,181 @@
 import { useMemo, useState } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
-  RefreshCw, Wifi, Apple, Monitor, Bell, Gauge, ChevronRight,
+  RefreshCw, Apple, Monitor, Bell, ChevronRight,
   Laptop, Lock, Battery, ClipboardCheck, Package, WifiOff, Ban,
-  Shield, ShieldCheck, Eye,
+  Shield, Plus, ArrowUpRight, AlertTriangle,
 } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
-import StatCard from "../components/fleet/StatCard";
 import FleetHealthChart from "../components/fleet/FleetHealthChart";
-import TopOffendersWidget from "../components/fleet/TopOffendersWidget";
 import DeviceTable from "../components/fleet/DeviceTable";
 import { useFleetReports } from "../hooks/useHealthReports";
 import { useAllDevices } from "../hooks/useDevices";
 import { useAlerts } from "../hooks/useAlerts";
-import { cn, timeAgo } from "../lib/utils";
+import { supabase } from "../lib/supabase";
+import { timeAgo } from "../lib/utils";
 import type { Device } from "../lib/types";
 
-function computeDeviceStatus(device: Device): string {
+const G  = "#1B5E37";
+const GL = "#E8F5EE";
+const GM = "#2E7D52";
+
+function computeDeviceStatus(device: Device): "online" | "offline" {
   if (!device.last_seen) return "offline";
-  const minutesAgo = (Date.now() - new Date(device.last_seen).getTime()) / 60000;
-  if (minutesAgo > 15) return "offline";
-  return device.status || "online";
+  return (Date.now() - new Date(device.last_seen).getTime()) / 60000 > 15 ? "offline" : "online";
 }
 
-const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "critical", label: "🔴 Critical" },
-  { key: "warning", label: "⚠️ Warning" },
-  { key: "healthy", label: "✅ Healthy" },
-  { key: "mac", label: "Apple" },
-  { key: "windows", label: "Windows" },
-];
-
-/* ── Mini donut chart (SVG) ── */
-function DonutChart({ slices, size = 120 }: { slices: { value: number; color: string; label: string }[]; size?: number }) {
-  const total = slices.reduce((s, sl) => s + sl.value, 0);
-  if (total === 0) return <p className="text-xs text-slate-600 text-center py-6">No data</p>;
-  const r = size / 2 - 8;
-  const cx = size / 2;
-  const cy = size / 2;
-  let cumulative = 0;
+/* ── Big Hero Stat Card (Donezo style) ── */
+function HeroCard({ label, value, sub, primary, trend }: {
+  label: string; value: string | number; sub?: string;
+  primary?: boolean; trend?: "up" | "stable";
+}) {
   return (
-    <div className="flex items-center gap-4">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {slices.filter(s => s.value > 0).map((sl) => {
-          const pct = sl.value / total;
-          const startAngle = cumulative * 2 * Math.PI - Math.PI / 2;
-          cumulative += pct;
-          const endAngle = cumulative * 2 * Math.PI - Math.PI / 2;
-          const large = pct > 0.5 ? 1 : 0;
-          const x1 = cx + r * Math.cos(startAngle);
-          const y1 = cy + r * Math.sin(startAngle);
-          const x2 = cx + r * Math.cos(endAngle);
-          const y2 = cy + r * Math.sin(endAngle);
-          // If only one slice with 100%, draw full circle
-          if (pct >= 0.999) {
-            return <circle key={sl.label} cx={cx} cy={cy} r={r} fill="none" stroke={sl.color} strokeWidth={16} />;
-          }
-          return (
-            <path
-              key={sl.label}
-              d={`M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`}
-              fill="none"
-              stroke={sl.color}
-              strokeWidth={16}
-              strokeLinecap="round"
-            />
-          );
-        })}
-        <text x={cx} y={cy - 4} textAnchor="middle" className="fill-white text-lg font-bold">{total}</text>
-        <text x={cx} y={cy + 12} textAnchor="middle" className="fill-slate-500 text-[9px]">devices</text>
+    <div style={{
+      background: primary ? G : "var(--c-card)",
+      borderRadius: 20,
+      padding: "22px 24px",
+      flex: 1,
+      minWidth: 0,
+      border: primary ? "none" : "1px solid var(--c-border)",
+      boxShadow: primary ? "0 8px 32px rgba(27,94,55,0.25)" : "none",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span style={{
+          fontSize: 13, fontWeight: 500,
+          color: primary ? "rgba(255,255,255,0.7)" : "var(--c-muted)",
+        }}>{label}</span>
+        <div style={{
+          width: 28, height: 28, borderRadius: "50%",
+          background: primary ? "rgba(255,255,255,0.15)" : GL,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <ArrowUpRight size={13} color={primary ? "#fff" : G} />
+        </div>
+      </div>
+      <div style={{
+        fontSize: 54, fontWeight: 800, lineHeight: 1,
+        color: primary ? "#fff" : "var(--c-strong)",
+        letterSpacing: "-1px",
+      }}>{value}</div>
+      {sub && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+          <div style={{
+            width: 18, height: 18, borderRadius: 6,
+            background: primary ? "rgba(255,255,255,0.2)" : GL,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 9, color: primary ? "#fff" : G,
+          }}>
+            {trend === "up" ? "↑" : "→"}
+          </div>
+          <span style={{ fontSize: 12, color: primary ? "rgba(255,255,255,0.65)" : "var(--c-muted)" }}>
+            {sub}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Weekly Security Events Bar Chart (Donezo style) ── */
+function SecurityEventsChart({ counts }: { counts: number[] }) {
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const today = new Date().getDay();
+  const max = Math.max(...counts, 1);
+
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 128, paddingTop: 28, paddingBottom: 0 }}>
+      {counts.map((val, i) => {
+        const h = Math.max((val / max) * 100, val > 0 ? 6 : 0);
+        const isToday = i === today;
+        const isWeekend = i === 0 || i === 6;
+        const isHigh = val >= max * 0.65;
+
+        let barStyle: React.CSSProperties;
+        if (val === 0) {
+          barStyle = {
+            background: "repeating-linear-gradient(45deg, var(--c-faint) 0px, var(--c-faint) 1.5px, transparent 1.5px, transparent 6px)",
+            border: "1px solid var(--c-border)",
+          };
+        } else if (isHigh) {
+          barStyle = { background: G };
+        } else {
+          barStyle = { background: GM };
+        }
+
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, position: "relative" }}>
+            {isToday && val > 0 && (
+              <div style={{
+                position: "absolute", top: -26,
+                fontSize: 10, fontWeight: 700,
+                color: G, background: GL,
+                padding: "2px 6px", borderRadius: 6,
+                border: `1px solid ${GM}30`,
+              }}>
+                {val}
+              </div>
+            )}
+            <div style={{ width: "100%", display: "flex", alignItems: "flex-end", height: 100 }}>
+              <div style={{
+                width: "100%",
+                height: val === 0 ? 20 : `${h}%`,
+                borderRadius: "8px 8px 4px 4px",
+                transition: "height 0.4s ease",
+                ...barStyle,
+              }} />
+            </div>
+            <span style={{
+              fontSize: 10,
+              fontWeight: isToday ? 700 : 400,
+              color: isToday ? "var(--c-primary)" : "var(--c-muted)",
+            }}>
+              {days[i][0]}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Compliance Donut (Donezo Project Progress style) ── */
+function ComplianceDonut({ passed, total }: { passed: number; total: number }) {
+  const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const r = 58;
+  const circ = 2 * Math.PI * r;
+  const filled = (pct / 100) * circ;
+  const color = pct >= 80 ? G : pct >= 60 ? "#D97706" : "#DC2626";
+  const atRisk = total - passed;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+      <svg width={156} height={156} viewBox="0 0 156 156">
+        <circle cx={78} cy={78} r={r} fill="none" stroke="var(--c-faint)" strokeWidth={18} />
+        {total > 0 && (
+          <circle cx={78} cy={78} r={r} fill="none" stroke={color} strokeWidth={18}
+            strokeDasharray={`${filled} ${circ}`}
+            strokeLinecap="round"
+            transform="rotate(-90 78 78)" />
+        )}
+        <text x={78} y={72} textAnchor="middle" dominantBaseline="central"
+          fontSize={24} fontWeight={800} fill={total > 0 ? color : "var(--c-muted)"}>{pct}%</text>
+        <text x={78} y={94} textAnchor="middle" fontSize={10} fill="var(--c-muted)">Compliant Fleet</text>
       </svg>
-      <div className="space-y-1.5">
-        {slices.map((sl) => (
-          <div key={sl.label} className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: sl.color }} />
-            <span className="text-[11px] text-slate-400">{sl.label}</span>
-            <span className="text-[11px] font-bold text-slate-300">{sl.value}</span>
-            <span className="text-[10px] text-slate-600">({total ? Math.round((sl.value / total) * 100) : 0}%)</span>
+      <div style={{ display: "flex", gap: 20, justifyContent: "center" }}>
+        {[
+          { label: "Passing", count: passed, color: G, pattern: false },
+          { label: "At Risk", count: atRisk, color: "#DC2626", pattern: true },
+        ].map(s => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{
+              width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+              background: s.pattern
+                ? "repeating-linear-gradient(45deg, #DC2626 0px, #DC2626 2px, transparent 2px, transparent 5px)"
+                : s.color,
+            }} />
+            <span style={{ fontSize: 11, color: "var(--c-muted)" }}>{s.label}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--c-strong)" }}>{s.count}</span>
           </div>
         ))}
       </div>
@@ -85,106 +183,164 @@ function DonutChart({ slices, size = 120 }: { slices: { value: number; color: st
   );
 }
 
-/* Shown when health reports haven't run yet — lists enrolled devices from the devices table */
-function FallbackDeviceTable({ devices, search }: { devices: Device[]; search: string }) {
+/* ── Device Status Row (Team Collaboration style) ── */
+function DeviceRow({ device }: { device: Device }) {
   const navigate = useNavigate();
-  let rows = devices;
-  if (search) {
-    const q = search.toLowerCase();
-    rows = rows.filter(
-      (d) => d.hostname?.toLowerCase().includes(q) || d.assigned_user?.toLowerCase().includes(q)
-    );
-  }
-  if (rows.length === 0) {
-    return <div className="py-12 text-center text-slate-500 text-sm">No devices match your search</div>;
-  }
+  const status = computeDeviceStatus(device);
+  const isMac = ["mac", "macos", "darwin"].includes(device.os_type ?? "");
+
   return (
-    <div className="overflow-x-auto">
-      <div className="px-5 py-2 bg-amber-500/10 border-b border-amber-500/20">
-        <p className="text-[11px] text-amber-400">AI health reports haven't generated yet — showing raw device data. Reports generate every 15 min.</p>
+    <div
+      onClick={() => navigate(`/device/${device.id}`)}
+      style={{
+        display: "flex", alignItems: "center", gap: 12,
+        padding: "10px 0",
+        borderBottom: "1px solid var(--c-divider)",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{
+        width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+        background: isMac ? "rgba(167,139,250,0.12)" : "rgba(96,165,250,0.12)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {isMac ? <Apple size={17} color="#a78bfa" /> : <Monitor size={17} color="#60a5fa" />}
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-800">
-            <th className="text-left py-3 px-4 font-medium">Device</th>
-            <th className="text-left py-3 px-4 font-medium">Status</th>
-            <th className="text-left py-3 px-4 font-medium">OS</th>
-            <th className="text-left py-3 px-4 font-medium">Battery</th>
-            <th className="text-left py-3 px-4 font-medium">Last Seen</th>
-            <th className="py-3 px-4" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((d) => (
-            <tr
-              key={d.id}
-              onClick={() => navigate(`/device/${d.id}`)}
-              className="border-b border-slate-800/50 hover:bg-slate-800/40 cursor-pointer transition-colors group"
-            >
-              <td className="py-3 px-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="relative flex-shrink-0">
-                    {(d.os_type === "mac" || d.os_type === "macos" || d.os_type === "darwin")
-                      ? <Apple className="w-4 h-4 text-slate-400" />
-                      : <Monitor className="w-4 h-4 text-slate-400" />}
-                    <span className={cn(
-                      "absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-slate-900",
-                      computeDeviceStatus(d) === "online" ? "bg-green-500" : "bg-slate-600"
-                    )} />
-                  </div>
-                  <div>
-                    <p className="font-medium text-slate-200 text-xs">{d.hostname ?? "—"}</p>
-                    <p className="text-slate-500 text-[10px]">{d.assigned_user ?? "unassigned"}</p>
-                  </div>
-                </div>
-              </td>
-              <td className="py-3 px-4">
-                <span className={cn(
-                  "text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase",
-                  computeDeviceStatus(d) === "online" ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-700 text-slate-400"
-                )}>
-                  {computeDeviceStatus(d)}
-                </span>
-              </td>
-              <td className="py-3 px-4 text-xs text-slate-400">{d.os_version ?? "—"}</td>
-              <td className="py-3 px-4 text-xs text-slate-400">
-                {d.battery_pct != null ? `${d.battery_pct}%` : "—"}
-              </td>
-              <td className="py-3 px-4 text-[10px] text-slate-500 font-mono">
-                {d.last_seen ? timeAgo(d.last_seen) : "—"}
-              </td>
-              <td className="py-3 px-4">
-                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{
+          fontSize: 13, fontWeight: 600, color: "var(--c-strong)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 2,
+        }}>{device.hostname ?? "Unknown"}</p>
+        <p style={{
+          fontSize: 11, color: "var(--c-muted)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {device.assigned_user ?? "unassigned"}{device.last_seen ? ` · ${timeAgo(device.last_seen)}` : ""}
+        </p>
+      </div>
+      <span style={{
+        fontSize: 10, fontWeight: 700,
+        padding: "3px 10px", borderRadius: 20,
+        textTransform: "uppercase", letterSpacing: "0.05em", flexShrink: 0,
+        background: status === "online" ? "rgba(34,197,94,0.1)" : "rgba(100,116,139,0.12)",
+        color: status === "online" ? "#22c55e" : "#94a3b8",
+        border: `1px solid ${status === "online" ? "rgba(34,197,94,0.2)" : "rgba(100,116,139,0.2)"}`,
+      }}>{status}</span>
     </div>
   );
 }
 
+const FILTERS = [
+  { key: "all",      label: "All"      },
+  { key: "critical", label: "Critical" },
+  { key: "warning",  label: "Warning"  },
+  { key: "healthy",  label: "Healthy"  },
+  { key: "mac",      label: "Apple"    },
+  { key: "windows",  label: "Windows"  },
+];
+
+/* ── Fallback device table when no health reports ── */
+function FallbackTable({ devices, search }: { devices: Device[]; search: string }) {
+  const navigate = useNavigate();
+  let rows = devices;
+  if (search) {
+    const q = search.toLowerCase();
+    rows = rows.filter(d => d.hostname?.toLowerCase().includes(q) || d.assigned_user?.toLowerCase().includes(q));
+  }
+  if (rows.length === 0) return (
+    <div className="py-12 text-center text-sm" style={{ color: "var(--c-muted)" }}>No devices match</div>
+  );
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
+          {["Device", "Status", "OS", "Last Seen"].map(h => (
+            <th key={h} className="text-left px-4 py-3 text-[11px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--c-muted)" }}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(d => (
+          <tr key={d.id} onClick={() => navigate(`/device/${d.id}`)}
+            className="cursor-pointer transition-colors"
+            style={{ borderBottom: "1px solid var(--c-divider)" }}
+            onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
+            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+            <td className="px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                {["mac","macos","darwin"].includes(d.os_type ?? "")
+                  ? <Apple className="w-4 h-4" style={{ color: "#a78bfa" }} />
+                  : <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />}
+                <div>
+                  <p className="text-xs font-medium" style={{ color: "var(--c-strong)" }}>{d.hostname ?? "—"}</p>
+                  <p className="text-[10px]" style={{ color: "var(--c-muted)" }}>{d.assigned_user ?? "unassigned"}</p>
+                </div>
+              </div>
+            </td>
+            <td className="px-4 py-3">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase"
+                style={computeDeviceStatus(d) === "online"
+                  ? { background: "rgba(34,197,94,0.1)", color: "#22c55e" }
+                  : { background: "rgba(100,116,139,0.1)", color: "#94a3b8" }}>
+                {computeDeviceStatus(d)}
+              </span>
+            </td>
+            <td className="px-4 py-3 text-xs" style={{ color: "var(--c-muted)" }}>{d.os_version ?? "—"}</td>
+            <td className="px-4 py-3 text-[11px] font-mono" style={{ color: "var(--c-muted)" }}>
+              {d.last_seen ? timeAgo(d.last_seen) : "—"}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 export default function FleetOverview() {
-  const [params] = useSearchParams();
+  const [params] = useState(() => new URLSearchParams(window.location.search));
   const navigate = useNavigate();
   const search = params.get("search") ?? "";
   const [filter, setFilter] = useState("all");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const { data: reports = [], isLoading, refetch, isFetching } = useFleetReports();
   const { data: allDevices = [] } = useAllDevices();
   const { data: recentAlerts = [] } = useAlerts(undefined, false);
 
-  const total    = allDevices.length;         // always use real device count
-  const healthy  = reports.filter((r) => r.health_status === "healthy").length;
-  const warning  = reports.filter((r) => r.health_status === "warning").length;
-  const critical = reports.filter((r) => r.health_status === "critical").length;
+  /* ── Weekly security events (last 7 days, grouped by day-of-week) ── */
+  const { data: weeklyCounts = [0,0,0,0,0,0,0] } = useQuery<number[]>({
+    queryKey: ["security-events-weekly", refreshKey],
+    queryFn: async () => {
+      const since = new Date();
+      since.setDate(since.getDate() - 7);
+      const { data } = await supabase
+        .from("security_events")
+        .select("occurred_at")
+        .gte("occurred_at", since.toISOString());
+      const counts = [0,0,0,0,0,0,0];
+      (data ?? []).forEach(e => {
+        const day = new Date(e.occurred_at).getDay();
+        counts[day]++;
+      });
+      return counts;
+    },
+    refetchInterval: 60_000,
+  });
 
-  // Security fleet stats — computed from device records
-  const filevaultOff = allDevices.filter((d) => d.filevault_enabled === false).length;
-  const lowBattery   = allDevices.filter((d) => d.battery_pct != null && d.battery_pct < 20).length;
+  /* ── Core fleet metrics ── */
+  const total    = allDevices.length;
+  const healthy  = reports.filter(r => r.health_status === "healthy").length;
+  const warning  = reports.filter(r => r.health_status === "warning").length;
+  const critical = reports.filter(r => r.health_status === "critical").length;
+  const online   = allDevices.filter(d => computeDeviceStatus(d) === "online").length;
+  const offline  = total - online;
 
-  // Compliance score per device
-  const complianceAtRisk = allDevices.filter((d) => {
+  const macDevices = allDevices.filter(d => ["mac","macos","darwin"].includes(d.os_type ?? ""));
+  const winDevices = allDevices.filter(d => d.os_type === "windows");
+
+  /* ── Compliance ── */
+  const complianceDevices = allDevices.filter(d => {
     const score =
       (d.filevault_enabled  ? 20 : 0) +
       (d.firewall_enabled   ? 20 : 0) +
@@ -192,30 +348,20 @@ export default function FleetOverview() {
       (d.gatekeeper_enabled ? 15 : 0) +
       (d.mdm_enrolled       ? 15 : 0) +
       (d.antivirus_installed ? 15 : 0);
-    return score < 50;
+    return score >= 50;
   }).length;
 
-  // ── New stats ──
-  const now = Date.now();
-  const onlineDevices  = allDevices.filter((d) => computeDeviceStatus(d) === "online").length;
-  const offlineDevices = allDevices.length - onlineDevices;
-  const macDevices     = allDevices.filter((d) => d.os_type === "mac" || d.os_type === "macos" || d.os_type === "darwin").length;
-  const winDevices     = allDevices.filter((d) => d.os_type === "windows").length;
-  const otherDevices   = allDevices.length - macDevices - winDevices;
-  const pendingUpdates = allDevices.reduce((sum, d) => sum + (d.pending_update_count ?? 0), 0);
-
-  // Avg fleet health score
-  const avgHealthScore = useMemo(() => {
+  const avgScore = useMemo(() => {
     if (reports.length === 0) return 0;
-    const sum = reports.reduce((acc, r) => acc + (r.health_score ?? 0), 0);
-    return Math.round(sum / reports.length);
+    return Math.round(reports.reduce((a, r) => a + (r.health_score ?? 0), 0) / reports.length);
   }, [reports]);
 
-  const healthColor = avgHealthScore >= 80 ? "text-emerald-400" : avgHealthScore >= 60 ? "text-amber-400" : "text-red-400";
-  const healthBg = avgHealthScore >= 80 ? "bg-emerald-500/10 border-emerald-500/20" : avgHealthScore >= 60 ? "bg-amber-500/10 border-amber-500/20" : "bg-red-500/10 border-red-500/20";
+  /* ── Threat level ── */
+  const criticalAlerts = recentAlerts.filter(a => a.severity === "critical").length;
+  const threatLevel = criticalAlerts > 0 ? "HIGH" : recentAlerts.length > 5 ? "MEDIUM" : "LOW";
+  const threatColor = criticalAlerts > 0 ? "#ef4444" : recentAlerts.length > 5 ? "#f59e0b" : "#4ade80";
 
-  // Software violations count
-  const softwareViolations = 0; // Will be populated when software violation detection is active
+  const totalEvents = weeklyCounts.reduce((a, b) => a + b, 0);
 
   return (
     <div className="flex flex-col h-full" style={{ background: "var(--c-bg)" }}>
@@ -223,195 +369,120 @@ export default function FleetOverview() {
 
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
 
-        {/* ── Row 1: Hero health score + primary stats ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          {/* Health score hero */}
-          <div className="rounded-xl p-5 flex flex-col items-center justify-center gap-2 transition-all"
-            style={{
-              background: avgHealthScore >= 80 ? "rgba(34,197,94,0.08)" : avgHealthScore >= 60 ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
-              border: `1px solid ${avgHealthScore >= 80 ? "rgba(34,197,94,0.2)" : avgHealthScore >= 60 ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)"}`,
-            }}>
-            <Gauge className="w-5 h-5" style={{ color: avgHealthScore >= 80 ? "#4ade80" : avgHealthScore >= 60 ? "#fbbf24" : "#f87171" }} />
-            <p className="text-4xl font-bold tabular-nums" style={{ color: avgHealthScore >= 80 ? "#4ade80" : avgHealthScore >= 60 ? "#fbbf24" : "#f87171" }}>
-              {avgHealthScore}
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--c-strong)" }}>Dashboard</h1>
+            <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
+              Plan, monitor, and respond to security threats across your fleet.
             </p>
-            <p className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#3a4060" }}>Avg Health</p>
           </div>
-          <StatCard label="Total Devices" value={total} icon="" lucideIcon={Laptop} color="default" sub={isLoading ? "Loading…" : "enrolled"} />
-          <StatCard label="Healthy" value={healthy} icon="" lucideIcon={Gauge} color="green" sub={reports.length ? `${Math.round((healthy / reports.length) * 100)}% of fleet` : "no reports yet"} />
-          <StatCard label="Warning" value={warning} icon="" lucideIcon={Bell} color="amber" sub="needs attention" />
-          <StatCard label="Critical" value={critical} icon="" lucideIcon={Ban} color="red" sub="action required" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate("/devices")}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
+              style={{ background: G }}
+              onMouseEnter={e => (e.currentTarget.style.background = GM)}
+              onMouseLeave={e => (e.currentTarget.style.background = G)}
+            >
+              <Plus size={15} /> Add Device
+            </button>
+            <button
+              onClick={() => { refetch(); setRefreshKey(k => k + 1); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+              style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", color: "var(--c-text)" }}
+            >
+              <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} /> Refresh
+            </button>
+          </div>
         </div>
 
-        {/* ── Row 2: Security & ops stats ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-          <StatCard label="FileVault Off" value={filevaultOff} icon="" lucideIcon={Lock} color={filevaultOff > 0 ? "red" : "green"} sub="unencrypted disks" />
-          <StatCard label="Low Battery" value={lowBattery} icon="" lucideIcon={Battery} color={lowBattery > 0 ? "amber" : "green"} sub="below 20%" />
-          <StatCard label="Compliance Risk" value={complianceAtRisk} icon="" lucideIcon={ClipboardCheck} color={complianceAtRisk > 0 ? "red" : "green"} sub="score < 50%" />
-          <StatCard label="Pending Updates" value={pendingUpdates} icon="" lucideIcon={Package} color={pendingUpdates > 5 ? "amber" : "green"} sub="across fleet" />
-          <StatCard label="Offline Devices" value={offlineDevices} icon="" lucideIcon={WifiOff} color={offlineDevices > 0 ? "red" : "green"} sub={`${onlineDevices} online`} />
-          <StatCard label="SW Violations" value={softwareViolations} icon="" lucideIcon={Ban} color={softwareViolations > 0 ? "red" : "green"} sub="blocklist hits" />
+        {/* ── Row 1: Hero Stat Cards ── */}
+        <div className="flex gap-4">
+          <HeroCard label="Total Devices" value={total}         sub="enrolled"         primary trend="up" />
+          <HeroCard label="Healthy"       value={healthy}       sub="no issues found"  trend="stable" />
+          <HeroCard label="Active Alerts" value={recentAlerts.length} sub="needs attention" trend={recentAlerts.length > 0 ? "up" : "stable"} />
+          <HeroCard label="Critical"      value={critical}      sub="action required"  trend={critical > 0 ? "up" : "stable"} />
         </div>
 
-        {/* ── Row 3: Mac vs Windows platform split ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* macOS Panel */}
-          <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(167,139,250,0.15)" }}>
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(167,139,250,0.1)", background: "rgba(167,139,250,0.05)" }}>
-              <div className="flex items-center gap-2">
-                <Apple className="w-4 h-4" style={{ color: "#a78bfa" }} />
-                <span className="text-sm font-semibold text-white">macOS Fleet</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                  style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
-                  {macDevices} devices
+        {/* ── Row 2: Security Events Chart + Recent Alerts ── */}
+        <div className="grid grid-cols-5 gap-4">
+
+          {/* Bar chart */}
+          <div className="col-span-3 rounded-2xl p-5"
+            style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h2 className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>Security Events</h2>
+                <p className="text-[11px] mt-0.5" style={{ color: "var(--c-muted)" }}>
+                  {totalEvents} events this week
+                </p>
+              </div>
+              <div className="flex items-center gap-4 text-[11px]" style={{ color: "var(--c-muted)" }}>
+                <span className="flex items-center gap-1.5">
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: G }} />
+                  High
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: GM }} />
+                  Normal
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span style={{
+                    display: "inline-block", width: 10, height: 10, borderRadius: 3,
+                    background: "repeating-linear-gradient(45deg, var(--c-faint) 0px, var(--c-faint) 1.5px, transparent 1.5px, transparent 5px)",
+                    border: "1px solid var(--c-border2)",
+                  }} />
+                  No data
                 </span>
               </div>
-              <Link to="/mac/devices" className="text-[11px] font-medium transition-colors"
-                style={{ color: "#6366f1" }}
-                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#a5b4fc")}
-                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#6366f1")}>
-                View All →
-              </Link>
             </div>
-            <div className="px-5 py-4 space-y-2">
-              {[
-                { label: "FileVault Encryption", pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.filevault_enabled).length, total: macDevices, mitre: "T1486" },
-                { label: "Firewall Enabled",     pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.firewall_enabled).length,  total: macDevices, mitre: "T1562.004" },
-                { label: "SIP Enabled",          pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.sip_enabled).length,       total: macDevices, mitre: "T1562.001" },
-                { label: "Gatekeeper On",        pass: allDevices.filter(d => (d.os_type==="mac"||d.os_type==="macos"||d.os_type==="darwin") && d.gatekeeper_enabled).length,total: macDevices, mitre: "T1553.001" },
-              ].map(c => (
-                <div key={c.label} className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] text-slate-400">{c.label}</span>
-                      <span className={`text-[11px] font-semibold ${c.pass === c.total ? "text-green-400" : c.pass > 0 ? "text-amber-400" : "text-red-400"}`}>
-                        {c.total > 0 ? `${c.pass}/${c.total}` : "—"}
-                      </span>
-                    </div>
-                    <div className="h-1 rounded-full bg-slate-800">
-                      <div className="h-full rounded-full transition-all"
-                        style={{ width: c.total > 0 ? `${(c.pass/c.total)*100}%` : "0%", background: c.pass===c.total?"#22c55e":c.pass>0?"#f59e0b":"#ef4444" }} />
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-700 w-16 text-right">{c.mitre}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Windows Panel */}
-          <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(96,165,250,0.15)" }}>
-            <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(96,165,250,0.1)", background: "rgba(96,165,250,0.05)" }}>
-              <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
-                <span className="text-sm font-semibold text-white">Windows Fleet</span>
-                <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
-                  style={{ background: "rgba(96,165,250,0.15)", color: "#60a5fa" }}>
-                  {winDevices} devices
-                </span>
-              </div>
-              <Link to="/windows/devices" className="text-[11px] font-medium transition-colors"
-                style={{ color: "#6366f1" }}
-                onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#a5b4fc")}
-                onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => (e.currentTarget.style.color = "#6366f1")}>
-                View All →
-              </Link>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              {[
-                { label: "BitLocker Encryption", pass: allDevices.filter(d => d.os_type==="windows" && d.bitlocker_enabled).length,  total: winDevices, mitre: "T1486" },
-                { label: "Firewall Enabled",     pass: allDevices.filter(d => d.os_type==="windows" && d.firewall_enabled).length,   total: winDevices, mitre: "T1562.004" },
-                { label: "Defender Active",      pass: allDevices.filter(d => d.os_type==="windows" && d.defender_enabled).length,   total: winDevices, mitre: "T1562.001" },
-                { label: "UAC Enabled",          pass: allDevices.filter(d => d.os_type==="windows" && d.uac_enabled).length,       total: winDevices, mitre: "T1548.002" },
-                { label: "RDP Disabled",         pass: allDevices.filter(d => d.os_type==="windows" && !d.rdp_enabled).length,      total: winDevices, mitre: "T1021.001" },
-              ].map(c => (
-                <div key={c.label} className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] text-slate-400">{c.label}</span>
-                      <span className={`text-[11px] font-semibold ${c.pass === c.total ? "text-green-400" : c.pass > 0 ? "text-amber-400" : "text-red-400"}`}>
-                        {c.total > 0 ? `${c.pass}/${c.total}` : "—"}
-                      </span>
-                    </div>
-                    <div className="h-1 rounded-full bg-slate-800">
-                      <div className="h-full rounded-full transition-all"
-                        style={{ width: c.total > 0 ? `${(c.pass/c.total)*100}%` : "0%", background: c.pass===c.total?"#22c55e":c.pass>0?"#f59e0b":"#ef4444" }} />
-                    </div>
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-700 w-16 text-right">{c.mitre}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Row 5: Donut charts + Recent Alerts ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Online vs Offline */}
-          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="flex items-center gap-2 mb-4">
-              <Wifi className="w-4 h-4" style={{ color: "#34d399" }} />
-              <h2 className="text-sm font-semibold text-white">Online vs Offline</h2>
-            </div>
-            <DonutChart slices={[
-              { value: onlineDevices, color: "#34d399", label: "Online" },
-              { value: offlineDevices, color: "#ef4444", label: "Offline" },
-            ]} />
-          </div>
-
-          {/* OS Distribution */}
-          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="flex items-center gap-2 mb-4">
-              <Monitor className="w-4 h-4" style={{ color: "#60a5fa" }} />
-              <h2 className="text-sm font-semibold text-white">OS Distribution</h2>
-            </div>
-            <DonutChart slices={[
-              { value: macDevices, color: "#a78bfa", label: "macOS" },
-              { value: winDevices, color: "#60a5fa", label: "Windows" },
-              ...(otherDevices > 0 ? [{ value: otherDevices, color: "#475569", label: "Other" }] : []),
-            ]} />
+            <SecurityEventsChart counts={weeklyCounts} />
           </div>
 
           {/* Recent Alerts */}
-          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+          <div className="col-span-2 rounded-2xl p-5"
+            style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4" style={{ color: "#fbbf24" }} />
-                <h2 className="text-sm font-semibold text-white">Recent Alerts</h2>
+                <Bell size={15} style={{ color: "#f59e0b" }} />
+                <h2 className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>Alerts</h2>
               </div>
-              <button onClick={() => navigate("/alerts")}
-                className="text-[10px] font-medium transition-colors"
-                style={{ color: "#6366f1" }}
-                onMouseEnter={e => (e.currentTarget.style.color = "#a5b4fc")}
-                onMouseLeave={e => (e.currentTarget.style.color = "#6366f1")}>
+              <Link to="/alerts" className="text-[11px] font-semibold"
+                style={{ color: "var(--c-primary)" }}>
                 View All →
-              </button>
+              </Link>
             </div>
+
             {recentAlerts.length === 0 ? (
-              <p className="text-xs text-center py-8" style={{ color: "var(--c-faint)" }}>No active alerts</p>
+              <div className="py-8 text-center">
+                <Shield size={28} className="mx-auto mb-2" style={{ color: "var(--c-faint)" }} />
+                <p className="text-xs" style={{ color: "var(--c-muted)" }}>No active alerts</p>
+              </div>
             ) : (
-              <div className="space-y-1.5">
-                {recentAlerts.slice(0, 5).map((alert) => (
+              <div className="space-y-2">
+                {recentAlerts.slice(0, 6).map(alert => (
                   <div key={alert.id}
-                    className="flex items-center gap-2.5 p-2.5 rounded-lg cursor-pointer transition-colors"
-                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid var(--c-divider)" }}
+                    className="flex items-start gap-3 p-2.5 rounded-xl cursor-pointer transition-colors"
+                    style={{ background: "var(--c-bg)" }}
                     onMouseEnter={e => (e.currentTarget.style.background = "var(--c-border)")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.02)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "var(--c-bg)")}
                     onClick={() => alert.device_id && navigate(`/device/${alert.device_id}`)}>
-                    <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                    <div className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
                       style={{ background: alert.severity === "critical" ? "#ef4444" : "#f59e0b" }} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium text-slate-300 truncate capitalize">
+                      <p className="text-[12px] font-medium truncate capitalize" style={{ color: "var(--c-strong)" }}>
                         {alert.alert_type?.replace(/_/g, " ")}
                       </p>
-                      <p className="text-[10px] truncate" style={{ color: "#3a4060" }}>
-                        {(alert as any).devices?.hostname ?? "Unknown"} · {alert.created_at ? new Date(alert.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                      <p className="text-[10px] truncate" style={{ color: "var(--c-muted)" }}>
+                        {(alert as any).devices?.hostname ?? "Unknown"}
+                        {alert.created_at ? ` · ${new Date(alert.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
                       </p>
                     </div>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold flex-shrink-0"
+                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
                       style={alert.severity === "critical"
-                        ? { background: "rgba(239,68,68,0.12)", color: "#f87171" }
-                        : { background: "rgba(245,158,11,0.12)", color: "#fbbf24" }}>
+                        ? { background: "rgba(239,68,68,0.1)", color: "#ef4444" }
+                        : { background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
                       {alert.severity}
                     </span>
                   </div>
@@ -421,62 +492,209 @@ export default function FleetOverview() {
           </div>
         </div>
 
-        {/* ── Row 6: Charts row ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2 rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-sm font-semibold text-white">Fleet Health Trend</h2>
-                <p className="text-[11px] mt-0.5" style={{ color: "#3a4060" }}>Device counts by status over 24h</p>
-              </div>
-              <button onClick={() => refetch()}
-                className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
-                style={{ color: "#3a4060" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "var(--c-border2)"; e.currentTarget.style.color = "#94a3b8"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#3a4060"; }}>
-                <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+        {/* ── Row 3: Device Status + Compliance Donut + Threat Level ── */}
+        <div className="grid grid-cols-5 gap-4">
+
+          {/* Device Status (Team Collaboration style) */}
+          <div className="col-span-2 rounded-2xl p-5"
+            style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>Fleet Status</h2>
+              <button
+                className="text-xs px-3 py-1 rounded-lg font-semibold transition-all"
+                style={{ background: GL, color: G, border: `1px solid ${G}20` }}
+                onClick={() => navigate("/devices")}
+              >
+                + Enroll Device
               </button>
             </div>
-            <FleetHealthChart reports={reports} />
+            {allDevices.length === 0 ? (
+              <p className="text-xs text-center py-8" style={{ color: "var(--c-muted)" }}>No devices enrolled yet</p>
+            ) : (
+              <div>
+                {allDevices.slice(0, 6).map(d => <DeviceRow key={d.id} device={d} />)}
+              </div>
+            )}
           </div>
-          <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <h2 className="text-sm font-semibold text-white mb-1">Top Memory Hogs</h2>
-            <p className="text-[11px] mb-4" style={{ color: "#3a4060" }}>Fleet-wide most common culprits</p>
-            <TopOffendersWidget reports={reports} devices={allDevices} />
+
+          {/* Compliance Donut (Project Progress style) */}
+          <div className="col-span-2 rounded-2xl p-5 flex flex-col items-center justify-center"
+            style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+            <h2 className="text-sm font-bold mb-4 self-start" style={{ color: "var(--c-strong)" }}>
+              Compliance Score
+            </h2>
+            <ComplianceDonut passed={complianceDevices} total={total} />
+          </div>
+
+          {/* Threat Level (Time Tracker dark card style) */}
+          <div className="col-span-1 rounded-2xl p-5 flex flex-col"
+            style={{
+              background: "linear-gradient(145deg, #0f2a1a, #1B5E37)",
+              border: "1px solid rgba(27,94,55,0.4)",
+            }}>
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle size={14} style={{ color: threatColor }} />
+              <span className="text-xs font-bold text-white opacity-70">Threat Level</span>
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
+              <div style={{
+                fontSize: 28, fontWeight: 900, color: threatColor,
+                textShadow: `0 0 20px ${threatColor}50`,
+              }}>
+                {threatLevel}
+              </div>
+              <div className="text-center space-y-1">
+                <p className="text-xs text-white opacity-50">{recentAlerts.length} open alerts</p>
+                <p className="text-xs text-white opacity-50">{criticalAlerts} critical</p>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => navigate("/alerts")}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-center transition-all"
+                style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
+              >
+                View
+              </button>
+              <button
+                onClick={() => navigate("/mac/edr")}
+                className="flex-1 py-2 rounded-xl text-xs font-bold text-center transition-all"
+                style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}
+              >
+                EDR
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* ── Row 7: Device table ── */}
-        <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        {/* ── Row 4: macOS + Windows fleet panels ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* macOS Panel */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(167,139,250,0.18)" }}>
+            <div className="px-5 py-3.5 flex items-center justify-between"
+              style={{ borderBottom: "1px solid rgba(167,139,250,0.12)", background: "rgba(167,139,250,0.04)" }}>
+              <div className="flex items-center gap-2">
+                <Apple size={15} style={{ color: "#a78bfa" }} />
+                <span className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>macOS Fleet</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
+                  {macDevices.length} devices
+                </span>
+              </div>
+              <Link to="/mac/devices" className="text-[11px] font-semibold"
+                style={{ color: "var(--c-primary)" }}>View All →</Link>
+            </div>
+            <div className="px-5 py-4 space-y-2.5">
+              {[
+                { label: "FileVault Encryption", pass: macDevices.filter(d => d.filevault_enabled).length, mitre: "T1486" },
+                { label: "Firewall Enabled",     pass: macDevices.filter(d => d.firewall_enabled).length,  mitre: "T1562.004" },
+                { label: "SIP Enabled",          pass: macDevices.filter(d => d.sip_enabled).length,       mitre: "T1562.001" },
+                { label: "Gatekeeper On",        pass: macDevices.filter(d => d.gatekeeper_enabled).length,mitre: "T1553.001" },
+              ].map(c => (
+                <div key={c.label} className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-[11px]" style={{ color: "var(--c-muted)" }}>{c.label}</span>
+                      <span className="text-[11px] font-semibold"
+                        style={{ color: c.pass === macDevices.length ? "#22c55e" : c.pass > 0 ? "#f59e0b" : "#ef4444" }}>
+                        {macDevices.length > 0 ? `${c.pass}/${macDevices.length}` : "—"}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background: "var(--c-faint)" }}>
+                      <div className="h-full rounded-full transition-all"
+                        style={{
+                          width: macDevices.length > 0 ? `${(c.pass/macDevices.length)*100}%` : "0%",
+                          background: c.pass === macDevices.length ? G : c.pass > 0 ? "#f59e0b" : "#ef4444",
+                        }} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono w-16 text-right" style={{ color: "var(--c-faint)" }}>{c.mitre}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Windows Panel */}
+          <div className="rounded-2xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid rgba(96,165,250,0.18)" }}>
+            <div className="px-5 py-3.5 flex items-center justify-between"
+              style={{ borderBottom: "1px solid rgba(96,165,250,0.12)", background: "rgba(96,165,250,0.04)" }}>
+              <div className="flex items-center gap-2">
+                <Monitor size={15} style={{ color: "#60a5fa" }} />
+                <span className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>Windows Fleet</span>
+                <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                  style={{ background: "rgba(96,165,250,0.15)", color: "#60a5fa" }}>
+                  {winDevices.length} devices
+                </span>
+              </div>
+              <Link to="/windows/devices" className="text-[11px] font-semibold"
+                style={{ color: "var(--c-primary)" }}>View All →</Link>
+            </div>
+            <div className="px-5 py-4 space-y-2.5">
+              {[
+                { label: "BitLocker Encryption", pass: winDevices.filter(d => d.bitlocker_enabled).length, mitre: "T1486" },
+                { label: "Firewall Enabled",     pass: winDevices.filter(d => d.firewall_enabled).length,  mitre: "T1562.004" },
+                { label: "Defender Active",      pass: winDevices.filter(d => d.defender_enabled).length,  mitre: "T1562.001" },
+                { label: "UAC Enabled",          pass: winDevices.filter(d => d.uac_enabled).length,       mitre: "T1548.002" },
+                { label: "RDP Disabled",         pass: winDevices.filter(d => !d.rdp_enabled).length,      mitre: "T1021.001" },
+              ].map(c => (
+                <div key={c.label} className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-[11px]" style={{ color: "var(--c-muted)" }}>{c.label}</span>
+                      <span className="text-[11px] font-semibold"
+                        style={{ color: c.pass === winDevices.length ? "#22c55e" : c.pass > 0 ? "#f59e0b" : "#ef4444" }}>
+                        {winDevices.length > 0 ? `${c.pass}/${winDevices.length}` : "—"}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full" style={{ background: "var(--c-faint)" }}>
+                      <div className="h-full rounded-full transition-all"
+                        style={{
+                          width: winDevices.length > 0 ? `${(c.pass/winDevices.length)*100}%` : "0%",
+                          background: c.pass === winDevices.length ? G : c.pass > 0 ? "#f59e0b" : "#ef4444",
+                        }} />
+                    </div>
+                  </div>
+                  <span className="text-[9px] font-mono w-16 text-right" style={{ color: "var(--c-faint)" }}>{c.mitre}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Row 5: Device table ── */}
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="px-5 py-4 flex items-center justify-between flex-wrap gap-3"
             style={{ borderBottom: "1px solid var(--c-border)" }}>
             <div>
-              <h2 className="text-sm font-semibold text-white">All Devices</h2>
-              <p className="text-[11px] mt-0.5" style={{ color: "#3a4060" }}>{allDevices.length} enrolled · click a row to view details</p>
+              <h2 className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>All Devices</h2>
+              <p className="text-[11px] mt-0.5" style={{ color: "var(--c-muted)" }}>
+                {total} enrolled · {online} online · click a row to view details
+              </p>
             </div>
-            <div className="flex gap-1 flex-wrap">
-              {FILTERS.map((f) => (
+            <div className="flex gap-1 flex-wrap p-1 rounded-xl" style={{ background: "var(--c-bg)" }}>
+              {FILTERS.map(f => (
                 <button key={f.key} onClick={() => setFilter(f.key)}
-                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={filter === f.key
-                    ? { background: "rgba(99,102,241,0.2)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)" }
-                    : { color: "#3a4060", background: "transparent", border: "1px solid transparent" }}
-                  onMouseEnter={e => { if (filter !== f.key) e.currentTarget.style.color = "#94a3b8"; }}
-                  onMouseLeave={e => { if (filter !== f.key) e.currentTarget.style.color = "#3a4060"; }}>
+                    ? { background: G, color: "#fff" }
+                    : { color: "var(--c-muted)", background: "transparent" }}>
                   {f.label}
                 </button>
               ))}
             </div>
           </div>
-
           {isLoading ? (
-            <div className="py-16 text-center text-sm" style={{ color: "#3a4060" }}>Loading fleet data…</div>
+            <div className="py-16 text-center text-sm" style={{ color: "var(--c-muted)" }}>Loading fleet data…</div>
           ) : reports.length > 0 ? (
             <DeviceTable reports={reports} search={search} filter={filter} />
           ) : allDevices.length > 0 ? (
-            <FallbackDeviceTable devices={allDevices} search={search} />
+            <FallbackTable devices={allDevices} search={search} />
           ) : (
-            <div className="py-16 text-center text-sm" style={{ color: "#3a4060" }}>No devices enrolled yet</div>
+            <div className="py-16 text-center text-sm" style={{ color: "var(--c-muted)" }}>No devices enrolled yet</div>
           )}
         </div>
       </div>

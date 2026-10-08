@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, User } from "lucide-react";
 import { useAlerts } from "../../hooks/useAlerts";
 
 export default function TopBar({ title }: { title: string }) {
@@ -15,40 +15,48 @@ export default function TopBar({ title }: { title: string }) {
   }
 
   return (
-    <header className="h-14 flex items-center px-6 gap-4 sticky top-0 z-10 flex-shrink-0"
+    <header className="h-16 flex items-center px-6 gap-4 sticky top-0 z-10 flex-shrink-0"
       style={{
-        background: "rgba(13,15,22,0.85)",
-        backdropFilter: "blur(12px)",
+        background: "var(--c-card)",
         borderBottom: "1px solid var(--c-border)",
       }}>
 
-      <h1 className="text-sm font-semibold text-white flex-shrink-0 tracking-tight">{title}</h1>
+      <h1 className="text-base font-bold flex-shrink-0 tracking-tight" style={{ color: "var(--c-strong)" }}>
+        {title}
+      </h1>
 
-      <form onSubmit={handleSearch} className="flex-1 max-w-xs ml-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: "#3a4060" }} />
+      {/* Search */}
+      <form onSubmit={handleSearch} className="flex-1 max-w-md mx-4">
+        <div className="relative flex items-center">
+          <Search className="absolute left-3.5 w-4 h-4 pointer-events-none" style={{ color: "var(--c-muted)" }} />
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search devices…"
-            className="w-full rounded-lg pl-9 pr-3 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none transition-colors"
+            className="w-full rounded-2xl pl-10 pr-16 py-2.5 text-sm focus:outline-none transition-all"
             style={{
-              background: "var(--c-divider)",
+              background: "var(--c-bg)",
               border: "1px solid var(--c-border2)",
+              color: "var(--c-text)",
             }}
-            onFocus={e => (e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)")}
+            onFocus={e => (e.currentTarget.style.borderColor = "var(--c-primary)")}
             onBlur={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
           />
+          <kbd className="absolute right-3 text-[10px] font-mono rounded px-1.5 py-0.5 pointer-events-none"
+            style={{ background: "var(--c-border)", color: "var(--c-muted)" }}>
+            ⌘ F
+          </kbd>
         </div>
       </form>
 
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-3">
+        {/* Bell */}
         <button
           onClick={() => navigate("/alerts")}
-          className="relative w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-          style={{ color: "var(--c-muted)" }}
-          onMouseEnter={e => { e.currentTarget.style.background = "var(--c-border2)"; e.currentTarget.style.color = "#94a3b8"; }}
-          onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--c-muted)"; }}
+          className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
+          style={{ background: "var(--c-bg)", border: "1px solid var(--c-border)", color: "var(--c-muted)" }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--c-border)")}
         >
           <Bell className="w-4 h-4" />
           {openCount > 0 && (
@@ -57,6 +65,18 @@ export default function TopBar({ title }: { title: string }) {
             </span>
           )}
         </button>
+
+        {/* User avatar */}
+        <div className="flex items-center gap-2.5 pl-3" style={{ borderLeft: "1px solid var(--c-border)" }}>
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+            style={{ background: "linear-gradient(135deg, #1B5E37, #2E7D52)" }}>
+            <User className="w-4 h-4 text-white" />
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-xs font-semibold leading-none" style={{ color: "var(--c-strong)" }}>SparrowShield</p>
+            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-muted)" }}>Security Admin</p>
+          </div>
+        </div>
       </div>
     </header>
   );

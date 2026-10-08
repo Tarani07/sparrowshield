@@ -9,29 +9,41 @@
    [data-theme="light"]. The sidebar always stays dark.
 ─────────────────────────────────────────────────────────────── */
 :root {
-  --c-bg:       #0d0f16;
-  --c-card:     #13141a;
-  --c-card2:    #1a1d28;
-  --c-text:     #c8d0e8;
-  --c-strong:   #ffffff;
-  --c-muted:    #4b5270;
-  --c-faint:    #2d3252;
-  --c-border:   rgba(255,255,255,0.05);
-  --c-border2:  rgba(255,255,255,0.08);
-  --c-divider:  rgba(255,255,255,0.04);
+  --c-bg:         #0d0f16;
+  --c-card:       #13141a;
+  --c-card2:      #1a1d28;
+  --c-text:       #c8d0e8;
+  --c-strong:     #ffffff;
+  --c-muted:      #4b5270;
+  --c-faint:      #2d3252;
+  --c-border:     rgba(255,255,255,0.05);
+  --c-border2:    rgba(255,255,255,0.08);
+  --c-divider:    rgba(255,255,255,0.04);
+  --c-primary:    #4ade80;
+  --c-primary-bg: rgba(74,222,128,0.08);
+  --c-primary-border: rgba(74,222,128,0.2);
+  --c-nav-active-bg: rgba(99,102,241,0.15);
+  --c-nav-active:    #a5b4fc;
+  --c-sidebar-bg:    #0d0f16;
 }
 
 [data-theme="light"] {
-  --c-bg:       #f0f4f8;
-  --c-card:     #ffffff;
-  --c-card2:    #f8fafc;
-  --c-text:     #475569;
-  --c-strong:   #0f172a;
-  --c-muted:    #94a3b8;
-  --c-faint:    #cbd5e1;
-  --c-border:   rgba(0,0,0,0.08);
-  --c-border2:  rgba(0,0,0,0.12);
-  --c-divider:  rgba(0,0,0,0.06);
+  --c-bg:         #f2f5f9;
+  --c-card:       #ffffff;
+  --c-card2:      #f8fafc;
+  --c-text:       #475569;
+  --c-strong:     #0f172a;
+  --c-muted:      #94a3b8;
+  --c-faint:      #cbd5e1;
+  --c-border:     rgba(0,0,0,0.08);
+  --c-border2:    rgba(0,0,0,0.12);
+  --c-divider:    rgba(0,0,0,0.06);
+  --c-primary:    #1B5E37;
+  --c-primary-bg: #E8F5EE;
+  --c-primary-border: #B2DFC8;
+  --c-nav-active-bg: #E8F5EE;
+  --c-nav-active:    #1B5E37;
+  --c-sidebar-bg:    #ffffff;
 }
 
 /* ── Tailwind overrides for light mode ─────────────────────── */
