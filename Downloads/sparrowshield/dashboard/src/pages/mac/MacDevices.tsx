@@ -48,8 +48,8 @@ export default function MacDevices() {
                 <s.icon className="w-4 h-4" style={{ color: s.color }} />
               </div>
               <div>
-                <p className="text-xl font-bold text-white tabular-nums">{s.value}</p>
-                <p className="text-[10px] text-slate-500">{s.label}</p>
+                <p className="text-xl font-bold tabular-nums" style={{ color: "var(--c-strong)" }}>{s.value}</p>
+                <p className="text-[10px]" style={{ color: "var(--c-muted)" }}>{s.label}</p>
               </div>
             </div>
           ))}
@@ -59,7 +59,7 @@ export default function MacDevices() {
         {devices.length > 0 && (
           <div className="rounded-xl p-4 flex flex-wrap gap-6"
             style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <p className="text-xs font-semibold text-slate-400 self-center">Security Posture</p>
+            <p className="text-xs font-semibold self-center" style={{ color: "var(--c-muted)" }}>Security Posture</p>
             {[
               { label: "FileVault",   pass: devices.filter(d => d.filevault_enabled).length,  total: devices.length },
               { label: "Firewall",    pass: devices.filter(d => d.firewall_enabled).length,   total: devices.length },
@@ -71,7 +71,7 @@ export default function MacDevices() {
                   c.pass === c.total ? "text-green-400" : c.pass >= c.total * 0.7 ? "text-amber-400" : "text-red-400")}>
                   {c.pass}/{c.total}
                 </span>
-                <span className="text-xs text-slate-500">{c.label}</span>
+                <span className="text-xs" style={{ color: "var(--c-muted)" }}>{c.label}</span>
               </div>
             ))}
           </div>
@@ -80,24 +80,25 @@ export default function MacDevices() {
         {/* Device Table */}
         <div className="rounded-xl overflow-hidden"
           style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-          <div className="px-5 py-4 border-b border-slate-800/60">
-            <h2 className="text-sm font-semibold text-white">{devices.length} macOS Devices</h2>
+          <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--c-border)" }}>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>{devices.length} macOS Devices</h2>
           </div>
 
           {isLoading ? (
-            <div className="py-16 text-center text-sm text-slate-600">Loading…</div>
+            <div className="py-16 text-center text-sm" style={{ color: "var(--c-faint)" }}>Loading…</div>
           ) : devices.length === 0 ? (
             <div className="py-16 text-center">
-              <Apple className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-              <p className="text-sm text-slate-600">No macOS devices enrolled</p>
-              <p className="text-xs text-slate-700 mt-1">Run the macOS agent to enrol a device</p>
+              <Apple className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--c-faint)" }} />
+              <p className="text-sm" style={{ color: "var(--c-faint)" }}>No macOS devices enrolled</p>
+              <p className="text-xs mt-1" style={{ color: "var(--c-faint)" }}>Run the macOS agent to enrol a device</p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[11px] text-slate-600 uppercase tracking-wider border-b border-slate-800/60">
+                <tr className="text-[11px] uppercase tracking-wider"
+                  style={{ color: "var(--c-muted)", borderBottom: "1px solid var(--c-border)" }}>
                   {["Device", "Status", "OS Version", "FileVault", "Firewall", "SIP", "Posture", "Last Seen", ""].map(h => (
-                    <th key={h} className="text-left py-3 px-4 font-medium">{h}</th>
+                    <th key={h} className="text-left py-3 px-4 font-semibold">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -108,27 +109,33 @@ export default function MacDevices() {
                   return (
                     <tr key={d.id}
                       onClick={() => navigate(`/device/${d.id}`)}
-                      className="border-b border-slate-800/40 hover:bg-slate-800/30 cursor-pointer transition-colors group">
+                      className="cursor-pointer transition-colors group"
+                      style={{ borderBottom: "1px solid var(--c-divider)" }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "")}>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           <div className="relative">
-                            <Apple className="w-4 h-4 text-slate-400" />
-                            <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#13141a]",
-                              status === "online" ? "bg-green-500" : "bg-slate-600")} />
+                            <Apple className="w-4 h-4" style={{ color: "var(--c-muted)" }} />
+                            <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full",
+                              status === "online" ? "bg-green-500" : "bg-slate-600")}
+                              style={{ border: "2px solid var(--c-card)" }} />
                           </div>
                           <div>
-                            <p className="font-medium text-slate-200 text-xs">{d.hostname ?? "—"}</p>
-                            <p className="text-slate-600 text-[10px]">{d.assigned_user ?? "—"}</p>
+                            <p className="font-medium text-xs" style={{ color: "var(--c-text)" }}>{d.hostname ?? "—"}</p>
+                            <p className="text-[10px]" style={{ color: "var(--c-faint)" }}>{d.assigned_user ?? "—"}</p>
                           </div>
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <span className={cn("text-[10px] font-semibold px-2 py-0.5 rounded-full",
-                          status === "online" ? "bg-green-500/10 text-green-400" : "bg-slate-700/50 text-slate-500")}>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                          style={status === "online"
+                            ? { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }
+                            : { background: "rgba(100,116,139,0.12)", color: "#94a3b8" }}>
                           {status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-xs text-slate-500">{d.os_version ?? "—"}</td>
+                      <td className="py-3 px-4 text-xs" style={{ color: "var(--c-muted)" }}>{d.os_version ?? "—"}</td>
                       <td className="py-3 px-4">
                         <Check val={d.filevault_enabled} />
                       </td>
@@ -140,21 +147,21 @@ export default function MacDevices() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5">
-                          <div className="w-16 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                          <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--c-faint)" }}>
                             <div className="h-full rounded-full transition-all"
                               style={{
                                 width: `${p.pct}%`,
                                 background: p.pct >= 75 ? "#22c55e" : p.pct >= 50 ? "#f59e0b" : "#ef4444",
                               }} />
                           </div>
-                          <span className="text-[10px] text-slate-500">{p.pct}%</span>
+                          <span className="text-[10px]" style={{ color: "var(--c-muted)" }}>{p.pct}%</span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-[10px] text-slate-600 font-mono">
+                      <td className="py-3 px-4 text-[10px] font-mono" style={{ color: "var(--c-faint)" }}>
                         {d.last_seen ? timeAgo(d.last_seen) : "—"}
                       </td>
                       <td className="py-3 px-4">
-                        <ChevronRight className="w-4 h-4 text-slate-700 group-hover:text-slate-400 transition-colors" />
+                        <ChevronRight className="w-4 h-4 transition-colors" style={{ color: "var(--c-faint)" }} />
                       </td>
                     </tr>
                   );
@@ -170,7 +177,7 @@ export default function MacDevices() {
 
 function Check({ val }: { val: boolean | null }) {
   if (val === null || val === undefined)
-    return <span className="text-[10px] text-slate-700">—</span>;
+    return <span className="text-[10px]" style={{ color: "var(--c-faint)" }}>—</span>;
   return val
     ? <span className="text-[10px] text-green-400 font-semibold">✓ On</span>
     : <span className="text-[10px] text-red-400 font-semibold">✗ Off</span>;

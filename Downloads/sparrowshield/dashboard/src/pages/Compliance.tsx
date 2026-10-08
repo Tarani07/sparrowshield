@@ -183,7 +183,7 @@ export default function Compliance() {
           { label: "Fleet Avg Score", value: `${avgScore}%`, color: scoreColor(avgScore).text, bg: scoreColor(avgScore).bg },
           { label: "Passing (≥80%)",  value: passing,        color: "#4ade80", bg: "rgba(34,197,94,0.08)"  },
           { label: "At Risk (<60%)",  value: failing,        color: "#f87171", bg: "rgba(239,68,68,0.08)"  },
-          { label: "Devices Audited", value: snapshots.length, color: "#a5b4fc", bg: "rgba(99,102,241,0.08)" },
+          { label: "Devices Audited", value: snapshots.length, color: "#1B5E37", bg: "rgba(99,102,241,0.08)" },
         ].map(s => (
           <div key={s.label} className="rounded-xl p-4" style={{ background: s.bg, border: `1px solid ${s.color}18` }}>
             <p className="text-[11px] uppercase tracking-wider" style={{ color: s.color }}>{s.label}</p>

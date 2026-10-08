@@ -33,7 +33,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function OsIcon({ os }: { os: string }) {
-  if (os === "mac") return <Apple className="w-4 h-4 text-slate-400" />;
+  if (os === "mac") return <Apple className="w-4 h-4" style={{ color: "var(--c-muted)" }} />;
   return <Monitor className="w-4 h-4 text-blue-400" />;
 }
 
@@ -73,16 +73,18 @@ export default function DeviceList() {
   const windows  = devices.filter(d => d.os_type === "windows").length;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-950 p-6">
+    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }} className="p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Device List</h1>
-          <p className="text-sm text-slate-500 mt-0.5">All enrolled devices across your fleet</p>
+          <h1 className="text-xl font-bold" style={{ color: "var(--c-strong)" }}>Device List</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>All enrolled devices across your fleet</p>
         </div>
         <button
           onClick={() => refetch()}
-          className={cn("flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-sm transition-colors", isFetching && "opacity-60 pointer-events-none")}
+          disabled={isFetching}
+          className={cn("flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors", isFetching && "opacity-60 pointer-events-none")}
+          style={{ background: "var(--c-card)", color: "var(--c-muted)", border: "1px solid var(--c-border)" }}
         >
           <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
           Refresh
@@ -90,87 +92,91 @@ export default function DeviceList() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
-          { label: "Total",    value: total,    cls: "text-white"          },
-          { label: "Online",   value: online,   cls: "text-emerald-400"    },
-          { label: "Offline",  value: offline,  cls: "text-slate-400"      },
-          { label: "Warning",  value: warning,  cls: "text-amber-400"      },
-          { label: "Critical", value: critical, cls: "text-red-400"        },
-          { label: "macOS",    value: macs,     cls: "text-indigo-400"     },
+          { label: "Total",    value: total,    color: "var(--c-strong)"  },
+          { label: "Online",   value: online,   color: "#22c55e"          },
+          { label: "Offline",  value: offline,  color: "var(--c-muted)"   },
+          { label: "Warning",  value: warning,  color: "#f59e0b"          },
+          { label: "Critical", value: critical, color: "#ef4444"          },
+          { label: "macOS",    value: macs,     color: "var(--c-primary)" },
         ].map(c => (
-          <div key={c.label} className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-center">
-            <p className={cn("text-2xl font-bold", c.cls)}>{c.value}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{c.label}</p>
+          <div key={c.label} style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "16px 20px", textAlign: "center" }}>
+            <p style={{ fontSize: 24, fontWeight: 800, color: c.color }}>{c.value}</p>
+            <p style={{ fontSize: 11, color: "var(--c-muted)", marginTop: 2 }}>{c.label}</p>
           </div>
         ))}
       </div>
 
       {/* Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
-          <p className="text-sm font-semibold text-white">
-            Enrolled Devices <span className="ml-2 px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-400 text-xs border border-indigo-600/30">{total}</span>
+      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderBottom: "1px solid var(--c-border)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>
+            Enrolled Devices{" "}
+            <span className="ml-2 px-2 py-0.5 rounded-full text-xs" style={{ background: "rgba(27,94,55,0.15)", color: "#1B5E37", border: "1px solid rgba(27,94,55,0.25)" }}>
+              {total}
+            </span>
           </p>
-          <p className="text-xs text-slate-500">{macs} macOS · {windows} Windows</p>
+          <p className="text-xs" style={{ color: "var(--c-muted)" }}>{macs} macOS · {windows} Windows</p>
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center py-16 text-slate-500 text-sm">Loading devices...</div>
+          <div className="flex items-center justify-center py-16 text-sm" style={{ color: "var(--c-muted)" }}>Loading devices...</div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-            <Monitor className="w-10 h-10 mb-3 opacity-30" />
+          <div className="flex flex-col items-center justify-center py-16">
+            <Monitor className="w-10 h-10 mb-3 opacity-30" style={{ color: "var(--c-muted)" }} />
             <p className="text-sm text-red-400">Failed to load devices</p>
-            <p className="text-xs mt-1 text-slate-600 font-mono">{String(error)}</p>
+            <p className="text-xs mt-1 font-mono" style={{ color: "var(--c-faint)" }}>{String(error)}</p>
           </div>
         ) : devices.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
-            <Monitor className="w-10 h-10 mb-3 opacity-30" />
-            <p className="text-sm">No devices enrolled yet</p>
-            <p className="text-xs mt-1 text-slate-600">Download the agent from the sidebar and run it on a device</p>
+          <div className="flex flex-col items-center justify-center py-16">
+            <Monitor className="w-10 h-10 mb-3 opacity-30" style={{ color: "var(--c-muted)" }} />
+            <p className="text-sm" style={{ color: "var(--c-muted)" }}>No devices enrolled yet</p>
+            <p className="text-xs mt-1" style={{ color: "var(--c-faint)" }}>Download the agent from the sidebar and run it on a device</p>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-800">
-                <th className="text-left px-5 py-3">Device</th>
-                <th className="text-left px-4 py-3">Serial No.</th>
-                <th className="text-left px-4 py-3">OS</th>
-                <th className="text-left px-4 py-3">Model</th>
-                <th className="text-left px-4 py-3">RAM</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-left px-4 py-3">Last Seen</th>
-                <th className="px-4 py-3"></th>
+              <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
+                {["Device", "Serial No.", "OS", "Model", "RAM", "Status", "Last Seen", ""].map(h => (
+                  <th key={h} className="text-left px-5 py-3" style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-muted)" }}>
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody>
               {devices.map(d => (
                 <tr
                   key={d.id}
                   onClick={() => navigate(`/device/${d.id}`)}
-                  className="hover:bg-slate-800/50 cursor-pointer transition-colors group"
+                  className="cursor-pointer transition-colors group"
+                  style={{ borderBottom: "1px solid var(--c-divider)" }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "")}
                 >
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-2.5">
                       <OsIcon os={d.os_type} />
                       <div>
-                        <p className="font-medium text-white group-hover:text-indigo-400 transition-colors">{d.hostname}</p>
-                        <p className="text-xs text-slate-500">{d.assigned_user || "—"}</p>
+                        <p className="font-medium group-hover:text-green-600 transition-colors" style={{ color: "var(--c-strong)" }}>{d.hostname}</p>
+                        <p className="text-xs" style={{ color: "var(--c-muted)" }}>{d.assigned_user || "—"}</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 text-slate-400 font-mono text-xs">{d.serial_number || "—"}</td>
-                  <td className="px-4 py-3.5 text-slate-400">{d.os_version || d.os_type}</td>
-                  <td className="px-4 py-3.5 text-slate-400 max-w-[160px] truncate">{(d as any).cpu_model || "—"}</td>
-                  <td className="px-4 py-3.5 text-slate-400">{(d as any).ram_total_gb ? `${(d as any).ram_total_gb} GB` : "—"}</td>
+                  <td className="px-4 py-3.5 font-mono text-xs" style={{ color: "var(--c-muted)" }}>{d.serial_number || "—"}</td>
+                  <td className="px-4 py-3.5" style={{ color: "var(--c-muted)" }}>{d.os_version || d.os_type}</td>
+                  <td className="px-4 py-3.5 max-w-[160px] truncate" style={{ color: "var(--c-muted)" }}>{(d as any).cpu_model || "—"}</td>
+                  <td className="px-4 py-3.5" style={{ color: "var(--c-muted)" }}>{(d as any).ram_total_gb ? `${(d as any).ram_total_gb} GB` : "—"}</td>
                   <td className="px-4 py-3.5"><StatusBadge status={computeStatus(d)} /></td>
-                  <td className="px-4 py-3.5 text-slate-500 text-xs">
+                  <td className="px-4 py-3.5 text-xs" style={{ color: "var(--c-muted)" }}>
                     {d.last_seen ? new Date(d.last_seen).toLocaleString() : "Never"}
                   </td>
                   <td className="px-4 py-3.5" onClick={e => e.stopPropagation()}>
                     <button
                       onClick={() => setDeleteTarget(d)}
-                      className="p-1.5 rounded-lg text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      className="p-1.5 rounded-lg hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                      style={{ color: "var(--c-faint)" }}
                       title="Delete device"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -182,29 +188,31 @@ export default function DeviceList() {
           </table>
         )}
       </div>
+
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+          <div className="rounded-2xl p-6 w-full max-w-sm shadow-2xl" style={{ background: "var(--c-card)", border: "1px solid var(--c-border2)" }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
                 <Trash2 className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h2 className="text-sm font-semibold text-white">Delete Device</h2>
-                <p className="text-xs text-slate-500">This action cannot be undone</p>
+                <h2 className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Delete Device</h2>
+                <p className="text-xs" style={{ color: "var(--c-muted)" }}>This action cannot be undone</p>
               </div>
             </div>
-            <p className="text-sm text-slate-300 mb-1">
-              Are you sure you want to remove <span className="font-semibold text-white">{deleteTarget.hostname}</span>?
+            <p className="text-sm mb-1" style={{ color: "var(--c-text)" }}>
+              Are you sure you want to remove <span className="font-semibold" style={{ color: "var(--c-strong)" }}>{deleteTarget.hostname}</span>?
             </p>
-            <p className="text-xs text-slate-500 mb-5">
+            <p className="text-xs mb-5" style={{ color: "var(--c-muted)" }}>
               S/N: {deleteTarget.serial_number} · All metrics, alerts and history will be permanently deleted.
             </p>
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteTarget(null)}
-                className="flex-1 px-4 py-2 rounded-lg bg-slate-800 text-slate-300 text-sm hover:bg-slate-700 transition-colors"
+                className="flex-1 px-4 py-2 rounded-lg text-sm transition-colors"
+                style={{ background: "var(--c-card2)", color: "var(--c-text)", border: "1px solid var(--c-border)" }}
               >
                 Cancel
               </button>

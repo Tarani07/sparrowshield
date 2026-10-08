@@ -47,13 +47,57 @@
 }
 
 /* ── Tailwind overrides for light mode ─────────────────────── */
-[data-theme="light"] .text-white {
-  color: var(--c-strong) !important;
-}
 
-[data-theme="light"] .divide-y > * + * {
-  border-color: var(--c-divider) !important;
-}
+/* Text colors — slate-* classes are dark-first; override for light */
+[data-theme="light"] .text-white,
+[data-theme="light"] .text-slate-50,
+[data-theme="light"] .text-slate-100,
+[data-theme="light"] .text-slate-200,
+[data-theme="light"] .text-slate-300 { color: var(--c-strong) !important; }
+
+[data-theme="light"] .text-slate-400 { color: var(--c-text) !important; }
+
+[data-theme="light"] .text-slate-500,
+[data-theme="light"] .text-slate-600 { color: var(--c-muted) !important; }
+
+[data-theme="light"] .text-slate-700,
+[data-theme="light"] .text-slate-800,
+[data-theme="light"] .text-slate-900 { color: var(--c-faint) !important; }
+
+/* Background colors */
+[data-theme="light"] .bg-slate-900,
+[data-theme="light"] .bg-\[\#0d0f16\] { background-color: var(--c-bg) !important; }
+
+[data-theme="light"] .bg-slate-800,
+[data-theme="light"] .bg-\[\#13141a\] { background-color: var(--c-card) !important; }
+
+[data-theme="light"] .bg-slate-700,
+[data-theme="light"] .bg-slate-750 { background-color: var(--c-card2) !important; }
+
+[data-theme="light"] .bg-slate-800\/40,
+[data-theme="light"] .bg-slate-800\/50 { background-color: var(--c-card2) !important; }
+
+/* Border colors */
+[data-theme="light"] .border-slate-700,
+[data-theme="light"] .border-slate-800 { border-color: var(--c-border) !important; }
+
+[data-theme="light"] .border-slate-700\/50,
+[data-theme="light"] .border-slate-800\/50 { border-color: var(--c-divider) !important; }
+
+/* Fill (for SVG text inside charts) */
+[data-theme="light"] .fill-white { fill: var(--c-strong) !important; }
+[data-theme="light"] .fill-slate-500 { fill: var(--c-muted) !important; }
+
+/* Placeholder */
+[data-theme="light"] .placeholder-slate-600::placeholder { color: var(--c-muted) !important; }
+
+/* Dividers */
+[data-theme="light"] .divide-y > * + * { border-color: var(--c-divider) !important; }
+[data-theme="light"] .divide-slate-800 > * + * { border-color: var(--c-divider) !important; }
+
+/* Input/form fields */
+[data-theme="light"] input[style*="var(--c-divider)"],
+[data-theme="light"] input[style*="#0d0f16"] { background: var(--c-bg) !important; color: var(--c-text) !important; }
 
 /* ── Scrollbar ────────────────────────────────────────────── */
 @layer base {

@@ -612,45 +612,47 @@ export default function Reports() {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }} className="flex flex-col">
       <TopBar title="Reports" />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-6 space-y-5">
         {/* Header */}
-        <div>
-          <h1 className="text-xl font-bold text-white">Reports & Downloads</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Download fleet reports as CSV. Data refreshes every 30 seconds.
-          </p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-xl font-bold" style={{ color: "var(--c-strong)" }}>Reports & Downloads</h1>
+            <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
+              Download fleet reports as CSV. Data refreshes every 30 seconds.
+            </p>
+          </div>
         </div>
 
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center gap-3">
+          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
               <Laptop className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <p className="text-lg font-bold text-white">{stats.devices}</p>
-              <p className="text-[11px] text-slate-500">Enrolled Devices</p>
+              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.devices}</p>
+              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Enrolled Devices</p>
             </div>
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center gap-3">
+          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-lg font-bold text-white">{stats.alerts}</p>
-              <p className="text-[11px] text-slate-500">Active Alerts</p>
+              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.alerts}</p>
+              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Active Alerts</p>
             </div>
           </div>
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center gap-3">
+          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
             <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
               <Activity className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <p className="text-lg font-bold text-white">{stats.reports}</p>
-              <p className="text-[11px] text-slate-500">Health Reports</p>
+              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.reports}</p>
+              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Health Reports</p>
             </div>
           </div>
         </div>
@@ -661,12 +663,10 @@ export default function Reports() {
             <button
               key={c.key}
               onClick={() => setFilter(c.key)}
-              className={cn(
-                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                filter === c.key
-                  ? "bg-indigo-600/20 text-indigo-400 border-indigo-600/30"
-                  : "bg-slate-800/50 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-800"
-              )}
+              className="text-xs font-medium transition-all"
+              style={filter === c.key
+                ? { background: "#1B5E37", color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600 }
+                : { color: "var(--c-muted)", borderRadius: 8, padding: "6px 14px", fontSize: 12, background: "var(--c-card2)", border: "1px solid var(--c-border)" }}
             >
               {c.label}
             </button>
@@ -679,16 +679,16 @@ export default function Reports() {
             const colors = COLOR_MAP[report.color];
             const Icon = report.icon;
             const isDownloading = downloading === report.id;
-            const isDone = downloading === null && false; // reset after anim
 
             return (
               <div
                 key={report.id}
                 className={cn(
-                  "bg-slate-900 border rounded-xl p-5 transition-all group",
+                  "rounded-xl p-5 transition-all group",
                   colors.border,
                   colors.hover
                 )}
+                style={{ background: "var(--c-card)", border: undefined }}
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", colors.icon)}>
@@ -699,8 +699,8 @@ export default function Reports() {
                   </span>
                 </div>
 
-                <h3 className="text-sm font-semibold text-white mb-1">{report.label}</h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">{report.description}</p>
+                <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--c-strong)" }}>{report.label}</h3>
+                <p className="text-xs leading-relaxed mb-4" style={{ color: "var(--c-muted)" }}>{report.description}</p>
 
                 <button
                   onClick={() => handleDownload(report.id)}
@@ -730,14 +730,14 @@ export default function Reports() {
         </div>
 
         {/* Download All */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-400" />
+              <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
+                <FileText className="w-4 h-4" style={{ color: "var(--c-primary)" }} />
                 Download All Reports
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-muted)" }}>
                 Generate all {REPORTS.length} reports at once as separate CSV files
               </p>
             </div>
@@ -748,7 +748,8 @@ export default function Reports() {
                   await new Promise((res) => setTimeout(res, 200));
                 }
               }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-semibold hover:from-indigo-500 hover:to-purple-500 transition-all shadow-lg shadow-indigo-500/20"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold transition-all"
+              style={{ background: "#1B5E37", color: "#fff", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 600 }}
             >
               <Download className="w-4 h-4" />
               Download All ({REPORTS.length} Reports)

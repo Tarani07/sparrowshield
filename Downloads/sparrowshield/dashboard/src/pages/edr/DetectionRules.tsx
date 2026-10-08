@@ -35,11 +35,11 @@ export default function DetectionRules() {
   })).filter(g => g.rules.length > 0);
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
-      <div className="flex items-center justify-between">
+    <div className="p-6 space-y-5" style={{ color: "var(--c-text)" }}>
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <ListChecks className="w-5 h-5" style={{ color: "#a5b4fc" }} />
+          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
+            <ListChecks className="w-5 h-5" style={{ color: "var(--c-primary)" }} />
             Detection Rules
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
@@ -47,7 +47,7 @@ export default function DetectionRules() {
           </p>
         </div>
         <div className="text-sm px-3 py-1.5 rounded-lg"
-          style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.2)" }}>
+          style={{ background: "var(--c-primary-bg)", color: "#1B5E37", border: "1px solid rgba(27,94,55,0.2)" }}>
           {rules.filter(r => r.enabled).length} / {rules.length} active
         </div>
       </div>
@@ -71,13 +71,13 @@ export default function DetectionRules() {
                 {grpRules.map(rule => (
                   <div key={rule.rule_id} className="px-5 py-4 flex items-start gap-4">
                     <ToggleRight className="w-4 h-4 mt-0.5 flex-shrink-0"
-                      style={{ color: rule.enabled ? "#4ade80" : "#334155" }} />
+                      style={{ color: rule.enabled ? "#4ade80" : "var(--c-faint)" }} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-white">{rule.name}</span>
+                        <span className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>{rule.name}</span>
                         {rule.mitre_id && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                            style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>
+                            style={{ background: "var(--c-primary-bg)", color: "#1B5E37" }}>
                             {rule.mitre_id}
                           </span>
                         )}

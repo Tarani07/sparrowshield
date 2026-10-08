@@ -66,7 +66,7 @@ export default function HostIsolation() {
             <div key={s.label} className="rounded-xl p-4 text-center"
               style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
               <p className="text-3xl font-bold tabular-nums mb-1" style={{ color: s.color }}>{s.value}</p>
-              <p className="text-xs text-slate-500">{s.label}</p>
+              <p className="text-xs" style={{ color: "var(--c-muted)" }}>{s.label}</p>
             </div>
           ))}
         </div>
@@ -75,11 +75,12 @@ export default function HostIsolation() {
         {isolated.length > 0 && (
           <div className="rounded-xl overflow-hidden"
             style={{ background: "var(--c-card)", border: "1px solid rgba(239,68,68,0.25)" }}>
-            <div className="px-5 py-4 border-b border-red-900/40 flex items-center gap-2">
+            <div className="px-5 py-4 flex items-center gap-2"
+              style={{ borderBottom: "1px solid rgba(239,68,68,0.2)" }}>
               <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <h2 className="text-sm font-semibold text-red-300">Isolated Devices ({isolated.length})</h2>
+              <h2 className="text-sm font-semibold text-red-400">Isolated Devices ({isolated.length})</h2>
             </div>
-            <div className="divide-y divide-slate-800/50">
+            <div>
               {isolated.map(d => (
                 <DeviceRow key={d.id} device={d} onNavigate={() => navigate(`/device/${d.id}`)}
                   sending={!!sending[d.id]} sentCmd={sent[d.id]}
@@ -93,19 +94,19 @@ export default function HostIsolation() {
         {/* Active devices */}
         <div className="rounded-xl overflow-hidden"
           style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-          <div className="px-5 py-4 border-b border-slate-800/60">
-            <h2 className="text-sm font-semibold text-white">Active Devices ({notIsolated.length})</h2>
-            <p className="text-[11px] text-slate-600 mt-0.5">Click Isolate to immediately cut off network access</p>
+          <div className="px-5 py-4" style={{ borderBottom: "1px solid var(--c-border)" }}>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Active Devices ({notIsolated.length})</h2>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--c-faint)" }}>Click Isolate to immediately cut off network access</p>
           </div>
           {isLoading ? (
-            <div className="py-12 text-center text-sm text-slate-600">Loading…</div>
+            <div className="py-12 text-center text-sm" style={{ color: "var(--c-faint)" }}>Loading…</div>
           ) : notIsolated.length === 0 ? (
             <div className="py-12 text-center">
-              <Shield className="w-8 h-8 text-slate-700 mx-auto mb-2" />
-              <p className="text-sm text-slate-500">All Windows devices are isolated</p>
+              <Shield className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--c-faint)" }} />
+              <p className="text-sm" style={{ color: "var(--c-muted)" }}>All Windows devices are isolated</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-800/50">
+            <div>
               {notIsolated.map(d => (
                 <DeviceRow key={d.id} device={d} onNavigate={() => navigate(`/device/${d.id}`)}
                   sending={!!sending[d.id]} sentCmd={sent[d.id]}
@@ -132,31 +133,36 @@ function DeviceRow({ device, onNavigate, sending, sentCmd, onIsolate, onUnisolat
   const isIsolated = device.isolated;
 
   return (
-    <div className="flex items-center gap-4 px-5 py-4 hover:bg-slate-800/20 transition-colors">
+    <div className="flex items-center gap-4 px-5 py-4 transition-colors"
+      style={{ borderBottom: "1px solid var(--c-divider)" }}
+      onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
+      onMouseLeave={e => (e.currentTarget.style.background = "")}>
       {/* Device info */}
       <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={onNavigate}>
         <div className="relative shrink-0">
           <Monitor className="w-4 h-4 text-blue-400" />
-          <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#13141a]",
-            isIsolated ? "bg-red-500" : status === "online" ? "bg-green-500" : "bg-slate-600")} />
+          <span className={cn("absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full",
+            isIsolated ? "bg-red-500" : status === "online" ? "bg-green-500" : "bg-slate-600")}
+            style={{ border: "2px solid var(--c-card)" }} />
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-200 truncate">{device.hostname ?? "—"}</p>
-          <p className="text-[11px] text-slate-600 truncate">{device.assigned_user ?? "—"} · {device.os_version ?? "Windows"}</p>
+          <p className="text-sm font-medium truncate" style={{ color: "var(--c-text)" }}>{device.hostname ?? "—"}</p>
+          <p className="text-[11px] truncate" style={{ color: "var(--c-faint)" }}>{device.assigned_user ?? "—"} · {device.os_version ?? "Windows"}</p>
         </div>
       </div>
 
       {/* Status */}
       <div className="shrink-0">
         {isIsolated ? (
-          <span className="flex items-center gap-1.5 text-[10px] font-semibold text-red-400 bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20">
+          <span className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full"
+            style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}>
             <WifiOff className="w-3 h-3" /> Isolated
           </span>
         ) : (
-          <span className={cn("flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full border",
-            status === "online"
-              ? "text-green-400 bg-green-500/10 border-green-500/20"
-              : "text-slate-500 bg-slate-700/30 border-slate-700/30")}>
+          <span className="flex items-center gap-1.5 text-[10px] font-semibold px-2.5 py-1 rounded-full"
+            style={status === "online"
+              ? { background: "rgba(34,197,94,0.1)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.2)" }
+              : { background: "rgba(100,116,139,0.12)", color: "#94a3b8" }}>
             {status === "online" ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
             {status}
           </span>
@@ -164,14 +170,14 @@ function DeviceRow({ device, onNavigate, sending, sentCmd, onIsolate, onUnisolat
       </div>
 
       {/* Last seen */}
-      <p className="text-[11px] text-slate-600 font-mono shrink-0 w-20 text-right">
+      <p className="text-[11px] font-mono shrink-0 w-20 text-right" style={{ color: "var(--c-faint)" }}>
         {device.last_seen ? timeAgo(device.last_seen) : "—"}
       </p>
 
       {/* Action button */}
       <div className="shrink-0">
         {sentCmd ? (
-          <span className="text-[10px] text-slate-500 italic">
+          <span className="text-[10px] italic" style={{ color: "var(--c-muted)" }}>
             {sentCmd === "isolate" ? "Isolating…" : "Unisolating…"}
           </span>
         ) : isIsolated ? (
@@ -193,7 +199,7 @@ function DeviceRow({ device, onNavigate, sending, sentCmd, onIsolate, onUnisolat
       </div>
 
       {/* Navigate */}
-      <ChevronRight className="w-4 h-4 text-slate-700 cursor-pointer hover:text-slate-400 transition-colors"
+      <ChevronRight className="w-4 h-4 cursor-pointer transition-colors" style={{ color: "var(--c-faint)" }}
         onClick={onNavigate} />
     </div>
   );

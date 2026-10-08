@@ -65,10 +65,10 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
   };
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
-      <div className="flex items-center justify-between">
+    <div className="p-6 space-y-5" style={{ color: "var(--c-text)" }}>
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
             <BellRing className="w-5 h-5" style={{ color: "#f87171" }} />
             EDR Detections
           </h1>
@@ -81,7 +81,7 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
             <button key={f} onClick={() => setFilter(f)}
               className="px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-all"
               style={filter === f
-                ? { background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }
+                ? { background: "#1B5E37", color: "#fff" }
                 : { color: "var(--c-muted)" }
               }>
               {f}
@@ -104,9 +104,9 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
 
       {/* Alert list */}
       <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-        <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--c-border)" }}>
+        <div className="px-5 py-4 flex items-center gap-2" style={{ borderBottom: "1px solid var(--c-border)" }}>
           <Filter className="w-4 h-4" style={{ color: "var(--c-muted)" }} />
-          <span className="text-sm font-semibold text-white capitalize">{filter} Detections</span>
+          <span className="text-sm font-bold capitalize" style={{ color: "var(--c-strong)" }}>{filter} Detections</span>
           <span className="ml-auto text-xs" style={{ color: "var(--c-muted)" }}>{alerts.length} results</span>
         </div>
 
@@ -115,7 +115,7 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
         ) : alerts.length === 0 ? (
           <div className="p-10 text-center">
             <CheckCircle2 className="w-10 h-10 mx-auto mb-3" style={{ color: "#4ade80" }} />
-            <p className="text-sm font-medium text-white">No detections</p>
+            <p className="text-sm font-medium" style={{ color: "var(--c-strong)" }}>No detections</p>
             <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>All clear for the selected filter</p>
           </div>
         ) : (
@@ -123,10 +123,10 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
             {alerts.map(alert => (
               <div key={alert.id} className="px-5 py-4 flex items-start gap-4 group">
                 <div className="mt-1.5 w-2 h-2 rounded-full flex-shrink-0"
-                  style={{ background: alert.resolved ? "#334155" : severityColor[alert.severity] }} />
+                  style={{ background: alert.resolved ? "var(--c-faint)" : severityColor[alert.severity] }} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-semibold text-white">
+                    <span className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>
                       {alert.alert_type.replace(/_/g, " ")}
                     </span>
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
@@ -135,7 +135,7 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
                     </span>
                     {alert.mitre_technique && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                        style={{ background: "rgba(99,102,241,0.1)", color: "#a5b4fc" }}>
+                        style={{ background: "var(--c-primary-bg)", color: "#1B5E37" }}>
                         {alert.mitre_technique}
                       </span>
                     )}

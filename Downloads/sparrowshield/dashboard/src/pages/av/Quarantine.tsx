@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { Trash2, ShieldCheck, Clock } from "lucide-react";
+import TopBar from "../../components/layout/TopBar";
 
 interface QuarantineRow {
   id: string;
@@ -29,70 +30,73 @@ export default function Quarantine() {
   });
 
   return (
-    <div className="p-6 space-y-6" style={{ color: "var(--c-text)" }}>
-      <div>
-        <h1 className="text-xl font-bold text-white flex items-center gap-2">
-          <Trash2 className="w-5 h-5" style={{ color: "#fbbf24" }} />
-          Quarantine
-        </h1>
-        <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-          Threats that were detected and auto-resolved by the agent
-        </p>
-      </div>
-
-      <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-        <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--c-border)" }}>
-          <ShieldCheck className="w-4 h-4" style={{ color: "#4ade80" }} />
-          <span className="text-sm font-semibold text-white">Quarantined Items</span>
-          <span className="ml-auto text-xs" style={{ color: "var(--c-muted)" }}>{items.length} total</span>
+    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }}>
+      <TopBar title="Quarantine" />
+      <div className="p-6 space-y-6">
+        <div>
+          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
+            <Trash2 className="w-5 h-5" style={{ color: "#fbbf24" }} />
+            Quarantine
+          </h1>
+          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
+            Threats that were detected and auto-resolved by the agent
+          </p>
         </div>
 
-        {isLoading ? (
-          <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading…</div>
-        ) : items.length === 0 ? (
-          <div className="p-10 text-center">
-            <Trash2 className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--c-muted)" }} />
-            <p className="text-sm font-medium text-white">Quarantine is empty</p>
-            <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>Resolved threats will appear here</p>
+        <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+          <div className="px-5 py-3 flex items-center gap-2" style={{ borderBottom: "1px solid var(--c-border)" }}>
+            <ShieldCheck className="w-4 h-4" style={{ color: "#4ade80" }} />
+            <span className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Quarantined Items</span>
+            <span className="ml-auto text-xs" style={{ color: "var(--c-muted)" }}>{items.length} total</span>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
-                {["Threat", "Severity", "Device", "Detected", "Resolved"].map(h => (
-                  <th key={h} className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider"
-                    style={{ color: "var(--c-faint)" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
-              {items.map(item => (
-                <tr key={item.id}>
-                  <td className="px-5 py-3 font-medium text-white">{item.alert_type.replace(/_/g, " ")}</td>
-                  <td className="px-5 py-3">
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
-                      style={{
-                        background: item.severity === "critical" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.1)",
-                        color: item.severity === "critical" ? "#f87171" : "#fbbf24",
-                      }}>
-                      {item.severity}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3" style={{ color: "#94a3b8" }}>{item.hostname}</td>
-                  <td className="px-5 py-3 text-xs" style={{ color: "var(--c-muted)" }}>
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      {new Date(item.created_at).toLocaleDateString()}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-xs" style={{ color: "#4ade80" }}>
-                    {item.resolved_at ? new Date(item.resolved_at).toLocaleDateString() : "—"}
-                  </td>
+
+          {isLoading ? (
+            <div className="p-8 text-center" style={{ color: "var(--c-muted)" }}>Loading…</div>
+          ) : items.length === 0 ? (
+            <div className="p-10 text-center">
+              <Trash2 className="w-10 h-10 mx-auto mb-3" style={{ color: "var(--c-muted)" }} />
+              <p className="text-sm font-medium" style={{ color: "var(--c-strong)" }}>Quarantine is empty</p>
+              <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>Resolved threats will appear here</p>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
+                  {["Threat", "Severity", "Device", "Detected", "Resolved"].map(h => (
+                    <th key={h} className="px-5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider"
+                      style={{ color: "var(--c-muted)" }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody className="divide-y" style={{ borderColor: "var(--c-divider)" }}>
+                {items.map(item => (
+                  <tr key={item.id}>
+                    <td className="px-5 py-3 font-medium" style={{ color: "var(--c-strong)" }}>{item.alert_type.replace(/_/g, " ")}</td>
+                    <td className="px-5 py-3">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded uppercase"
+                        style={{
+                          background: item.severity === "critical" ? "rgba(239,68,68,0.12)" : "rgba(245,158,11,0.1)",
+                          color: item.severity === "critical" ? "#f87171" : "#fbbf24",
+                        }}>
+                        {item.severity}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3" style={{ color: "var(--c-text)" }}>{item.hostname}</td>
+                    <td className="px-5 py-3 text-xs" style={{ color: "var(--c-muted)" }}>
+                      <div className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {new Date(item.created_at).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 text-xs" style={{ color: "#4ade80" }}>
+                      {item.resolved_at ? new Date(item.resolved_at).toLocaleDateString() : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );

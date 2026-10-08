@@ -124,21 +124,22 @@ export default function PatchManager() {
   const upToDate = devices.filter(d => (d.outdated_apps?.length || 0) === 0);
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
+    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }} className="p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white flex items-center gap-2">
-            <Package className="w-5 h-5 text-indigo-400" />
+          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
+            <Package className="w-5 h-5" style={{ color: "var(--c-primary)" }} />
             Patch Manager
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
             Detect and update outdated applications across your fleet
           </p>
         </div>
         <button
           onClick={() => queryClient.invalidateQueries({ queryKey: ["patch-devices"] })}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors"
+          style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", color: "var(--c-muted)" }}
         >
           <RefreshCw className="w-4 h-4" />
           Refresh
@@ -147,28 +148,28 @@ export default function PatchManager() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
-          <p className="text-2xl font-bold text-white">{devices.length}</p>
-          <p className="text-xs text-slate-400 mt-0.5">Total Devices</p>
+        <div style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", borderRadius: 16, padding: "16px 20px" }}>
+          <p style={{ fontSize: 32, fontWeight: 800, color: "var(--c-strong)", marginTop: 4 }}>{devices.length}</p>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--c-muted)" }}>Total Devices</p>
         </div>
-        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
-          <p className="text-2xl font-bold text-amber-400">{devicesWithUpdates.length}</p>
-          <p className="text-xs text-amber-300/80 mt-0.5">Need Updates</p>
+        <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 16, padding: "16px 20px" }}>
+          <p style={{ fontSize: 32, fontWeight: 800, color: "#f59e0b", marginTop: 4 }}>{devicesWithUpdates.length}</p>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "#f59e0b", opacity: 0.8 }}>Need Updates</p>
         </div>
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-          <p className="text-2xl font-bold text-red-400">{totalOutdated}</p>
-          <p className="text-xs text-red-300/80 mt-0.5">Outdated Apps</p>
+        <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 16, padding: "16px 20px" }}>
+          <p style={{ fontSize: 32, fontWeight: 800, color: "#ef4444", marginTop: 4 }}>{totalOutdated}</p>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "#ef4444", opacity: 0.8 }}>Outdated Apps</p>
         </div>
-        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-          <p className="text-2xl font-bold text-emerald-400">{upToDate.length}</p>
-          <p className="text-xs text-emerald-300/80 mt-0.5">Up to Date</p>
+        <div style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 16, padding: "16px 20px" }}>
+          <p style={{ fontSize: 32, fontWeight: 800, color: "#22c55e", marginTop: 4 }}>{upToDate.length}</p>
+          <p style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "#22c55e", opacity: 0.8 }}>Up to Date</p>
         </div>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
-          <span className="ml-2 text-slate-400 text-sm">Scanning fleet...</span>
+          <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--c-primary)" }} />
+          <span className="ml-2 text-sm" style={{ color: "var(--c-muted)" }}>Scanning fleet...</span>
         </div>
       ) : (
         <div className="space-y-3">
@@ -183,29 +184,29 @@ export default function PatchManager() {
             return (
               <div
                 key={device.id}
-                className={`rounded-xl border transition-colors ${
-                  hasUpdates
-                    ? "bg-slate-800/50 border-amber-500/20"
-                    : "bg-slate-800/30 border-slate-700/30"
-                }`}
+                className="rounded-xl transition-colors"
+                style={{
+                  background: "var(--c-card)",
+                  border: hasUpdates ? "1px solid rgba(245,158,11,0.2)" : "1px solid var(--c-border)",
+                }}
               >
                 {/* Device Row */}
                 <div className="flex items-center gap-3 px-5 py-4">
                   {/* OS icon */}
                   {device.os_type?.toLowerCase() === "mac" ? (
-                    <Apple className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <Apple className="w-4 h-4 flex-shrink-0" style={{ color: "var(--c-muted)" }} />
                   ) : (
                     <Monitor className="w-4 h-4 text-blue-400 flex-shrink-0" />
                   )}
 
                   {/* Hostname */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{device.hostname}</p>
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--c-strong)" }}>{device.hostname}</p>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${isOnline ? "bg-emerald-500" : "bg-slate-600"}`} />
-                      <span className="text-[11px] text-slate-500">{isOnline ? "Online" : "Offline"}</span>
+                      <span className="text-[11px]" style={{ color: "var(--c-muted)" }}>{isOnline ? "Online" : "Offline"}</span>
                       {device.last_seen && (
-                        <span className="text-[11px] text-slate-600">
+                        <span className="text-[11px]" style={{ color: "var(--c-faint)" }}>
                           · {new Date(device.last_seen).toLocaleString()}
                         </span>
                       )}
@@ -214,12 +215,12 @@ export default function PatchManager() {
 
                   {/* Status */}
                   {hasUpdates ? (
-                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/25 text-xs font-semibold text-amber-400">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.25)", color: "#f59e0b" }}>
                       <AlertTriangle className="w-3 h-3" />
                       {apps.length} update{apps.length !== 1 ? "s" : ""}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-xs font-semibold text-emerald-400">
+                    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold" style={{ background: "rgba(34,197,94,0.15)", border: "1px solid rgba(34,197,94,0.25)", color: "#22c55e" }}>
                       <CheckCircle2 className="w-3 h-3" />
                       Up to date
                     </span>
@@ -231,7 +232,8 @@ export default function PatchManager() {
                       onClick={() => patchAll(device.id)}
                       disabled={patching[allKey] || !isOnline}
                       title={!isOnline ? "Device is offline" : "Update all apps"}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{ background: "#1B5E37", color: "#fff", borderRadius: 12 }}
                     >
                       {patching[allKey] ? (
                         <><Loader2 className="w-3 h-3 animate-spin" /> Queued</>
@@ -245,7 +247,8 @@ export default function PatchManager() {
                   {hasUpdates && (
                     <button
                       onClick={() => setExpanded(e => ({ ...e, [device.id]: !e[device.id] }))}
-                      className="text-slate-500 hover:text-slate-300 transition-colors"
+                      className="transition-colors"
+                      style={{ color: "var(--c-muted)" }}
                     >
                       {isOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
@@ -255,25 +258,30 @@ export default function PatchManager() {
                 {/* App list */}
                 {isOpen && hasUpdates && (
                   <div className="px-5 pb-4">
-                    <div className="rounded-lg overflow-hidden border border-slate-700/50">
+                    <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--c-border)" }}>
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="bg-slate-900/60">
-                            <th className="text-left py-2 px-3 text-slate-500 font-semibold">Application</th>
-                            <th className="text-left py-2 px-3 text-slate-500 font-semibold hidden sm:table-cell">Current</th>
-                            <th className="text-left py-2 px-3 text-slate-500 font-semibold hidden sm:table-cell">Latest</th>
-                            <th className="text-left py-2 px-3 text-slate-500 font-semibold">Source</th>
+                          <tr style={{ background: "var(--c-bg)" }}>
+                            <th className="text-left py-2 px-3 font-semibold" style={{ color: "var(--c-muted)" }}>Application</th>
+                            <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell" style={{ color: "var(--c-muted)" }}>Current</th>
+                            <th className="text-left py-2 px-3 font-semibold hidden sm:table-cell" style={{ color: "var(--c-muted)" }}>Latest</th>
+                            <th className="text-left py-2 px-3 font-semibold" style={{ color: "var(--c-muted)" }}>Source</th>
                             <th className="py-2 px-3" />
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800/60">
+                        <tbody>
                           {apps.map(app => {
                             const key = `${device.id}-${app.name}`;
                             return (
-                              <tr key={app.name} className="hover:bg-slate-800/30">
-                                <td className="py-2.5 px-3 text-slate-200 font-medium">{app.name}</td>
-                                <td className="py-2.5 px-3 text-slate-500 hidden sm:table-cell font-mono">{app.current_version}</td>
-                                <td className="py-2.5 px-3 text-emerald-400 hidden sm:table-cell font-mono">{app.latest_version}</td>
+                              <tr
+                                key={app.name}
+                                style={{ borderTop: "1px solid var(--c-divider)" }}
+                                onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
+                                onMouseLeave={e => (e.currentTarget.style.background = "")}
+                              >
+                                <td className="py-2.5 px-3 font-medium" style={{ color: "var(--c-text)" }}>{app.name}</td>
+                                <td className="py-2.5 px-3 hidden sm:table-cell font-mono" style={{ color: "var(--c-muted)" }}>{app.current_version}</td>
+                                <td className="py-2.5 px-3 hidden sm:table-cell font-mono text-emerald-400">{app.latest_version}</td>
                                 <td className="py-2.5 px-3">
                                   <span className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold ${sourceBadgeColor(app.source)}`}>
                                     {sourceLabel(app.source)}
@@ -283,7 +291,8 @@ export default function PatchManager() {
                                   <button
                                     onClick={() => patchApp(device.id, app)}
                                     disabled={patching[key] || !isOnline}
-                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed text-slate-300 hover:text-white text-[11px] font-semibold transition-colors ml-auto"
+                                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ml-auto disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-600 hover:text-white"
+                                    style={{ background: "var(--c-card2)", color: "var(--c-text)", border: "1px solid var(--c-border)" }}
                                   >
                                     {patching[key] ? (
                                       <><Loader2 className="w-3 h-3 animate-spin" /> Queued</>
@@ -300,7 +309,7 @@ export default function PatchManager() {
                     </div>
 
                     {/* Info note */}
-                    <div className="mt-3 flex items-start gap-2 text-[11px] text-slate-500">
+                    <div className="mt-3 flex items-start gap-2 text-[11px]" style={{ color: "var(--c-muted)" }}>
                       <Clock className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                       <span>
                         Commands are queued and executed by the agent within ~10 seconds.
@@ -315,8 +324,8 @@ export default function PatchManager() {
 
           {devices.length === 0 && (
             <div className="text-center py-20">
-              <ShieldCheck className="w-10 h-10 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">No devices enrolled yet.</p>
+              <ShieldCheck className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: "var(--c-muted)" }} />
+              <p className="text-sm" style={{ color: "var(--c-muted)" }}>No devices enrolled yet.</p>
             </div>
           )}
         </div>
