@@ -19,6 +19,14 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
+try:
+    import sys as _sys, os as _os
+    _ml = _os.path.join(_os.path.dirname(__file__), "..", "ml")
+    if _ml not in _sys.path: _sys.path.insert(0, _ml)
+    from mitre_mapper import enrich_event as _mitre_enrich
+except Exception:
+    def _mitre_enrich(e: dict) -> dict: return e
+
 PRODUCT_META = {
     "name":        "SparrowShield",
     "vendor_name": "SparrowShield",
@@ -130,6 +138,7 @@ def process_activity(
     if exit_code is not None:
         event["process"]["exit_code"] = exit_code
 
+    event = _mitre_enrich(event)
     return event
 
 
@@ -181,6 +190,7 @@ def file_activity(
             "name": os.path.basename(rename_dest),
         }
 
+    event = _mitre_enrich(event)
     return event
 
 
@@ -203,7 +213,7 @@ def network_activity(
     activity_map = {1: "Open", 2: "Close", 3: "Reset", 4: "Fail", 5: "Refuse", 6: "Traffic"}
     proto_id = 6 if protocol.lower() == "tcp" else 17   # IANA protocol numbers
 
-    return {
+    event = {
         "class_uid":     4001,
         "class_name":    "Network Activity",
         "activity_id":   activity_id,
@@ -233,3 +243,5 @@ def network_activity(
             "alert_type":   alert_type,
         },
     }
+    event = _mitre_enrich(event)
+    return event
