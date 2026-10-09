@@ -89,12 +89,11 @@ echo   "offline_max_events": 50000
 echo }
 ) > "%INSTALL_DIR%\config.json"
 
-:: Find full path to python.exe (SCM uses its own PATH, so we must be explicit)
+:: Find full path to python.exe
 for /f "tokens=*" %%i in ('where python.exe 2^>nul') do (
     set PYTHON_EXE=%%i
     goto :found_python
 )
-:: Fallback: try common install paths
 if exist "C:\Python311\python.exe"       set PYTHON_EXE=C:\Python311\python.exe
 if exist "C:\Python312\python.exe"       set PYTHON_EXE=C:\Python312\python.exe
 if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" ^
@@ -109,31 +108,45 @@ if not defined PYTHON_EXE (
 )
 echo        Python: %PYTHON_EXE%
 
-:: Register as Windows service
+:: Register as a Scheduled Task (runs at boot as SYSTEM — simpler and more reliable than sc create with Python)
 echo.
-echo  Registering SparrowShield as a Windows service ...
-sc stop  SparrowShield >nul 2>&1
-sc delete SparrowShield >nul 2>&1
-timeout /t 2 /nobreak >nul
+echo  Registering SparrowShield as a Scheduled Task ...
+schtasks /delete /tn "SparrowShield EDR" /f >nul 2>&1
 
-sc create SparrowShield ^
-    binPath= "\"%PYTHON_EXE%\" \"%INSTALL_DIR%\sensor_entry.py\" --service" ^
-    start= auto ^
-    DisplayName= "SparrowShield EDR Sensor"
-sc description SparrowShield "SparrowShield real-time endpoint detection and response sensor"
-sc start SparrowShield
+schtasks /create ^
+    /tn "SparrowShield EDR" ^
+    /tr "\"%PYTHON_EXE%\" \"%INSTALL_DIR%\main.py\" --run" ^
+    /sc onstart ^
+    /ru SYSTEM ^
+    /rl HIGHEST ^
+    /f ^
+    /delay 0000:30
+
+:: Start it right now without rebooting
+echo  Starting sensor now ...
+schtasks /run /tn "SparrowShield EDR"
+timeout /t 3 /nobreak >nul
+
+:: Verify it started
+tasklist /fi "imagename eq python.exe" /fo csv 2>nul | find /i "python.exe" >nul
+if %errorlevel% EQU 0 (
+    echo  [OK] Sensor process is running.
+) else (
+    echo  [!] Process not detected yet — it may take a few seconds to start.
+    echo      Check logs at %INSTALL_DIR%\sensor.log
+)
 
 echo.
 echo  ================================================================
 echo   Install complete!
 echo.
-echo   Service: SparrowShield (auto-starts on boot)
-echo   Logs:    %INSTALL_DIR%\logs\
-echo   Config:  %INSTALL_DIR%\config.json
+echo   Task:   "SparrowShield EDR"  (runs as SYSTEM on every boot)
+echo   Logs:   %INSTALL_DIR%\sensor.log
+echo   Config: %INSTALL_DIR%\config.json
 echo.
-echo   Check status:   sc query SparrowShield
-echo   Stop service:   sc stop SparrowShield
-echo   Uninstall:      sc stop SparrowShield ^&^& sc delete SparrowShield
+echo   Start:     schtasks /run /tn "SparrowShield EDR"
+echo   Stop:      schtasks /end /tn "SparrowShield EDR"
+echo   Uninstall: schtasks /delete /tn "SparrowShield EDR" /f
 echo  ================================================================
 echo.
 pause

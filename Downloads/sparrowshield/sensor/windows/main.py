@@ -43,6 +43,37 @@ SCORE_TERMINATE = 0.80
 SCORE_ALERT     = 0.50
 
 
+def _register_device(cfg: dict) -> None:
+    """Upsert this device into the Supabase devices table so it appears in the dashboard."""
+    import platform, requests
+    url      = cfg.get("supabase_url", "")
+    anon_key = cfg.get("anon_key", "")
+    if not url or not anon_key:
+        return
+    try:
+        payload = {
+            "device_uid":   cfg["device_uid"],
+            "hostname":     cfg.get("hostname", socket.gethostname()),
+            "os_type":      "windows",
+            "os_version":   platform.version(),
+            "status":       "online",
+            "agent_version":"2.0.0",
+        }
+        headers = {
+            "apikey":        anon_key,
+            "Authorization": f"Bearer {anon_key}",
+            "Content-Type":  "application/json",
+            "Prefer":        "resolution=merge-duplicates",
+        }
+        requests.post(
+            f"{url}/rest/v1/devices",
+            json=payload, headers=headers, timeout=10
+        )
+        logging.info("Device registered in dashboard: %s", cfg["device_uid"])
+    except Exception as exc:
+        logging.warning("Device registration failed (non-fatal): %s", exc)
+
+
 def _load_config() -> dict:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     if CONFIG_PATH.exists():
@@ -256,6 +287,7 @@ class SparrowShieldSensorOrchestrator:
         self._running.set()
         logging.info("=== SparrowShield Windows Sensor v2.0 starting ===")
         logging.info("Device: %s (%s)", self._cfg["hostname"], self._cfg["device_uid"])
+        _register_device(self._cfg)
 
         self._evt_dispatcher.start()
         self._file_proc.start()
