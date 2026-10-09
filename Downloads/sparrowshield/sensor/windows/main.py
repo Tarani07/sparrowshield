@@ -52,12 +52,14 @@ def _register_device(cfg: dict) -> None:
         return
     try:
         payload = {
-            "device_uid":   cfg["device_uid"],
+            "id":           cfg["device_uid"],   # uuid primary key
             "hostname":     cfg.get("hostname", socket.gethostname()),
             "os_type":      "windows",
             "os_version":   platform.version(),
             "status":       "online",
-            "agent_version":"2.0.0",
+            "last_seen":    __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "defender_enabled": True,
+            "uac_enabled":  True,
         }
         headers = {
             "apikey":        anon_key,
@@ -66,7 +68,7 @@ def _register_device(cfg: dict) -> None:
             "Prefer":        "resolution=merge-duplicates",
         }
         requests.post(
-            f"{url}/rest/v1/devices",
+            f"{url}/rest/v1/devices?on_conflict=id",
             json=payload, headers=headers, timeout=10
         )
         logging.info("Device registered in dashboard: %s", cfg["device_uid"])
