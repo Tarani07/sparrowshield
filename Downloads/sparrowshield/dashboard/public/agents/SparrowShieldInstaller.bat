@@ -89,13 +89,35 @@ echo   "offline_max_events": 50000
 echo }
 ) > "%INSTALL_DIR%\config.json"
 
+:: Find full path to python.exe (SCM uses its own PATH, so we must be explicit)
+for /f "tokens=*" %%i in ('where python.exe 2^>nul') do (
+    set PYTHON_EXE=%%i
+    goto :found_python
+)
+:: Fallback: try common install paths
+if exist "C:\Python311\python.exe"       set PYTHON_EXE=C:\Python311\python.exe
+if exist "C:\Python312\python.exe"       set PYTHON_EXE=C:\Python312\python.exe
+if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" ^
+    set PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python311\python.exe
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" ^
+    set PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
+:found_python
+
+if not defined PYTHON_EXE (
+    echo  [!] Cannot locate python.exe. Please install Python 3.11+ and re-run.
+    pause & exit /b 1
+)
+echo        Python: %PYTHON_EXE%
+
 :: Register as Windows service
 echo.
 echo  Registering SparrowShield as a Windows service ...
 sc stop  SparrowShield >nul 2>&1
 sc delete SparrowShield >nul 2>&1
+timeout /t 2 /nobreak >nul
+
 sc create SparrowShield ^
-    binPath= "python \"%INSTALL_DIR%\sensor_entry.py\" --service" ^
+    binPath= "\"%PYTHON_EXE%\" \"%INSTALL_DIR%\sensor_entry.py\" --service" ^
     start= auto ^
     DisplayName= "SparrowShield EDR Sensor"
 sc description SparrowShield "SparrowShield real-time endpoint detection and response sensor"
