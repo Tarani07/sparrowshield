@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2,
-  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
+  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -164,6 +164,7 @@ export default function Sidebar() {
     { to: "/reports",         label: "Reports",         icon: FileText   },
     { to: "/process-tree",    label: "Process Tree",    icon: GitBranch  },
     { to: "/live-alerts",     label: "Live Alerts",     icon: Radio      },
+    { to: "/mitre",           label: "ATT&CK Matrix",   icon: Target     },
   ];
 
   const systemNav: NavItem[] = [

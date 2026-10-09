@@ -13,6 +13,7 @@ import PatchManager from "./pages/PatchManager";
 import AlertCenter from "./pages/AlertCenter";
 import ProcessTree from "./pages/ProcessTree";
 import LiveAlerts from "./pages/LiveAlerts";
+import MitreMatrix from "./pages/MitreMatrix";
 
 // macOS
 import MacDevices from "./pages/mac/MacDevices";
@@ -77,6 +78,7 @@ export default function App() {
             <Route path="/live-alerts"  element={<LiveAlerts />} />
 
             {/* Management */}
+            <Route path="/mitre" element={<MitreMatrix />} />
             <Route path="/patches" element={<PatchManager />} />
             <Route path="/compliance" element={<Compliance />} />
             <Route path="/vulnerabilities" element={<VulnerabilityManager />} />
