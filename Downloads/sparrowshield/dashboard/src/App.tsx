@@ -11,6 +11,8 @@ import VulnerabilityManager from "./pages/VulnerabilityManager";
 import About from "./pages/About";
 import PatchManager from "./pages/PatchManager";
 import AlertCenter from "./pages/AlertCenter";
+import ProcessTree from "./pages/ProcessTree";
+import LiveAlerts from "./pages/LiveAlerts";
 
 // macOS
 import MacDevices from "./pages/mac/MacDevices";
@@ -69,6 +71,10 @@ export default function App() {
 
             {/* Legacy */}
             <Route path="/alerts" element={<AlertCenter />} />
+
+            {/* New EDR pages */}
+            <Route path="/process-tree" element={<ProcessTree />} />
+            <Route path="/live-alerts"  element={<LiveAlerts />} />
 
             {/* Management */}
             <Route path="/patches" element={<PatchManager />} />
