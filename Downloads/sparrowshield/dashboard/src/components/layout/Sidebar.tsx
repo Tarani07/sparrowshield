@@ -114,10 +114,24 @@ export default function Sidebar() {
   });
 
   function downloadFile(url: string, filename: string) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.click();
+    fetch(url)
+      .then(r => {
+        const ct = r.headers.get("content-type") ?? "";
+        if (!r.ok || ct.includes("text/html")) {
+          alert(`File not available: ${filename}`);
+          return;
+        }
+        return r.blob();
+      })
+      .then(blob => {
+        if (!blob) return;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      })
+      .catch(() => alert(`Download failed: ${filename}`));
   }
 
   const alertBadge: Record<string, number> = {};
@@ -225,41 +239,6 @@ export default function Sidebar() {
           <NavGroup items={systemNav} isLight={isLight} />
         </div>
 
-        {/* Download agents collapsible */}
-        <div>
-          <SectionLabel label="Agents" />
-          <button
-            onClick={() => setExpanded(v => !v)}
-            className="w-full flex items-center gap-2.5 px-4 py-2 rounded-lg text-[13px] font-medium transition-all"
-            style={{ color: "var(--c-muted)", borderLeft: "3px solid transparent" }}
-          >
-            <Download className="w-4 h-4" />
-            <span className="flex-1 text-left">Download Agent</span>
-            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          </button>
-
-          {expanded && (
-            <div className="mt-1 ml-4 pl-3 space-y-0.5" style={{ borderLeft: "1px solid var(--c-border)" }}>
-              {[
-                { label: "macOS Agent (.py)", icon: Apple,   file: "/agents/sparrowshield_agent.py", dl: "sparrowshield_agent.py" },
-                { label: "Windows EXE",       icon: Monitor, file: "/agents/SparrowShieldAgent.exe", dl: "SparrowShieldAgent.exe" },
-                { label: "Windows (.py)",     icon: Monitor, file: "/agents/agent_windows.py",       dl: "agent_windows.py" },
-              ].map(item => (
-                <button
-                  key={item.label}
-                  onClick={() => downloadFile(item.file, item.dl)}
-                  className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-xs transition-all text-left"
-                  style={{ color: "var(--c-muted)" }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--c-divider)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                >
-                  <item.icon className="w-3.5 h-3.5 flex-shrink-0" />
-                  <span style={{ fontSize: 11 }}>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </nav>
 
       {/* Footer */}
@@ -274,13 +253,38 @@ export default function Sidebar() {
         </p>
         <button
           onClick={() => setExpanded(v => !v)}
-          className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-center transition-all"
+          className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-center transition-all flex items-center justify-center gap-1.5"
           style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
           onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
           onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
         >
+          <Download className="w-3 h-3" />
           Get Agent
+          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
         </button>
+
+        {expanded && (
+          <div className="mt-2 rounded-lg overflow-hidden" style={{ background: "rgba(0,0,0,0.25)" }}>
+            {[
+              { label: "macOS Sensor (.py)", icon: Apple,   file: "/agents/sparrowshield_agent.py",     dl: "sparrowshield_agent.py"     },
+              { label: "macOS Install (.sh)", icon: Apple,   file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
+              { label: "Windows Installer",  icon: Monitor, file: "/agents/SparrowShieldInstaller.bat", dl: "SparrowShieldInstaller.bat" },
+              { label: "Windows Sensor (.py)",icon: Monitor, file: "/agents/agent_windows.py",           dl: "agent_windows.py"           },
+            ].map(item => (
+              <button
+                key={item.label}
+                onClick={() => downloadFile(item.file, item.dl)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-left transition-all"
+                style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+              >
+                <item.icon className="w-3 h-3 flex-shrink-0 opacity-70" />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {/* Theme toggle in footer */}
         <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           <div className="flex items-center gap-1.5">
