@@ -24,11 +24,13 @@ import UpdatesCard from "../components/device/UpdatesCard";
 import BrowsersCard from "../components/device/BrowsersCard";
 import IsolationCard from "../components/device/IsolationCard";
 import WindowsEDRCard from "../components/device/WindowsEDRCard";
+import ThreatTimelineCard from "../components/device/ThreatTimelineCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
 import { useAlerts } from "../hooks/useAlerts";
 import { useTopProcesses, useKillProcess, useCommands, useExecuteCommand } from "../hooks/useProcesses";
+import { useThreatTimeline } from "../hooks/useEdrEvents";
 import { healthBadge, timeAgo, cn } from "../lib/utils";
 
 export default function DeviceDetail() {
@@ -42,6 +44,7 @@ export default function DeviceDetail() {
   const { data: commands = [] } = useCommands(id!);
   const killProcess = useKillProcess(id!);
   const execCmd = useExecuteCommand(id!);
+  const { data: threatTimeline = [], isLoading: timelineLoading } = useThreatTimeline(id);
 
   const latest = reports[0];
   const pendingKills = new Set(
@@ -190,6 +193,9 @@ export default function DeviceDetail() {
             <IsolationCard device={device} />
           </div>
         )}
+
+        {/* Threat Score Timeline */}
+        <ThreatTimelineCard data={threatTimeline} isLoading={timelineLoading} />
 
         {/* Compliance + Crash row */}
         {device && (
