@@ -15,6 +15,15 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+try:
+    import sys as _sys, os as _os
+    _ml = _os.path.join(_os.path.dirname(__file__), "..", "ml")
+    if _ml not in _sys.path: _sys.path.insert(0, _ml)
+    from onnx_scorer import OnnxThreatScorer as _OnnxScorer
+    _onnx_scorer = _OnnxScorer()
+except Exception:
+    _onnx_scorer = None
+
 # ── Known-malware filename list (common macOS samples) ────────────────────────
 _KNOWN_MALWARE_NAMES = frozenset({
     "miner",
@@ -196,3 +205,27 @@ def score(
         pid, image_path, result
     )
     return result
+
+
+# Alias for use by score_event fallback
+def score_process(event: dict) -> float:
+    """Score a minimal process event dict using rule-based logic."""
+    return score(
+        pid        = int(event.get("pid") or 0),
+        image_path = event.get("image_path") or "",
+        cmdline    = event.get("cmdline") or "",
+        ancestry   = event.get("ancestry") or [],
+    )
+
+
+def score_event(event: dict) -> float:
+    """Score any OCSF event dict; uses ONNX model if available, falls back to rules."""
+    if _onnx_scorer is not None:
+        return _onnx_scorer.score(event)
+    # build a minimal synthetic process event for rule-based scoring
+    return score_process({
+        "process_name": event.get("process_name", ""),
+        "cmdline":      event.get("cmdline", ""),
+        "image_path":   event.get("image_path", ""),
+        "ppid":         event.get("ppid"),
+    })

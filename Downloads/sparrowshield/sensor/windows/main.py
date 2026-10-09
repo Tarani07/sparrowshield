@@ -164,35 +164,39 @@ def _make_alert_dispatcher(ship_q: queue.Queue, cfg: dict):
 
 def _placeholder_threat_score(evt: ProcessEvent, ancestry: list[str]) -> float:
     """
-    Rule-based scorer until the ONNX model is wired in (Day 5 stub).
+    ONNX-backed threat scorer; falls back to inline rules when model unavailable.
     Returns 0.0–1.0.
     """
+    if not hasattr(_placeholder_threat_score, "_scorer"):
+        try:
+            import sys as _sys
+            import os as _os
+            ml_dir = _os.path.join(_os.path.dirname(__file__), "..", "ml")
+            if ml_dir not in _sys.path:
+                _sys.path.insert(0, ml_dir)
+            from onnx_scorer import OnnxThreatScorer
+            _placeholder_threat_score._scorer = OnnxThreatScorer()
+        except Exception:
+            _placeholder_threat_score._scorer = None
+    scorer = _placeholder_threat_score._scorer
+    if scorer:
+        event = {
+            "image_path":   evt.image_path,
+            "cmdline":      evt.cmdline,
+            "pid":          evt.pid,
+            "ppid":         evt.ppid,
+            "process_name": os.path.basename(evt.image_path or ""),
+            "ancestry":     ancestry,
+        }
+        return scorer.score(event)
+    # inline fallback
     score = 0.0
-    path  = (evt.image_path or "").lower()
-    cmd   = (evt.cmdline   or "").lower()
-    name  = os.path.basename(path)
-
-    # Execution from temp / appdata is suspicious
-    if any(s in path for s in ["\\temp\\", "\\tmp\\", "\\appdata\\local\\temp\\"]):
-        score += 0.3
-
-    # PowerShell with encoded command or download cradle
-    if "powershell" in name:
-        if "-enc" in cmd or "downloadstring" in cmd or "iex" in cmd or "bypass" in cmd:
-            score += 0.5
-
-    # cmd.exe spawned by Office application
-    if name == "cmd.exe" and any(p in ancestry for p in ["WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE"]):
-        score += 0.6
-
-    # wscript / cscript outside system32
-    if name in ("wscript.exe", "cscript.exe") and "system32" not in path:
-        score += 0.4
-
-    # Execution from network share
-    if path.startswith("\\\\"):
-        score += 0.4
-
+    cmd  = (evt.cmdline    or "").lower()
+    path = (evt.image_path or "").lower()
+    if any(x in path for x in ["/tmp/", "\\temp\\", "%appdata%"]):       score += 0.3
+    if any(x in cmd  for x in ["-enc", "-encodedcommand"]):              score += 0.5
+    if any(x in cmd  for x in ["vssadmin", "wbadmin", "diskshadow"]):    score += 0.6
+    if any(x in cmd  for x in ["mimikatz", "sekurlsa", "lsass"]):        score += 0.7
     return min(score, 1.0)
 
 
