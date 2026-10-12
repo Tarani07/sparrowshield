@@ -25,6 +25,7 @@ import BrowsersCard from "../components/device/BrowsersCard";
 import IsolationCard from "../components/device/IsolationCard";
 import WindowsEDRCard from "../components/device/WindowsEDRCard";
 import ThreatTimelineCard from "../components/device/ThreatTimelineCard";
+import RemoteActionsCard from "../components/device/RemoteActionsCard";
 import { useDeviceReport } from "../hooks/useHealthReports";
 import { useDevice } from "../hooks/useDevices";
 import { useMetrics } from "../hooks/useMetrics";
@@ -194,8 +195,15 @@ export default function DeviceDetail() {
           </div>
         )}
 
-        {/* Threat Score Timeline */}
-        <ThreatTimelineCard data={threatTimeline} isLoading={timelineLoading} />
+        {/* Remote Actions + Threat Score Timeline */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <RemoteActionsCard
+            deviceId={id!}
+            deviceOs={device?.os_type ?? ""}
+            isIsolated={device?.isolated ?? false}
+          />
+          <ThreatTimelineCard data={threatTimeline} isLoading={timelineLoading} />
+        </div>
 
         {/* Compliance + Crash row */}
         {device && (
