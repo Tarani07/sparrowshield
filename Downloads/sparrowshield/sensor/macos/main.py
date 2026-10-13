@@ -210,6 +210,38 @@ def _handle_signal(signum, frame):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def _register_device(cfg: dict) -> None:
+    """Upsert this Mac into the Supabase devices table so it appears in the dashboard."""
+    import platform, requests as _req
+    url      = cfg.get("supabase_url", "")
+    anon_key = cfg.get("anon_key", "")
+    if not url or not anon_key:
+        return
+    try:
+        import datetime
+        payload = {
+            "id":           cfg["device_uid"],
+            "hostname":     cfg.get("hostname", socket.gethostname()),
+            "os_type":      "macos",
+            "os_version":   platform.mac_ver()[0] or platform.version(),
+            "status":       "online",
+            "last_seen":    datetime.datetime.utcnow().isoformat() + "Z",
+            "filevault_enabled": None,
+            "firewall_enabled":  None,
+        }
+        headers = {
+            "apikey":        anon_key,
+            "Authorization": f"Bearer {anon_key}",
+            "Content-Type":  "application/json",
+            "Prefer":        "resolution=merge-duplicates",
+        }
+        _req.post(f"{url}/rest/v1/devices?on_conflict=id",
+                  json=payload, headers=headers, timeout=10)
+        log.info("Device registered in dashboard: %s", cfg["device_uid"])
+    except Exception as exc:
+        log.warning("Device registration failed (non-fatal): %s", exc)
+
+
 def main() -> None:
     _setup_logging(LOG_FILE)
     log.info("=" * 60)
@@ -221,6 +253,7 @@ def main() -> None:
     verbose    = cfg.get("verbose", False)
 
     log.info("device_uid=%s  hostname=%s", device_uid, hostname)
+    _register_device(cfg)
 
     # Queues
     raw_queue  = queue.Queue(maxsize=50_000)
