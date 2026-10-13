@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Save, Send, Check, Loader2, Slack, Zap, ShieldAlert, Package, Trash2, Plus, X } from "lucide-react";
+import { Save, Send, Check, Loader2, Slack, Zap, ShieldAlert, Package, Trash2, Plus, X, Shield, Key } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
@@ -66,6 +66,7 @@ const TOGGLE_KEYS: {
 
 const TABS = [
   { key: "slack", label: "Slack Notifications", icon: Slack },
+  { key: "integrations", label: "Integrations", icon: Shield },
   { key: "remediation", label: "Auto-Remediation", icon: Zap },
   { key: "software-lists", label: "Software Lists", icon: ShieldAlert },
   { key: "software-catalog", label: "Software Catalog", icon: Package },
@@ -370,6 +371,9 @@ export default function Settings() {
             </div>
           </>
         )}
+
+        {/* ─── Tab: Integrations ─── */}
+        {activeTab === "integrations" && <IntegrationsTab />}
 
         {/* ─── Tab: Auto-Remediation ─── */}
         {activeTab === "remediation" && <RemediationTab />}
@@ -1041,5 +1045,88 @@ function SoftwareCatalogTab() {
         )}
       </div>
     </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Integrations Tab — VirusTotal API key + future integrations
+═══════════════════════════════════════════════════════════ */
+function IntegrationsTab() {
+  const [vtKey, setVtKey] = useState<string>(() => localStorage.getItem("vt_api_key") ?? "");
+  const [saved, setSaved] = useState(false);
+
+  function saveVtKey() {
+    if (vtKey.trim()) {
+      localStorage.setItem("vt_api_key", vtKey.trim());
+    } else {
+      localStorage.removeItem("vt_api_key");
+    }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="rounded-2xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "rgba(59,130,246,0.15)" }}>
+            <Key className="w-4 h-4 text-blue-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>VirusTotal</p>
+            <p className="text-xs" style={{ color: "var(--c-muted)" }}>Hash lookups from Process Tree and Live Alerts</p>
+          </div>
+          <a href="https://www.virustotal.com/gui/my-apikey" target="_blank" rel="noopener noreferrer"
+            className="ml-auto text-[11px] font-medium" style={{ color: "var(--c-primary)" }}>
+            Get free API key →
+          </a>
+        </div>
+        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--c-muted)" }}>API Key</label>
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={vtKey}
+            onChange={e => setVtKey(e.target.value)}
+            placeholder="Enter your VirusTotal API key…"
+            className="flex-1 rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
+            style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-text)" }}
+            onFocus={e => (e.currentTarget.style.borderColor = "var(--c-primary)")}
+            onBlur={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
+          />
+          <button
+            onClick={saveVtKey}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+            style={{ background: saved ? "rgba(34,197,94,0.15)" : "var(--c-primary)", color: saved ? "#22c55e" : "#fff" }}
+          >
+            {saved ? <><Check className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save</>}
+          </button>
+        </div>
+        <p className="text-[10px] mt-2" style={{ color: "var(--c-muted)" }}>
+          Stored locally in your browser only — never sent to any server. Free tier: 500 lookups/day.
+        </p>
+      </div>
+
+      {[
+        { name: "CrowdStrike", desc: "Import IOC feeds and threat intelligence", color: "#ef4444" },
+        { name: "Shodan", desc: "External attack surface monitoring", color: "#f59e0b" },
+        { name: "Splunk", desc: "Forward EDR events to your SIEM", color: "#8b5cf6" },
+      ].map(item => (
+        <div key={item.name} className="rounded-2xl p-5 flex items-center gap-4"
+          style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", opacity: 0.6 }}>
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{ background: `${item.color}22` }}>
+            <Shield className="w-4 h-4" style={{ color: item.color }} />
+          </div>
+          <div>
+            <p className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>{item.name}</p>
+            <p className="text-xs" style={{ color: "var(--c-muted)" }}>{item.desc}</p>
+          </div>
+          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{ background: "var(--c-border)", color: "var(--c-muted)" }}>
+            Coming soon
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

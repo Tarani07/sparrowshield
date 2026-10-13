@@ -25,6 +25,7 @@ import {
   Printer,
   ShieldAlert,
 } from "lucide-react";
+import { useAuth } from "../lib/AuthContext";
 import TopBar from "../components/layout/TopBar";
 import { useAllDevices } from "../hooks/useDevices";
 import { useAlerts } from "../hooks/useAlerts";
@@ -557,10 +558,144 @@ function generateFullAudit(devices: Device[]) {
 function today() { return new Date().toISOString().slice(0, 10); }
 function yn(v: boolean | null) { return v === true ? "Yes" : v === false ? "No" : "Unknown"; }
 
+/* ─── PDF summary print ─── */
+function printSecuritySummary(
+  devices: Device[],
+  activeAlerts: Alert[],
+  reports: HealthReport[],
+  email: string
+) {
+  const now = new Date().toLocaleString();
+  const onlineCount  = devices.filter(d => d.status === "online").length;
+  const offlineCount = devices.filter(d => d.status !== "online").length;
+  const macCount     = devices.filter(d => ["mac","macos","darwin"].includes(d.os_type ?? "")).length;
+  const winCount     = devices.filter(d => d.os_type === "windows").length;
+  const linuxCount   = devices.filter(d => d.os_type === "linux").length;
+  const criticalAlerts = activeAlerts.filter(a => a.severity === "critical").length;
+  const highAlerts     = activeAlerts.filter(a => a.severity === "high").length;
+  const avgHealth  = reports.length
+    ? Math.round(reports.reduce((s, r) => s + (r.health_score ?? 0), 0) / reports.length)
+    : 0;
+  const fvPercent = devices.length
+    ? Math.round(devices.filter(d => d.filevault_enabled).length / devices.length * 100)
+    : 0;
+  const fwPercent = devices.length
+    ? Math.round(devices.filter(d => d.firewall_enabled).length / devices.length * 100)
+    : 0;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>SparrowShield Security Summary</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #111; background: #fff; padding: 40px; }
+  h1 { font-size: 22px; font-weight: 700; color: #1B5E37; }
+  .sub { font-size: 12px; color: #666; margin-top: 4px; }
+  .divider { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+  .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; }
+  .card-label { font-size: 11px; color: #6b7280; margin-bottom: 4px; }
+  .card-value { font-size: 22px; font-weight: 700; }
+  .card-value.red { color: #ef4444; }
+  .card-value.green { color: #22c55e; }
+  .card-value.amber { color: #f59e0b; }
+  .section { margin-top: 24px; }
+  .bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 12px; }
+  .bar-bg { flex: 1; height: 8px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: #1B5E37; }
+  .footer { margin-top: 32px; font-size: 11px; color: #9ca3af; display: flex; justify-content: space-between; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: #dcfce7; color: #166534; }
+  .badge-red   { background: #fee2e2; color: #991b1b; }
+  @media print { body { padding: 20px; } }
+</style>
+</head><body>
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+    <div style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#1B5E37,#2E7D52);display:flex;align-items:center;justify-content:center;">
+      <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M12 2L3 7v7c0 5 9 8 9 8s9-3 9-8V7L12 2z"/></svg>
+    </div>
+    <div>
+      <h1>SparrowShield Security Summary</h1>
+      <p class="sub">Generated ${now} • ${email}</p>
+    </div>
+  </div>
+  <hr class="divider">
+
+  <div class="section-title">Fleet Overview</div>
+  <div class="grid">
+    <div class="card"><div class="card-label">Total Devices</div><div class="card-value">${devices.length}</div></div>
+    <div class="card"><div class="card-label">Online</div><div class="card-value green">${onlineCount}</div></div>
+    <div class="card"><div class="card-label">Offline</div><div class="card-value ${offlineCount > 0 ? 'amber' : ''}">${offlineCount}</div></div>
+    <div class="card"><div class="card-label">Avg Health</div><div class="card-value ${avgHealth < 60 ? 'red' : avgHealth < 80 ? 'amber' : 'green'}">${avgHealth}%</div></div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Platform Distribution</div>
+    <div class="grid-2">
+      ${[["macOS", macCount],["Windows", winCount],["Linux", linuxCount],["Other", devices.length - macCount - winCount - linuxCount]]
+        .filter(([,c]) => (c as number) > 0)
+        .map(([name, count]) => `<div class="card"><div class="card-label">${name}</div><div class="card-value">${count}</div></div>`)
+        .join("")}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Active Alerts</div>
+    <div class="grid-2">
+      <div class="card"><div class="card-label">Critical</div><div class="card-value ${criticalAlerts > 0 ? 'red' : ''}">${criticalAlerts}</div></div>
+      <div class="card"><div class="card-label">High</div><div class="card-value ${highAlerts > 0 ? 'amber' : ''}">${highAlerts}</div></div>
+      <div class="card"><div class="card-label">Total Open</div><div class="card-value">${activeAlerts.length}</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Security Compliance</div>
+    <div class="bar-row"><span style="width:140px">FileVault / BitLocker</span><div class="bar-bg"><div class="bar-fill" style="width:${fvPercent}%"></div></div><span>${fvPercent}%</span></div>
+    <div class="bar-row"><span style="width:140px">Firewall Enabled</span><div class="bar-bg"><div class="bar-fill" style="width:${fwPercent}%"></div></div><span>${fwPercent}%</span></div>
+  </div>
+
+  ${activeAlerts.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Top Active Alerts</div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse;">
+      <thead><tr style="background:#f9fafb;">
+        <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;">Device</th>
+        <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;">Type</th>
+        <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;">Severity</th>
+        <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;">Created</th>
+      </tr></thead>
+      <tbody>
+        ${activeAlerts.slice(0, 15).map(a => `<tr>
+          <td style="padding:7px 8px;border:1px solid #e5e7eb;">${a.devices?.hostname ?? a.device_id}</td>
+          <td style="padding:7px 8px;border:1px solid #e5e7eb;">${a.alert_type}</td>
+          <td style="padding:7px 8px;border:1px solid #e5e7eb;"><span class="badge ${a.severity === 'critical' ? 'badge-red' : 'badge-green'}">${a.severity}</span></td>
+          <td style="padding:7px 8px;border:1px solid #e5e7eb;">${new Date(a.created_at).toLocaleString()}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </div>` : ""}
+
+  <div class="footer">
+    <span>SparrowShield Security Platform</span>
+    <span>${now}</span>
+  </div>
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => { w.print(); }, 400);
+}
+
 /* ─── Component ─── */
 export default function Reports() {
   const [filter, setFilter] = useState("all");
   const [downloading, setDownloading] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const { data: devices = [] } = useAllDevices();
   const { data: activeAlerts = [] } = useAlerts(undefined, false);
@@ -621,9 +756,19 @@ export default function Reports() {
           <div>
             <h1 className="text-xl font-bold" style={{ color: "var(--c-strong)" }}>Reports & Downloads</h1>
             <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-              Download fleet reports as CSV. Data refreshes every 30 seconds.
+              Download fleet reports as CSV or PDF. Data refreshes every 30 seconds.
             </p>
           </div>
+          <button
+            onClick={() => printSecuritySummary(devices, activeAlerts, reports, user?.email ?? "Admin")}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+            style={{ background: "var(--c-primary)", color: "#fff" }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
+            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
+          >
+            <Printer className="w-4 h-4" />
+            Security Summary PDF
+          </button>
         </div>
 
         {/* Stats row */}

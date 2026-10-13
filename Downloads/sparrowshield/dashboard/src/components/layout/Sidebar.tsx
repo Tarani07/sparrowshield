@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2,
-  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target,
+  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target, Terminal,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -267,10 +267,12 @@ export default function Sidebar() {
         {expanded && (
           <div className="mt-2 rounded-lg overflow-hidden" style={{ background: "rgba(0,0,0,0.25)" }}>
             {[
-              { label: "macOS Sensor (.py)", icon: Apple,   file: "/agents/sparrowshield_agent.py",     dl: "sparrowshield_agent.py"     },
-              { label: "macOS Install (.sh)", icon: Apple,   file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
-              { label: "Windows Installer",  icon: Monitor, file: "/agents/SparrowShieldInstaller.bat", dl: "SparrowShieldInstaller.bat" },
-              { label: "Windows Sensor (.py)",icon: Monitor, file: "/agents/agent_windows.py",           dl: "agent_windows.py"           },
+              { label: "macOS Sensor (.py)",   icon: Apple,    file: "/agents/sparrowshield_agent.py",       dl: "sparrowshield_agent.py"       },
+              { label: "macOS Install (.sh)",  icon: Apple,    file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
+              { label: "Windows Installer",    icon: Monitor,  file: "/agents/SparrowShieldInstaller.bat",   dl: "SparrowShieldInstaller.bat"   },
+              { label: "Windows Sensor (.py)", icon: Monitor,  file: "/agents/agent_windows.py",             dl: "agent_windows.py"             },
+              { label: "Linux Install (.sh)",  icon: Terminal, file: "/agents/SparrowShield-Linux-Install.sh", dl: "SparrowShield-Linux-Install.sh" },
+              { label: "Linux Sensor (.py)",   icon: Terminal, file: "/agents/sparrowshield_linux.py",       dl: "sparrowshield_linux.py"       },
             ].map(item => (
               <button
                 key={item.label}

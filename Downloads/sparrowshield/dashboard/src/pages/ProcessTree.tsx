@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown, Terminal, AlertTriangle } from "lucide-react
 import TopBar from "../components/layout/TopBar";
 import { supabase } from "../lib/supabase";
 import { timeAgo } from "../lib/utils";
+import VirusTotalModal from "../components/device/VirusTotalModal";
 
 /* ── Types ── */
 interface EdrEvent {
@@ -148,6 +149,14 @@ function TreeRow({
           }}>
             {node.threat_score.toFixed(2)}
           </span>
+        )}
+
+        {/* VirusTotal hash check */}
+        {node.image_path && (
+          <VirusTotalModal
+            hash={node.image_path.split(/[/\\]/).pop()?.toLowerCase() ?? node.image_path}
+            name={node.process_name ?? undefined}
+          />
         )}
 
         {/* Severity */}
