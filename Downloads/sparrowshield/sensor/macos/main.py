@@ -208,6 +208,44 @@ def _handle_signal(signum, frame):
     _shutdown.set()
 
 
+# ── Heartbeat ────────────────────────────────────────────────────────────────
+
+class HeartbeatThread(threading.Thread):
+    def __init__(self, cfg: dict, interval: int = 120):
+        super().__init__(daemon=True, name="HeartbeatThread")
+        self._cfg      = cfg
+        self._interval = interval
+        self._stop     = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                import datetime, requests as _req
+                url      = self._cfg.get("supabase_url", "")
+                anon_key = self._cfg.get("anon_key", "")
+                if not url or not anon_key:
+                    continue
+                payload = {
+                    "id":        self._cfg["device_uid"],
+                    "status":    "online",
+                    "last_seen": datetime.datetime.utcnow().isoformat() + "Z",
+                }
+                headers = {
+                    "apikey":        anon_key,
+                    "Authorization": f"Bearer {anon_key}",
+                    "Content-Type":  "application/json",
+                    "Prefer":        "resolution=merge-duplicates",
+                }
+                _req.post(f"{url}/rest/v1/devices?on_conflict=id",
+                          json=payload, headers=headers, timeout=10)
+                log.debug("Heartbeat sent.")
+            except Exception as exc:
+                log.warning("Heartbeat failed: %s", exc)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def _register_device(cfg: dict) -> None:
@@ -294,6 +332,8 @@ def main() -> None:
     sensor.start()
     shipper.start()
     dispatcher.start()
+    heartbeat = HeartbeatThread(cfg)
+    heartbeat.start()
 
     log.info("All threads running. Waiting for shutdown signal.")
 
@@ -301,6 +341,7 @@ def main() -> None:
     _shutdown.wait()
 
     log.info("Shutdown initiated — stopping sensor.")
+    heartbeat.stop()
     sensor.stop()
     sensor.join(timeout=10)
     log.info("SparrowShield macOS sensor stopped.")

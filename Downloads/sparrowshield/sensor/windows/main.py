@@ -43,6 +43,42 @@ SCORE_TERMINATE = 0.80
 SCORE_ALERT     = 0.50
 
 
+class HeartbeatThread(threading.Thread):
+    def __init__(self, cfg: dict, interval: int = 120):
+        super().__init__(daemon=True, name="HeartbeatThread")
+        self._cfg      = cfg
+        self._interval = interval
+        self._stop     = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                import datetime, requests as _req
+                url      = self._cfg.get("supabase_url", "")
+                anon_key = self._cfg.get("anon_key", "")
+                if not url or not anon_key:
+                    continue
+                payload = {
+                    "id":        self._cfg["device_uid"],
+                    "status":    "online",
+                    "last_seen": datetime.datetime.utcnow().isoformat() + "Z",
+                }
+                headers = {
+                    "apikey":        anon_key,
+                    "Authorization": f"Bearer {anon_key}",
+                    "Content-Type":  "application/json",
+                    "Prefer":        "resolution=merge-duplicates",
+                }
+                _req.post(f"{url}/rest/v1/devices?on_conflict=id",
+                          json=payload, headers=headers, timeout=10)
+                logging.debug("Heartbeat sent.")
+            except Exception as exc:
+                logging.warning("Heartbeat failed: %s", exc)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 def _register_device(cfg: dict) -> None:
     """Upsert this device into the Supabase devices table so it appears in the dashboard."""
     import platform, requests
@@ -302,10 +338,15 @@ class SparrowShieldSensorOrchestrator:
         self._net_sensor.start()
         self._vss_guard.start()
 
+        self._heartbeat = HeartbeatThread(self._cfg)
+        self._heartbeat.start()
+
         logging.info("All subsystems online.")
 
     def stop(self):
         self._running.clear()
+        if hasattr(self, "_heartbeat"):
+            self._heartbeat.stop()
         self._proc_sensor.stop()
         self._file_sensor.stop()
         self._net_sensor.stop()

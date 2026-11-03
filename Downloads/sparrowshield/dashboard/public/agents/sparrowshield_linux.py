@@ -105,6 +105,42 @@ def _load_config() -> dict:
 
 # ── Device registration ───────────────────────────────────────────────────────
 
+class HeartbeatThread(threading.Thread):
+    def __init__(self, cfg: dict, interval: int = 120):
+        super().__init__(daemon=True, name="HeartbeatThread")
+        self._cfg      = cfg
+        self._interval = interval
+        self._stop     = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop.wait(self._interval):
+            try:
+                import requests as _req
+                url      = self._cfg.get("supabase_url", "")
+                anon_key = self._cfg.get("anon_key", "")
+                if not url or not anon_key:
+                    continue
+                payload = {
+                    "id":        self._cfg["device_uid"],
+                    "status":    "online",
+                    "last_seen": datetime.utcnow().isoformat() + "Z",
+                }
+                headers = {
+                    "apikey":        anon_key,
+                    "Authorization": f"Bearer {anon_key}",
+                    "Content-Type":  "application/json",
+                    "Prefer":        "resolution=merge-duplicates",
+                }
+                _req.post(f"{url}/rest/v1/devices?on_conflict=id",
+                          json=payload, headers=headers, timeout=10)
+                logging.getLogger(__name__).debug("Heartbeat sent.")
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Heartbeat failed: %s", exc)
+
+    def stop(self) -> None:
+        self._stop.set()
+
+
 def _register_device(cfg: dict) -> None:
     """Upsert this device into the Supabase devices table."""
     import requests as _req
@@ -280,10 +316,15 @@ class SparrowShieldLinuxOrchestrator:
         threading.Thread(target=self._file_loop, daemon=True, name="FileConsumer").start()
         threading.Thread(target=self._net_loop,  daemon=True, name="NetConsumer").start()
 
+        self._heartbeat = HeartbeatThread(self._cfg)
+        self._heartbeat.start()
+
         self._log.info("All subsystems online.")
 
     def stop(self):
         self._running.clear()
+        if hasattr(self, "_heartbeat"):
+            self._heartbeat.stop()
         self._proc_sensor.stop()
         self._file_sensor.stop()
         self._net_sensor.stop()
