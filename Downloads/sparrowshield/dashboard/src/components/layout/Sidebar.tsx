@@ -102,6 +102,17 @@ export default function Sidebar() {
     refetchInterval: 30_000,
   });
 
+  const { data: linuxCount = 0 } = useQuery<number>({
+    queryKey: ["linux-device-count"],
+    queryFn: async () => {
+      const { count } = await supabase.from("devices")
+        .select("*", { count: "exact", head: true })
+        .in("os_type", ["linux", "debian", "ubuntu", "centos", "rhel"]);
+      return count ?? 0;
+    },
+    refetchInterval: 30_000,
+  });
+
   const { data: alertCount = 0 } = useQuery<number>({
     queryKey: ["open-alert-count"],
     queryFn: async () => {
@@ -155,6 +166,10 @@ export default function Sidebar() {
     { to: "/windows/av",        label: "AV Scanner",     icon: ScanLine },
     { to: "/windows/edr",       label: "EDR Detections", icon: BellRing },
     { to: "/windows/isolation", label: "Host Isolation", icon: WifiOff  },
+  ];
+
+  const linuxNav: NavItem[] = [
+    { to: "/linux/devices", label: "Linux Devices", icon: Terminal },
   ];
 
   const mgmtNav: NavItem[] = [
@@ -228,6 +243,20 @@ export default function Sidebar() {
             )}
           </div>
           <NavGroup items={winNav} isLight={isLight} />
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 px-4 mb-1">
+            <Terminal className="w-3 h-3" style={{ color: "#34d399" }} />
+            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>Linux</p>
+            {linuxCount > 0 && (
+              <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded"
+                style={{ background: "rgba(52,211,153,0.15)", color: "#34d399" }}>
+                {linuxCount}
+              </span>
+            )}
+          </div>
+          <NavGroup items={linuxNav} isLight={isLight} />
         </div>
 
         <div>

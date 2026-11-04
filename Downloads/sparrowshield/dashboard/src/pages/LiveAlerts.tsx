@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, CheckCircle, Shield } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import { supabase } from "../lib/supabase";
 import { timeAgo } from "../lib/utils";
+import ThreatDetailPanel from "../components/alerts/ThreatDetailPanel";
 
 /* ── Types ── */
 interface LiveAlert {
@@ -83,7 +84,7 @@ function StatCard({ label, value, accent }: { label: string; value: string | num
 }
 
 /* ── Single alert card ── */
-function AlertCard({ alert, onResolve }: { alert: LiveAlert; onResolve: (id: string) => void }) {
+function AlertCard({ alert, onResolve, onSelect }: { alert: LiveAlert; onResolve: (id: string) => void; onSelect: (a: LiveAlert) => void }) {
   const [open, setOpen] = useState(false);
   const borderColor = leftBorderColor(alert);
   const hasDetails = alert.cmdline || alert.file_path || alert.dst_ip;
@@ -109,7 +110,7 @@ function AlertCard({ alert, onResolve }: { alert: LiveAlert; onResolve: (id: str
         )}
 
         {/* Alert info */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <button onClick={() => onSelect(alert)} className="flex-1 min-w-0 text-left" style={{ background: "none", border: "none", cursor: "pointer" }}>
           <p style={{ fontSize: 13, fontWeight: 700, color: "var(--c-strong)", marginBottom: 3 }}>
             {alert.rule_name ?? alert.alert_type?.replace(/_/g, " ") ?? "Unknown Alert"}
           </p>
@@ -117,7 +118,7 @@ function AlertCard({ alert, onResolve }: { alert: LiveAlert; onResolve: (id: str
             {alert.devices?.hostname ?? alert.device_id ?? "Unknown device"}
             {alert.created_at ? ` · ${timeAgo(alert.created_at)}` : ""}
           </p>
-        </div>
+        </button>
 
         {/* Severity badge */}
         <span style={{
@@ -186,6 +187,7 @@ function AlertCard({ alert, onResolve }: { alert: LiveAlert; onResolve: (id: str
 
 export default function LiveAlerts() {
   const qc = useQueryClient();
+  const [selectedEvent, setSelectedEvent] = useState<LiveAlert | null>(null);
 
   /* ── Initial fetch ── */
   const { data: initialAlerts = [], isLoading } = useQuery<LiveAlert[]>({
@@ -291,6 +293,7 @@ export default function LiveAlerts() {
 
   return (
     <div className="flex flex-col h-full" style={{ background: "var(--c-bg)" }}>
+      <ThreatDetailPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       <TopBar title="Live Alerts" />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
@@ -344,7 +347,7 @@ export default function LiveAlerts() {
             </div>
           ) : (
             allAlerts.map(alert => (
-              <AlertCard key={alert.id} alert={alert} onResolve={handleResolve} />
+              <AlertCard key={alert.id} alert={alert} onResolve={handleResolve} onSelect={setSelectedEvent} />
             ))
           )}
         </div>

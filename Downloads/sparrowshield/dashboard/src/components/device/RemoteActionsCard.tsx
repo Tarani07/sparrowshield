@@ -61,6 +61,8 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [customCmd, setCustomCmd] = useState("");
   const [cmdState, setCmdState] = useState<ActionState>({ status: "idle", message: "" });
+  const [cmdResult, setCmdResult] = useState<string | null>(null);
+  const [polling, setPolling] = useState(false);
 
   function setState(key: string, s: ActionState) {
     setStates(prev => ({ ...prev, [key]: s }));
@@ -88,21 +90,48 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
     e.preventDefault();
     if (!customCmd.trim()) return;
     setCmdState({ status: "running", message: "" });
+    setCmdResult(null);
+    const cmdToRun = customCmd.trim();
+    setCustomCmd("");
     try {
-      const { error } = await supabase.from("commands").insert({
+      const { data: inserted, error } = await supabase.from("commands").insert({
         device_id: deviceId,
         command_type: "shell",
         status: "pending",
-        payload: { cmd: customCmd.trim() },
+        payload: { cmd: cmdToRun },
         created_at: new Date().toISOString(),
-      });
+      }).select().single();
       if (error) throw error;
-      setCmdState({ status: "success", message: "Shell command queued." });
-      setCustomCmd("");
+      setCmdState({ status: "success", message: "Command queued — waiting for agent…" });
+
+      if (inserted?.id) {
+        setPolling(true);
+        const start = Date.now();
+        const interval = setInterval(async () => {
+          if (Date.now() - start > 30000) {
+            clearInterval(interval);
+            setPolling(false);
+            setCmdResult("Timed out waiting for agent response (30s).");
+            return;
+          }
+          const { data } = await supabase.from("commands")
+            .select("status, result")
+            .eq("id", inserted.id)
+            .single();
+          if (data?.status === "completed" || data?.status === "error") {
+            clearInterval(interval);
+            setPolling(false);
+            setCmdResult(typeof data.result === "string" ? data.result : JSON.stringify(data.result ?? "(no output)"));
+            setCmdState({ status: "idle", message: "" });
+          }
+        }, 2000);
+      } else {
+        setTimeout(() => setCmdState({ status: "idle", message: "" }), 5000);
+      }
     } catch (err: any) {
       setCmdState({ status: "error", message: err.message ?? "Failed." });
+      setTimeout(() => setCmdState({ status: "idle", message: "" }), 5000);
     }
-    setTimeout(() => setCmdState({ status: "idle", message: "" }), 5000);
   }
 
   const visibleActions = ACTIONS.filter(a => {
@@ -222,6 +251,32 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
         )}
         {cmdState.status === "error" && (
           <p className="text-[10px] text-red-400 mt-1.5">{cmdState.message}</p>
+        )}
+        {polling && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <Loader2 className="w-3 h-3 animate-spin" style={{ color: "var(--c-muted)" }} />
+            <p className="text-[10px]" style={{ color: "var(--c-muted)" }}>Waiting for agent response…</p>
+          </div>
+        )}
+        {cmdResult && (
+          <div className="mt-3 rounded-lg overflow-hidden" style={{ border: "1px solid var(--c-border2)" }}>
+            <div className="px-3 py-1.5 flex items-center gap-2"
+              style={{ background: "var(--c-bg)", borderBottom: "1px solid var(--c-border2)" }}>
+              <Terminal className="w-3 h-3" style={{ color: "var(--c-muted)" }} />
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>Output</span>
+              <button
+                onClick={() => setCmdResult(null)}
+                className="ml-auto"
+                style={{ color: "var(--c-faint)" }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+            <pre className="text-[10px] p-3 overflow-x-auto whitespace-pre-wrap break-words font-mono"
+              style={{ background: "var(--c-card)", color: "var(--c-strong)", maxHeight: 200 }}>
+              {cmdResult}
+            </pre>
+          </div>
         )}
       </div>
     </div>
