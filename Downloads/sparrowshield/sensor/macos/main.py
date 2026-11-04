@@ -36,8 +36,10 @@ from supabase_shipper import SupabaseShipper
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-CONFIG_PATH = Path.home() / "Library" / "Application Support" / \
-              "SparrowShield" / "config.json"
+# Prefer the install-dir path; fall back to per-user path for dev runs
+_INSTALL_CONFIG = Path("/usr/local/sparrowshield/config.json")
+_USER_CONFIG    = Path.home() / "Library" / "Application Support" / "SparrowShield" / "config.json"
+CONFIG_PATH     = _INSTALL_CONFIG if _INSTALL_CONFIG.exists() else _USER_CONFIG
 LOG_DIR     = Path("/var/log")
 LOG_FILE    = LOG_DIR / "sparrowshield-sensor.log"
 
