@@ -1,6 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "installCommand": "npm install",
-  "framework": "vite"
+  "buildCommand": "cd Downloads/sparrowshield/dashboard && npm install && npm run build",
+  "outputDirectory": "Downloads/sparrowshield/dashboard/dist",
+  "installCommand": "echo 'install handled in buildCommand'",
+  "framework": "vite",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
