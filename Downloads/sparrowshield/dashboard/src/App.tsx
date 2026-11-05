@@ -16,6 +16,7 @@ import ProcessTree from "./pages/ProcessTree";
 import LiveAlerts from "./pages/LiveAlerts";
 import MitreMatrix from "./pages/MitreMatrix";
 import Login from "./pages/Login";
+import Onboarding from "./pages/Onboarding";
 
 // macOS
 import MacDevices from "./pages/mac/MacDevices";
@@ -40,6 +41,7 @@ import Detections from "./pages/edr/Detections";
 import DetectionRules from "./pages/edr/DetectionRules";
 import ProcessMonitor from "./pages/edr/ProcessMonitor";
 import NetworkActivity from "./pages/edr/NetworkActivity";
+import ExecutiveSummary from "./pages/ExecutiveSummary";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -51,8 +53,7 @@ function ProtectedLayout() {
     </div>
   );
 
-  // AUTH TEMPORARILY DISABLED — re-enable before production
-  // if (!session) return <Navigate to="/login" replace />;
+  if (!session) return <Navigate to="/login" replace />;
 
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "var(--c-bg)" }}>
@@ -93,6 +94,8 @@ function ProtectedLayout() {
           <Route path="/vulnerabilities" element={<VulnerabilityManager />} />
           <Route path="/reports" element={<Reports />} />
 
+          <Route path="/executive" element={<ExecutiveSummary />} />
+
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
 
@@ -110,6 +113,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/*" element={<ProtectedLayout />} />
           </Routes>
         </BrowserRouter>
