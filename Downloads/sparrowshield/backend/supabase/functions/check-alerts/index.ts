@@ -6,6 +6,7 @@ interface AlertThresholds {
   disk_warning: number;
   disk_critical: number;
   ram_warning: number;
+  cpu_warning: number;
   battery_warning: number;
   offline_minutes: number;
   min_os_version_mac?: string;
@@ -45,6 +46,7 @@ Deno.serve(async (req) => {
     disk_warning: 85,
     disk_critical: 95,
     ram_warning: 90,
+    cpu_warning: 60,
     battery_warning: 60,
     offline_minutes: 120,
   };
@@ -119,10 +121,19 @@ Deno.serve(async (req) => {
     const m = latestMetric as Record<string, unknown>;
     const disk_pct = m.disk_pct as number | null;
     const ram_pct = m.ram_pct as number | null;
+    const cpu_pct = m.cpu_pct as number | null;
     const battery_health_pct = m.battery_health_pct as number | null;
     const filevault_enabled = m.filevault_enabled as boolean | null;
     const bitlocker_enabled = m.bitlocker_enabled as boolean | null;
     const firewall_enabled = m.firewall_enabled as boolean | null;
+
+    if (cpu_pct != null && cpu_pct >= (thresholds.cpu_warning ?? 60)) {
+      createAlert(
+        "high_cpu",
+        "warning",
+        `CPU usage at ${cpu_pct.toFixed(1)}% (threshold: ${thresholds.cpu_warning ?? 60}%).`
+      );
+    }
 
     if (disk_pct != null && disk_pct >= thresholds.disk_critical) {
       createAlert(
@@ -196,6 +207,7 @@ Deno.serve(async (req) => {
     const m = (latestMetric ?? {}) as Record<string, unknown>;
     const disk_pct = m.disk_pct as number | null;
     const ram_pct = m.ram_pct as number | null;
+    const cpu_pct = m.cpu_pct as number | null;
     const battery_health_pct = m.battery_health_pct as number | null;
     const filevault_enabled = m.filevault_enabled as boolean | null;
     const bitlocker_enabled = m.bitlocker_enabled as boolean | null;
@@ -212,6 +224,9 @@ Deno.serve(async (req) => {
           break;
         case "high_ram":
           shouldResolve = ram_pct != null && ram_pct < thresholds.ram_warning;
+          break;
+        case "high_cpu":
+          shouldResolve = cpu_pct != null && cpu_pct < (thresholds.cpu_warning ?? 60);
           break;
         case "battery_health":
           shouldResolve =
@@ -242,7 +257,15 @@ Deno.serve(async (req) => {
 
   if (slackWebhook.url && newAlerts.length > 0) {
     for (const a of newAlerts) {
-      const text = `[${a.severity}] ${a.hostname}${a.assigned_user ? ` (${a.assigned_user})` : ""}: ${a.message} — ${DASHBOARD_LINK}`;
+      const emoji = a.alert_type === "high_cpu" ? "🔥"
+        : a.alert_type === "high_ram" ? "🧠"
+        : a.alert_type === "high_disk" ? "💾"
+        : a.alert_type === "battery_health" ? "🪫"
+        : a.alert_type === "device_offline" ? "📴"
+        : a.alert_type === "encryption_disabled" ? "🔓"
+        : a.alert_type === "firewall_disabled" ? "🛡️"
+        : "⚠️";
+      const text = `${emoji} *[${a.severity.toUpperCase()}]* ${a.hostname}${a.assigned_user ? ` (${a.assigned_user})` : ""}: ${a.message} — ${DASHBOARD_LINK}`;
       try {
         await fetch(slackWebhook.url, {
           method: "POST",

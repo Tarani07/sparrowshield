@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Unique reverse-DNS label for this daemon -->
+    <key>Label</key>
+    <string>com.sparrowshield.sensor</string>
+
+    <!-- Binary / interpreter + arguments -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/sparrowshield/venv/bin/python3</string>
+        <string>/usr/local/sparrowshield/main.py</string>
+        <string>--run</string>
+    </array>
+
+    <!-- Run immediately when launchd loads the plist -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart if the process exits for any reason -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Run as root so we can read /dev/auditpipe -->
+    <key>UserName</key>
+    <string>root</string>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/usr/local/sparrowshield</string>
+
+    <!-- Redirect stderr to the log file -->
+    <key>StandardErrorPath</key>
+    <string>/var/log/sparrowshield-sensor.log</string>
+
+    <!-- Redirect stdout as well (Python logging also writes there) -->
+    <key>StandardOutPath</key>
+    <string>/var/log/sparrowshield-sensor.log</string>
+
+    <!-- Minimum seconds between restarts to prevent crash loops -->
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+
+    <!-- Environment variables available to the daemon -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>SPARROWSHIELD_CONFIG</key>
+        <string>/usr/local/sparrowshield/config.json</string>
+    </dict>
+
+    <!-- Soft resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>

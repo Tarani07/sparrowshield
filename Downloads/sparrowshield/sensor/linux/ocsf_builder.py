@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""
+SparrowShield — OCSF Builder (Linux)
+Converts raw Linux sensor events to OCSF v1.1.0 JSON.
+  Class 1007 — Process Activity
+  Class 4001 — Network Activity
+  Class 1001 — File System Activity
+"""
+
+import hashlib
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+try:
+    import sys as _sys
+    import os as _os
+    _ml = _os.path.join(_os.path.dirname(__file__), "..", "..", "ml")
+    if _ml not in _sys.path:
+        _sys.path.insert(0, _ml)
+    from mitre_mapper import enrich_event as _mitre_enrich
+except Exception:
+    def _mitre_enrich(e: dict) -> dict:
+        return e
+
+PRODUCT_META = {
+    "name":        "SparrowShield",
+    "vendor_name": "SparrowShield",
+    "version":     "1.0.0",
+    "feature":     {"name": "Linux auditd/netlink Sensor"},
+}
+
+
+def _severity(threat_score: float) -> int:
+    if threat_score >= 0.9: return 5   # Critical
+    if threat_score >= 0.7: return 4   # High
+    if threat_score >= 0.5: return 3   # Medium
+    if threat_score >= 0.3: return 2   # Low
+    return 1                            # Informational
+
+
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _file_hash(path: str) -> list[dict]:
+    hashes = []
+    try:
+        with open(path, "rb") as f:
+            data = f.read(4 * 1024 * 1024)
+        hashes.append({"algorithm_id": 2, "value": hashlib.md5(data).hexdigest()})
+        hashes.append({"algorithm_id": 3, "value": hashlib.sha256(data).hexdigest()})
+    except OSError:
+        pass
+    return hashes
+
+
+# ── Class 1007 — Process Activity ────────────────────────────────────────────
+
+def process_activity(
+    *,
+    activity_id:  int,
+    pid:          int,
+    ppid:         int,
+    image_path:   str,
+    cmdline:      str,
+    user:         str,
+    device_uid:   str,
+    hostname:     str,
+    threat_score: float = 0.0,
+    ancestry:     Optional[list[str]] = None,
+) -> dict:
+    activity_map = {1: "Launch", 2: "Terminate", 3: "Open", 4: "Inject"}
+    name   = os.path.basename(image_path) if image_path else "unknown"
+    hashes = _file_hash(image_path) if image_path and activity_id == 1 else []
+
+    event: dict = {
+        "class_uid":     1007,
+        "class_name":    "Process Activity",
+        "activity_id":   activity_id,
+        "activity_name": activity_map.get(activity_id, "Unknown"),
+        "time":          _now_ms(),
+        "severity_id":   _severity(threat_score),
+        "status_id":     1,
+        "metadata": {
+            "version": "1.1.0",
+            "product": PRODUCT_META,
+        },
+        "device": {
+            "uid":      device_uid,
+            "hostname": hostname,
+            "type_id":  1,
+            "os": {
+                "type_id": 200,
+                "name":    "Linux",
+            },
+        },
+        "process": {
+            "pid":      pid,
+            "name":     name,
+            "cmd_line": cmdline,
+            "user":     {"name": user} if user else {},
+            "file": {
+                "path":   image_path,
+                "name":   name,
+                "hashes": hashes,
+            },
+            "parent_process": {"pid": ppid},
+        },
+        "unmapped": {
+            "threat_score": round(threat_score, 4),
+            "ancestry":     ancestry or [],
+        },
+    }
+    event = _mitre_enrich(event)
+    return event
+
+
+# ── Class 4001 — Network Activity ────────────────────────────────────────────
+
+def network_activity(
+    *,
+    activity_id:  int,
+    pid:          int,
+    src_ip:       str,
+    src_port:     int,
+    dst_ip:       str,
+    dst_port:     int,
+    protocol:     str,
+    device_uid:   str,
+    hostname:     str,
+    threat_score: float = 0.0,
+    alert_type:   str = "",
+) -> dict:
+    activity_map = {1: "Open", 2: "Close", 3: "Reset", 4: "Fail", 5: "Refuse", 6: "Traffic"}
+    proto_id = 6 if protocol.lower() == "tcp" else 17
+
+    event: dict = {
+        "class_uid":     4001,
+        "class_name":    "Network Activity",
+        "activity_id":   activity_id,
+        "activity_name": activity_map.get(activity_id, "Unknown"),
+        "time":          _now_ms(),
+        "severity_id":   _severity(threat_score),
+        "status_id":     1,
+        "metadata": {
+            "version": "1.1.0",
+            "product": PRODUCT_META,
+        },
+        "device": {
+            "uid":      device_uid,
+            "hostname": hostname,
+            "type_id":  1,
+            "os": {
+                "type_id": 200,
+                "name":    "Linux",
+            },
+        },
+        "actor": {
+            "process": {"pid": pid},
+        },
+        "src_endpoint": {
+            "ip":   src_ip,
+            "port": src_port,
+        },
+        "dst_endpoint": {
+            "ip":   dst_ip,
+            "port": dst_port,
+        },
+        "connection_info": {
+            "protocol_id":   proto_id,
+            "protocol_name": protocol.upper(),
+        },
+        "unmapped": {
+            "threat_score": round(threat_score, 4),
+            "alert_type":   alert_type,
+        },
+    }
+    event = _mitre_enrich(event)
+    return event
+
+
+# ── Class 1001 — File System Activity ────────────────────────────────────────
+
+def file_activity(
+    *,
+    activity_id:  int,
+    pid:          int,
+    path:         str,
+    rename_dest:  str = "",
+    device_uid:   str,
+    hostname:     str,
+    threat_score: float = 0.0,
+    alert_type:   str = "",
+) -> dict:
+    activity_map = {1: "Create", 2: "Read", 3: "Update", 4: "Delete", 5: "Rename"}
+    name = os.path.basename(path) if path else ""
+    ext  = os.path.splitext(name)[1].lower() if name else ""
+
+    event: dict = {
+        "class_uid":     1001,
+        "class_name":    "File System Activity",
+        "activity_id":   activity_id,
+        "activity_name": activity_map.get(activity_id, "Unknown"),
+        "time":          _now_ms(),
+        "severity_id":   _severity(threat_score),
+        "status_id":     1,
+        "metadata": {
+            "version": "1.1.0",
+            "product": PRODUCT_META,
+        },
+        "device": {
+            "uid":      device_uid,
+            "hostname": hostname,
+            "type_id":  1,
+            "os": {
+                "type_id": 200,
+                "name":    "Linux",
+            },
+        },
+        "actor": {
+            "process": {"pid": pid},
+        },
+        "file": {
+            "path":      path,
+            "name":      name,
+            "type_id":   1,
+            "extension": ext.lstrip("."),
+        },
+        "unmapped": {
+            "threat_score": round(threat_score, 4),
+            "alert_type":   alert_type,
+        },
+    }
+
+    if rename_dest:
+        event["file_result"] = {
+            "path": rename_dest,
+            "name": os.path.basename(rename_dest),
+        }
+
+    event = _mitre_enrich(event)
+    return event

@@ -75,6 +75,7 @@ interface HeartbeatBody {
   login_history?: Record<string, unknown>[];
   pending_updates?: string[];
   pending_update_count?: number;
+  outdated_apps?: Record<string, unknown>[];
   bluetooth_devices?: Record<string, unknown>[];
   connected_displays?: Record<string, unknown>[];
   timemachine_enabled?: boolean;
@@ -186,6 +187,7 @@ Deno.serve(async (req) => {
     login_history,
     pending_updates,
     pending_update_count,
+    outdated_apps,
     bluetooth_devices,
     connected_displays,
     timemachine_enabled,
@@ -292,6 +294,7 @@ Deno.serve(async (req) => {
   if (login_history != null)           deviceUpdate.login_history = login_history;
   if (pending_updates != null)         deviceUpdate.pending_updates = pending_updates;
   if (pending_update_count != null)    deviceUpdate.pending_update_count = pending_update_count;
+  if (outdated_apps != null)           deviceUpdate.outdated_apps = outdated_apps;
   if (bluetooth_devices != null)       deviceUpdate.bluetooth_devices = bluetooth_devices;
   if (connected_displays != null)      deviceUpdate.connected_displays = connected_displays;
   if (timemachine_enabled != null)     deviceUpdate.timemachine_enabled = timemachine_enabled;
