@@ -258,12 +258,24 @@ def _register_device(cfg: dict) -> None:
     if not url or not anon_key:
         return
     try:
-        import datetime
+        import datetime, subprocess as _sp
+        # Get hardware serial number
+        serial = None
+        try:
+            out = _sp.run(["ioreg", "-l"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if "IOPlatformSerialNumber" in line:
+                    serial = line.split('"')[-2]
+                    break
+        except Exception:
+            pass
+
         payload = {
             "id":           cfg["device_uid"],
             "hostname":     cfg.get("hostname", socket.gethostname()),
             "os_type":      "macos",
             "os_version":   platform.mac_ver()[0] or platform.version(),
+            "serial_number": serial or cfg["device_uid"][:8].upper(),
             "status":       "online",
             "last_seen":    datetime.datetime.utcnow().isoformat() + "Z",
             "filevault_enabled": None,
@@ -275,9 +287,12 @@ def _register_device(cfg: dict) -> None:
             "Content-Type":  "application/json",
             "Prefer":        "resolution=merge-duplicates",
         }
-        _req.post(f"{url}/rest/v1/devices?on_conflict=id",
-                  json=payload, headers=headers, timeout=10)
-        log.info("Device registered in dashboard: %s", cfg["device_uid"])
+        r = _req.post(f"{url}/rest/v1/devices?on_conflict=id",
+                      json=payload, headers=headers, timeout=10)
+        if r.status_code in (200, 201):
+            log.info("Device registered in dashboard: %s", cfg["device_uid"])
+        else:
+            log.warning("Device registration returned %s: %s", r.status_code, r.text[:200])
     except Exception as exc:
         log.warning("Device registration failed (non-fatal): %s", exc)
 
