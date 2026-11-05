@@ -306,6 +306,16 @@ export default function FleetOverview() {
 
   const { data: reports = [], isLoading, refetch, isFetching } = useFleetReports();
   const { data: allDevices = [] } = useAllDevices();
+
+  // Redirect to onboarding on first visit when no devices enrolled
+  useMemo(() => {
+    let done = false;
+    try { done = !!localStorage.getItem("onboarding_done"); } catch { /* ignore */ }
+    if (done) return;
+    supabase.from("devices").select("*", { count: "exact", head: true }).then(({ count }) => {
+      if ((count ?? 0) === 0) navigate("/onboarding", { replace: true });
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: recentAlerts = [] } = useAlerts(undefined, false);
 
   /* ── Weekly security events (last 7 days, grouped by day-of-week) ── */

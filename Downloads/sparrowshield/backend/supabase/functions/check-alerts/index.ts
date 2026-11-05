@@ -36,6 +36,12 @@ Deno.serve(async (req) => {
     .eq("key", "slack_webhook")
     .single();
 
+  const { data: emailRow } = await supabase
+    .from("config")
+    .select("value")
+    .eq("key", "email_config")
+    .single();
+
   const { data: digestRow } = await supabase
     .from("config")
     .select("value")
@@ -53,6 +59,9 @@ Deno.serve(async (req) => {
 
   const slackWebhook: SlackWebhook = (slackRow?.value as SlackWebhook) ?? { url: "" };
   const digestTime: DailyDigestTime = (digestRow?.value as DailyDigestTime) ?? { hour: 9 };
+
+  interface EmailConfig { enabled: boolean; resend_api_key: string; to: string; from: string; }
+  const emailConfig: EmailConfig = (emailRow?.value as EmailConfig) ?? { enabled: false, resend_api_key: "", to: "", from: "" };
 
   const { data: devices } = await supabase
     .from("devices")
@@ -274,6 +283,48 @@ Deno.serve(async (req) => {
         });
       } catch (_e) {
         // log and continue
+      }
+    }
+  }
+
+  // ── Email notifications via Resend ──
+  if (emailConfig.enabled && emailConfig.resend_api_key && emailConfig.to && newAlerts.length > 0) {
+    for (const a of newAlerts) {
+      const severityColor = a.severity === "critical" ? "#dc2626" : a.severity === "warning" ? "#d97706" : "#2563eb";
+      const html = `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#f1f5f9;font-family:sans-serif">
+<div style="max-width:600px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+  <div style="background:#0f172a;padding:24px 32px;display:flex;align-items:center;gap:12px">
+    <span style="font-size:20px;font-weight:800;color:#fff">SparrowShield</span>
+    <span style="margin-left:auto;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;background:${severityColor};color:#fff">${a.severity}</span>
+  </div>
+  <div style="padding:28px 32px">
+    <h2 style="margin:0 0 8px;font-size:18px;color:#0f172a">${a.alert_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}</h2>
+    <p style="margin:0 0 20px;color:#475569;font-size:14px">${a.message}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <tr><td style="padding:8px 0;color:#94a3b8;width:120px">Device</td><td style="color:#1e293b;font-weight:600">${a.hostname}</td></tr>
+      ${a.assigned_user ? `<tr><td style="padding:8px 0;color:#94a3b8">User</td><td style="color:#1e293b">${a.assigned_user}</td></tr>` : ""}
+      <tr><td style="padding:8px 0;color:#94a3b8">Alert Type</td><td style="color:#1e293b;font-family:monospace">${a.alert_type}</td></tr>
+      <tr><td style="padding:8px 0;color:#94a3b8">Time</td><td style="color:#1e293b">${new Date().toUTCString()}</td></tr>
+    </table>
+    <a href="${DASHBOARD_LINK}/alerts" style="display:inline-block;margin-top:24px;padding:10px 20px;background:#1d4ed8;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">View in Dashboard →</a>
+  </div>
+  <div style="padding:16px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8">SparrowShield Security Platform</div>
+</div>
+</body></html>`;
+      try {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${emailConfig.resend_api_key}` },
+          body: JSON.stringify({
+            from: emailConfig.from || "sparrowshield@resend.dev",
+            to: [emailConfig.to],
+            subject: `[SparrowShield] ${a.severity.toUpperCase()} alert: ${a.hostname}`,
+            html,
+          }),
+        });
+      } catch (_e) {
+        // non-fatal
       }
     }
   }
