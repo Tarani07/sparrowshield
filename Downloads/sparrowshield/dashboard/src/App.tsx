@@ -51,7 +51,8 @@ function ProtectedLayout() {
     </div>
   );
 
-  if (!session) return <Navigate to="/login" replace />;
+  // AUTH TEMPORARILY DISABLED — re-enable before production
+  // if (!session) return <Navigate to="/login" replace />;
 
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "var(--c-bg)" }}>
