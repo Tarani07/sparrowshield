@@ -174,6 +174,7 @@ export default function Sidebar() {
 
   const mgmtNav: NavItem[] = [
     { to: "/executive",       label: "Exec Summary",    icon: BarChart2  },
+    { to: "/policy",          label: "Policy Manager",  icon: Shield     },
     { to: "/patches",         label: "Patches",         icon: Package    },
     { to: "/compliance",      label: "Compliance",      icon: ShieldCheck},
     { to: "/vulnerabilities", label: "Vulnerabilities", icon: Bug        },
