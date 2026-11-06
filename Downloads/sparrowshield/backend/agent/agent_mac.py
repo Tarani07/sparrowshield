@@ -1883,6 +1883,9 @@ def main():
     t2 = threading.Thread(target=command_loop, args=(device_id, anon_key, supabase_rest_url), daemon=True)
     t2.start()
 
+    t3 = threading.Thread(target=es_sensor_loop, args=(api_url, supabase_rest_url, anon_key, device_id), daemon=True)
+    t3.start()
+
     heartbeat_loop(api_url, token, anon_key, device_id=device_id, rest_url=supabase_rest_url)
 
 
@@ -2225,6 +2228,138 @@ def command_loop(device_id, anon_key, supabase_rest_url):
         except Exception as e:
             logger.warning("Command loop error: %s", e)
         time.sleep(10)
+
+
+# ── ES Sensor integration ──────────────────────────────────────────────────────
+
+ES_BINARY       = "/usr/local/sparrowshield/es_sensor"
+BLOCK_RULES_DIR = "/etc/sparrowshield"
+BLOCK_RULES_PATH = f"{BLOCK_RULES_DIR}/block_rules.json"
+
+
+def post_edr_event(rest_url, anon_key, device_id, event):
+    try:
+        payload = {
+            "device_id":    device_id,
+            "event_type":   event.get("event_type"),
+            "action":       event.get("action"),
+            "pid":          event.get("pid"),
+            "ppid":         event.get("ppid"),
+            "process_name": event.get("process_name"),
+            "process_path": event.get("process_path"),
+            "signing_id":   event.get("signing_id"),
+            "file_path":    event.get("file_path"),
+            "threat_score": event.get("threat_score"),
+            "mitre_id":     event.get("mitre_id"),
+            "mitre_name":   event.get("mitre_name"),
+            "timestamp":    event.get("ts"),
+            "raw":          json.dumps(event),
+        }
+        requests.post(
+            f"{rest_url}/edr_events",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {anon_key}",
+                "apikey":        anon_key,
+                "Content-Type":  "application/json",
+                "Prefer":        "return=minimal",
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        logger.debug("post_edr_event error: %s", e)
+
+
+def fetch_block_rules(rest_url, anon_key, device_id):
+    try:
+        r = requests.get(
+            f"{rest_url}/block_rules"
+            f"?select=pattern&or=(device_id.eq.{device_id},device_id.is.null)",
+            headers={
+                "Authorization": f"Bearer {anon_key}",
+                "apikey":        anon_key,
+            },
+            timeout=10,
+        )
+        if r.status_code == 200:
+            patterns = [row["pattern"] for row in r.json() if row.get("pattern")]
+            os.makedirs(BLOCK_RULES_DIR, exist_ok=True)
+            with open(BLOCK_RULES_PATH, "w") as f:
+                json.dump(patterns, f)
+            logger.debug("Block rules synced: %d patterns", len(patterns))
+    except PermissionError as e:
+        logger.warning("Cannot write block rules (permission denied): %s", e)
+    except Exception as e:
+        logger.debug("fetch_block_rules error: %s", e)
+
+
+def _block_rules_refresh_loop(rest_url, anon_key, device_id, interval=300):
+    while True:
+        time.sleep(interval)
+        fetch_block_rules(rest_url, anon_key, device_id)
+
+
+def es_sensor_loop(api_url, rest_url, anon_key, device_id):
+    if not os.path.isfile(ES_BINARY):
+        logger.warning("ES sensor binary not found at %s — kernel-level monitoring disabled", ES_BINARY)
+        logger.warning("Build it with: cd backend/agent/es_sensor && ./build.sh")
+        return
+
+    # Initial block rules sync
+    fetch_block_rules(rest_url, anon_key, device_id)
+
+    # Background block rules refresh
+    threading.Thread(
+        target=_block_rules_refresh_loop,
+        args=(rest_url, anon_key, device_id),
+        daemon=True,
+    ).start()
+
+    logger.info("Launching ES sensor subprocess: %s", ES_BINARY)
+    try:
+        proc = subprocess.Popen(
+            [ES_BINARY],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        # Drain stderr in background
+        def _log_stderr():
+            for line in proc.stderr:
+                logger.debug("es_sensor stderr: %s", line.rstrip())
+        threading.Thread(target=_log_stderr, daemon=True).start()
+
+        for line in proc.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+                post_edr_event(rest_url, anon_key, device_id, event)
+                if event.get("action") == "blocked":
+                    logger.warning(
+                        "ES BLOCKED: %s → %s [%s]",
+                        event.get("process_name"),
+                        event.get("file_path") or event.get("process_path"),
+                        event.get("mitre_id"),
+                    )
+                elif event.get("threat_score", 0) >= 0.6:
+                    logger.info(
+                        "ES HIGH-THREAT: %s score=%.2f %s",
+                        event.get("process_name"),
+                        event.get("threat_score"),
+                        event.get("mitre_name"),
+                    )
+            except json.JSONDecodeError:
+                logger.debug("es_sensor non-JSON: %s", line)
+
+        proc.wait()
+        logger.error("ES sensor exited with code %d", proc.returncode)
+    except FileNotFoundError:
+        logger.error("ES sensor binary not executable: %s", ES_BINARY)
+    except Exception as e:
+        logger.exception("ES sensor loop error: %s", e)
 
 
 if __name__ == "__main__":

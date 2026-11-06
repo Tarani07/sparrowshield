@@ -1,0 +1,86 @@
+; SparrowFilter.inf — SparrowShield Minifilter Driver Installation
+; Altitude: 328010  (FSFilter Anti-Virus range: 320000–329999)
+; Requires: EV certificate + WHQL / attestation signing for Windows 10/11
+
+[Version]
+Signature   = "$Windows NT$"
+Class       = "AntiVirus"
+ClassGuid   = {b1d1a169-c54f-4379-81db-bee7d88d7454}
+Provider    = %SparrowProvider%
+DriverVer   = 11/06/2026,2.0.0.1
+CatalogFile = SparrowFilter.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+SparrowFilter.DriverFiles = 12          ; %WinDir%\System32\drivers
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+SparrowFilter.sys = 1,,
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Manufacturer / Models
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[Manufacturer]
+%SparrowProvider% = SparrowShield,NTamd64
+
+[SparrowShield.NTamd64]
+%SparrowFilter.DeviceDesc% = SparrowShield_Install,Root\SparrowFilter
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Install Section
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[SparrowShield_Install]
+CopyFiles    = SparrowFilter.DriverFiles
+AddRegistry  = SparrowFilter.AddRegistry
+
+[SparrowFilter.DriverFiles]
+SparrowFilter.sys,,,0x00000040   ; COPYFLG_OVERWRITE_OLDER_ONLY
+
+[SparrowFilter.AddRegistry]
+; Filter instance sub-key
+HKLM,"SYSTEM\CurrentControlSet\Services\SparrowFilter\Instances","DefaultInstance",0x00000000,%SparrowFilter.Instance%
+
+HKLM,"SYSTEM\CurrentControlSet\Services\SparrowFilter\Instances\%SparrowFilter.Instance%","Altitude",0x00000000,%SparrowFilter.Altitude%
+HKLM,"SYSTEM\CurrentControlSet\Services\SparrowFilter\Instances\%SparrowFilter.Instance%","Flags",0x00010001,0x0
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Service Installation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[SparrowShield_Install.Services]
+AddService = SparrowFilter,%SPSVCINST_ASSOCSERVICE%,SparrowFilter.ServiceInstall
+
+[SparrowFilter.ServiceInstall]
+DisplayName    = %SparrowFilter.ServiceDesc%
+ServiceType    = 2                      ; SERVICE_FILE_SYSTEM_DRIVER
+StartType      = 1                      ; SERVICE_SYSTEM_START  (auto-load at boot)
+ErrorControl   = 1                      ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\SparrowFilter.sys
+LoadOrderGroup = "FSFilter Anti-Virus"
+AddReg         = SparrowFilter.AddRegistry
+Description    = %SparrowFilter.ServiceDesc%
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Uninstall
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[SparrowShield_Install.Remove.Services]
+DelService = SparrowFilter,0x00000200   ; SPSVCINST_STOPSERVICE
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; String Table
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+[Strings]
+SparrowProvider            = "SparrowShield"
+SparrowFilter.DeviceDesc   = "SparrowShield Minifilter Driver"
+SparrowFilter.ServiceDesc  = "SparrowShield File System Filter"
+SparrowFilter.Instance     = "SparrowShield Instance"
+SparrowFilter.Altitude     = "328010"
+DiskName                   = "SparrowShield Driver Disk"
+SPSVCINST_ASSOCSERVICE     = 0x00000002
