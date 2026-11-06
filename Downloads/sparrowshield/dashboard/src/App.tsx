@@ -102,6 +102,7 @@ function ProtectedLayout() {
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
+          <Route path="/onboarding" element={<Onboarding />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -117,7 +118,6 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/onboarding" element={<Onboarding />} />
             <Route path="/*" element={<ProtectedLayout />} />
           </Routes>
         </BrowserRouter>
