@@ -202,6 +202,9 @@ export interface Device {
   domain_name: string | null;
   activation_status: string | null;
 
+  // Compliance scoring
+  cis_score_pct: number | null;
+
   // Windows EDR (new agent fields)
   isolated: boolean | null;
   uac_enabled: boolean | null;

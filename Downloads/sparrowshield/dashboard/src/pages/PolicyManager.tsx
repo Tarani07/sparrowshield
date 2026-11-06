@@ -107,7 +107,7 @@ export default function PolicyManager() {
       setForm({ ...EMPTY_FORM });
       qc.invalidateQueries({ queryKey: ["block-rules"] });
     } catch (e) {
-      console.error("Save rule failed:", e);
+      if (import.meta.env.DEV) console.error("Save rule failed:", e);
     } finally {
       setSaving(false);
     }

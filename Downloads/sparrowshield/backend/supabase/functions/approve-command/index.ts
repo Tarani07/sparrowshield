@@ -1,19 +1,32 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getSupabase } from "../_shared/supabase.ts";
+import { handleCors, corsHeaders } from "../_shared/cors.ts";
 
-/**
- * Approve or Dismiss a remediation command.
- *
- * POST body:
- *   { command_id: string, action: "approve" | "dismiss" }
- *
- * - "approve" → sets status to "pending" so the agent picks it up
- * - "dismiss" → sets status to "dismissed" so it's ignored
- */
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return handleCors(req);
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "POST only" }), {
       status: 405,
       headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // Require authenticated dashboard user
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const token = authHeader.replace("Bearer ", "");
+  const authClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+  );
+  const { data: { user }, error: authErr } = await authClient.auth.getUser(token);
+  if (authErr || !user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 

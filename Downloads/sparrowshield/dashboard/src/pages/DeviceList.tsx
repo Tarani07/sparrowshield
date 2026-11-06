@@ -47,11 +47,12 @@ export default function DeviceList() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-device?id=${deleteTarget.id}`,
         {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
         }
       );
       queryClient.invalidateQueries({ queryKey: ["all-devices"] });

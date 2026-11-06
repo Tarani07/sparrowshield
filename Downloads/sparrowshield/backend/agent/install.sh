@@ -40,6 +40,7 @@ echo "[ 2/6 ] Downloading agent files..."
 curl -fsSL "$REPO_URL/agent_mac.py"   -o "$INSTALL_DIR/agent_mac.py"
 curl -fsSL "$REPO_URL/menubar_mac.py" -o "$INSTALL_DIR/menubar_mac.py"
 curl -fsSL "$REPO_URL/config.json"    -o "$INSTALL_DIR/config.json"
+chmod 600 "$INSTALL_DIR/config.json"   # anon_key + device_token — owner-read-only
 echo "        ✅ Files downloaded"
 
 # ── Step 3: Create venv + Install Python dependencies ────────

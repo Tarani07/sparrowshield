@@ -61,8 +61,8 @@ export function useVirusTotalLookup() {
         lastSeen:   a?.last_analysis_date    ? new Date(a.last_analysis_date    * 1000).toISOString().split("T")[0] : "",
         reputation: a?.reputation ?? 0,
       });
-    } catch (err: any) {
-      setError(err.message ?? "Lookup failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Lookup failed");
     }
     setLoading(false);
   }

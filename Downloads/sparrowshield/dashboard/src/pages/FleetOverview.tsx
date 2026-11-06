@@ -314,7 +314,7 @@ export default function FleetOverview() {
     if (done) return;
     supabase.from("devices").select("*", { count: "exact", head: true }).then(({ count }) => {
       if ((count ?? 0) === 0) navigate("/onboarding", { replace: true });
-    });
+    }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: recentAlerts = [] } = useAlerts(undefined, false);
 

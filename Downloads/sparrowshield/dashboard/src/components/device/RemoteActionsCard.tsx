@@ -80,8 +80,8 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
       });
       if (error) throw error;
       setState(key, { status: "success", message: "Command queued — agent will execute on next check-in." });
-    } catch (err: any) {
-      setState(key, { status: "error", message: err.message ?? "Failed to queue command." });
+    } catch (err: unknown) {
+      setState(key, { status: "error", message: err instanceof Error ? err.message : "Failed to queue command." });
     }
     setTimeout(() => setState(key, { status: "idle", message: "" }), 5000);
   }
@@ -128,8 +128,8 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
       } else {
         setTimeout(() => setCmdState({ status: "idle", message: "" }), 5000);
       }
-    } catch (err: any) {
-      setCmdState({ status: "error", message: err.message ?? "Failed." });
+    } catch (err: unknown) {
+      setCmdState({ status: "error", message: err instanceof Error ? err.message : "Failed." });
       setTimeout(() => setCmdState({ status: "idle", message: "" }), 5000);
     }
   }
