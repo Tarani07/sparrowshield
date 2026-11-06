@@ -1,7 +1,8 @@
-# Environment variables - NEVER commit these
+# Environment variables and secrets - NEVER commit these
 .env
 .env.local
 .env.production
+backend/agent/config.json
 
 # Dependencies
 node_modules/

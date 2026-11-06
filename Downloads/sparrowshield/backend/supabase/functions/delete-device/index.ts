@@ -8,6 +8,18 @@ Deno.serve(async (req) => {
 
   if (req.method !== "DELETE") return failure("Method not allowed", 405);
 
+  // Require an authenticated dashboard user — agents (anon key) must not delete devices
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return failure("Unauthorized", 401);
+  }
+  const token = authHeader.replace("Bearer ", "");
+  const adminClient = getSupabase();
+  const { data: { user }, error: authError } = await adminClient.auth.getUser(token);
+  if (authError || !user) {
+    return failure("Invalid or expired session", 403);
+  }
+
   const url = new URL(req.url);
   const deviceId = url.searchParams.get("id");
   if (!deviceId) return failure("Missing device id", 400);

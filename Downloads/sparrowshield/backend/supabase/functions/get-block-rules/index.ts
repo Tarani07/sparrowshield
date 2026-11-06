@@ -1,24 +1,24 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getSupabase } from "../_shared/supabase.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Device-Token",
 };
 
+const ALLOWED_PLATFORMS = ["macos", "windows", "linux", "all"];
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: CORS });
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  );
+  const supabase = getSupabase();
 
   const url = new URL(req.url);
   const deviceId = url.searchParams.get("device_id");
-  const platform = url.searchParams.get("platform") || "all";
+  const rawPlatform = url.searchParams.get("platform") ?? "all";
+  const platform = ALLOWED_PLATFORMS.includes(rawPlatform) ? rawPlatform : "all";
 
   // Rules that apply to all devices OR this specific device, filtered by platform
   let query = supabase

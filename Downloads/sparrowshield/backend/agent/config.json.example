@@ -1,0 +1,6 @@
+{
+  "api_url": "https://YOUR_PROJECT_REF.supabase.co/functions/v1",
+  "anon_key": "YOUR_SUPABASE_ANON_KEY",
+  "device_id": null,
+  "device_token": null
+}

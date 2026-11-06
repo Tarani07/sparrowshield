@@ -1,6 +1,6 @@
 import { getSupabase } from "../_shared/supabase.ts";
 
-const DASHBOARD_LINK = Deno.env.get("DASHBOARD_LINK") ?? "https://fleetpulse.example.com";
+const DASHBOARD_LINK = Deno.env.get("DASHBOARD_LINK") ?? "https://sparrowshield.vercel.app";
 
 interface AlertThresholds {
   disk_warning: number;
