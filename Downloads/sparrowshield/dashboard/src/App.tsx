@@ -43,6 +43,7 @@ import ProcessMonitor from "./pages/edr/ProcessMonitor";
 import NetworkActivity from "./pages/edr/NetworkActivity";
 import ExecutiveSummary from "./pages/ExecutiveSummary";
 import PolicyManager from "./pages/PolicyManager";
+import ThreatHunt from "./pages/ThreatHunt";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -95,8 +96,9 @@ function ProtectedLayout() {
           <Route path="/vulnerabilities" element={<VulnerabilityManager />} />
           <Route path="/reports" element={<Reports />} />
 
-          <Route path="/executive" element={<ExecutiveSummary />} />
-          <Route path="/policy"   element={<PolicyManager />} />
+          <Route path="/executive"    element={<ExecutiveSummary />} />
+          <Route path="/threat-hunt"  element={<ThreatHunt />} />
+          <Route path="/policy"       element={<PolicyManager />} />
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
