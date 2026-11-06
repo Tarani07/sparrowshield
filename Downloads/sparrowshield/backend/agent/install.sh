@@ -42,17 +42,16 @@ curl -fsSL "$REPO_URL/menubar_mac.py" -o "$INSTALL_DIR/menubar_mac.py"
 curl -fsSL "$REPO_URL/config.json"    -o "$INSTALL_DIR/config.json"
 echo "        ✅ Files downloaded"
 
-# ── Step 3: Install Python dependencies ──────────────────────
-echo "[ 3/6 ] Installing Python dependencies..."
-# Core agent only needs psutil + requests (rumps is optional, for menu bar app only)
-pip3 install psutil requests --break-system-packages -q 2>/dev/null \
-  || pip3 install psutil requests --user -q 2>/dev/null \
-  || pip3 install psutil requests -q
-echo "        ✅ Core dependencies installed"
+# ── Step 3: Create venv + Install Python dependencies ────────
+echo "[ 3/6 ] Creating Python virtual environment and installing dependencies..."
+PYTHON_BIN=$(which python3)
+"$PYTHON_BIN" -m venv "${INSTALL_DIR}/venv"
+VENV_PYTHON="${INSTALL_DIR}/venv/bin/python3"
+VENV_PIP="${INSTALL_DIR}/venv/bin/pip"
+"$VENV_PIP" install --quiet psutil requests
+echo "        ✅ Core dependencies installed in ${INSTALL_DIR}/venv"
 # Install rumps in background (takes longer, compiles pyobjc)
-(pip3 install rumps --break-system-packages -q 2>/dev/null \
-  || pip3 install rumps --user -q 2>/dev/null \
-  || pip3 install rumps -q) &
+("$VENV_PIP" install --quiet rumps) &
 echo "        ⏳ Menu bar dependencies installing in background"
 
 # ── Step 4: LaunchAgent — background agent (auto-start on boot) ──
@@ -66,7 +65,7 @@ cat > "$LAUNCH_AGENT_PLIST" <<EOF
   <string>${LAUNCH_AGENT_LABEL}</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>${INSTALL_DIR}/venv/bin/python3</string>
     <string>${INSTALL_DIR}/agent_mac.py</string>
   </array>
   <key>WorkingDirectory</key>
@@ -95,7 +94,7 @@ cat > "$MENUBAR_PLIST" <<EOF
   <string>com.sparrow.menubar</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>${INSTALL_DIR}/venv/bin/python3</string>
     <string>${INSTALL_DIR}/menubar_mac.py</string>
   </array>
   <key>WorkingDirectory</key>

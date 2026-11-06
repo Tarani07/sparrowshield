@@ -1748,7 +1748,17 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = "", device_id: str 
             if r.status_code == 200:
                 logger.debug("Heartbeat OK")
             elif r.status_code == 401:
-                logger.error("Token invalid or revoked; re-enroll required")
+                logger.error("Token rejected (401) — clearing token and re-enrolling...")
+                cfg = load_config()
+                cfg.pop("device_id", None)
+                cfg.pop("device_token", None)
+                save_config(cfg)
+                if enroll(api_url, cfg):
+                    token = cfg.get("device_token", token)
+                    device_id = cfg.get("device_id", device_id)
+                    logger.info("Re-enrolled successfully as device_id=%s", device_id)
+                else:
+                    logger.error("Re-enrollment failed — will retry on next heartbeat")
         except Exception as e:
             logger.exception("Heartbeat failed: %s", e)
         time.sleep(HEARTBEAT_INTERVAL)

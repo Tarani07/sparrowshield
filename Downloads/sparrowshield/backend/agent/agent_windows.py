@@ -131,13 +131,15 @@ def db_upsert(table: str, data: dict) -> dict | None:
         log.error("db_upsert: %s", e)
         return None
 
-def db_patch(table: str, params: dict, data: dict):
+def db_patch(table: str, params: dict, data: dict) -> int:
     try:
         r = requests.patch(f"{REST}/{table}", headers=_H, params=params, json=data, timeout=10)
         if not r.ok:
             log.error("PATCH %s %s: %s", table, r.status_code, r.text[:200])
+        return r.status_code
     except Exception as e:
         log.debug("db_patch: %s", e)
+        return 0
 
 def db_insert(table: str, data: dict) -> dict | None:
     try:
@@ -1241,9 +1243,22 @@ def heartbeat_loop(device_id: str):
     while True:
         try:
             metrics = collect_metrics()
-            db_patch("devices", {"id": f"eq.{device_id}"}, metrics)
-            log.info("Heartbeat — CPU %.1f%% RAM %.1f%% Disk %.1f%%",
-                     metrics["cpu_pct"], metrics["ram_used_pct"], metrics["disk_used_pct"])
+            status = db_patch("devices", {"id": f"eq.{device_id}"}, metrics)
+            if status == 401:
+                log.error("Token rejected (401) — clearing state and re-enrolling...")
+                state = load_state()
+                state.pop("device_id", None)
+                state.pop("device_token", None)
+                save_state(state)
+                new_id = enroll()
+                if new_id:
+                    device_id = new_id
+                    log.info("Re-enrolled successfully as device_id=%s", device_id)
+                else:
+                    log.error("Re-enrollment failed — will retry on next heartbeat")
+            else:
+                log.info("Heartbeat — CPU %.1f%% RAM %.1f%% Disk %.1f%%",
+                         metrics["cpu_pct"], metrics["ram_used_pct"], metrics["disk_used_pct"])
         except requests.exceptions.ConnectionError:
             log.warning("Network unreachable — retrying next heartbeat")
         except Exception as e:
