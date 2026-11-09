@@ -1,6 +1,8 @@
-# FleetPulse Backend
+# SparrowShield Backend
 
-Backend for the FleetPulse System Health Monitoring product. Built on **Supabase** (PostgreSQL, Edge Functions, Realtime, Cron) with Python agents for macOS and Windows.
+Backend for the SparrowShield System Health Monitoring product. Built on **Supabase** (PostgreSQL, Edge Functions, Realtime, Cron) with Python agents for macOS and Windows.
+
+**Full deployment (Supabase + Vercel + cron + agents):** see **[PROJECT_SETUP.md](../PROJECT_SETUP.md)** at the repo root.
 
 ## Tech stack
 
@@ -99,13 +101,13 @@ Set secrets for the Edge Functions (Supabase Dashboard → Project Settings → 
 | `SUPABASE_URL` | Project URL (e.g. `https://YOUR_PROJECT.supabase.co`) — often set automatically |
 | `SUPABASE_SERVICE_ROLE_KEY` | Service role key — often set automatically for deployed functions |
 | `SUPABASE_ANON_KEY` | Anon key (optional; used if a function needs to call the API as anon) |
-| `FLEETPULSE_ADMIN_SECRET` | Secret for `update-config`; send as `Authorization: Bearer <secret>` |
+| `SPARROWSHIELD_ADMIN_SECRET` | Secret for `update-config`; send as `Authorization: Bearer <secret>` |
 | `DASHBOARD_LINK` | Base URL of the React dashboard (for Slack alert links) |
 
 Example (CLI):
 
 ```bash
-supabase secrets set FLEETPULSE_ADMIN_SECRET=your-admin-secret
+supabase secrets set SPARROWSHIELD_ADMIN_SECRET=your-admin-secret
 supabase secrets set DASHBOARD_LINK=https://your-dashboard.vercel.app
 ```
 
@@ -120,7 +122,7 @@ Example using Supabase’s HTTP extension (if available) or a cron service:
 
   ```sql
   SELECT cron.schedule(
-    'fleetpulse-check-alerts',
+    'sparrowshield-check-alerts',
     '*/15 * * * *',
     $$
     SELECT net.http_post(
@@ -141,7 +143,7 @@ Example using Supabase’s HTTP extension (if available) or a cron service:
 
    ```bash
    curl -X POST 'https://YOUR_PROJECT.supabase.co/functions/v1/update-config' \
-     -H 'Authorization: Bearer YOUR_FLEETPULSE_ADMIN_SECRET' \
+     -H 'Authorization: Bearer YOUR_SPARROWSHIELD_ADMIN_SECRET' \
      -H 'Content-Type: application/json' \
      -d '{"key":"slack_webhook","value":{"url":"https://hooks.slack.com/services/..."}}'
    ```
@@ -166,7 +168,7 @@ Example using Supabase’s HTTP extension (if available) or a cron service:
    python3 agent_mac.py
    ```
 
-   For production, run as a launchd service; logs go to `/var/log/fleetpulse-agent.log` (create the file and set permissions if needed).
+   For production, run as a launchd service; logs go to `/var/log/sparrowshield-agent.log` (create the file and set permissions if needed).
 
 **Windows**
 
@@ -184,7 +186,7 @@ Example using Supabase’s HTTP extension (if available) or a cron service:
    python agent_windows.py
    ```
 
-   Logs: `C:\ProgramData\FleetPulse\agent.log`. Run as a Windows Service or scheduled task for production.
+   Logs: `C:\ProgramData\SparrowShield\agent.log`. Run as a Windows Service or scheduled task for production.
 
 ## API summary
 
@@ -211,5 +213,5 @@ All Edge Functions return JSON: `{ "success": boolean, "data": any, "error": str
 ## Security notes
 
 - Device tokens are stored as SHA-256 hashes; the raw token is only returned at enroll.
-- Use `FLEETPULSE_ADMIN_SECRET` for `update-config`; keep it and the service role key out of the frontend.
+- Use `SPARROWSHIELD_ADMIN_SECRET` for `update-config`; keep it and the service role key out of the frontend.
 - Dashboard uses Supabase anon key for read (and for resolve/update where allowed by RLS).

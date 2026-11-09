@@ -344,7 +344,7 @@ Deno.serve(async (req) => {
       const online = allDevices?.filter((d) => d.status === "online").length ?? 0;
       const critical = openAlerts?.filter((a) => a.severity === "critical").length ?? 0;
       const warning = openAlerts?.filter((a) => a.severity === "warning").length ?? 0;
-      const text = `FleetPulse Daily Digest — Devices: ${online}/${total} online. Open alerts: ${critical} critical, ${warning} warning. ${DASHBOARD_LINK}`;
+      const text = `SparrowShield Daily Digest — Devices: ${online}/${total} online. Open alerts: ${critical} critical, ${warning} warning. ${DASHBOARD_LINK}`;
       try {
         await fetch(slackWebhook.url, {
           method: "POST",

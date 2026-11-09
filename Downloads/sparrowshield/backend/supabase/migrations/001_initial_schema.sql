@@ -1,4 +1,4 @@
--- FleetPulse Initial Schema
+-- SparrowShield Initial Schema
 -- Devices registered with the fleet
 
 CREATE TABLE devices (
