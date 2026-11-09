@@ -1,5 +1,7 @@
-import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, Apple, Monitor, Cpu, MemoryStick, Activity, Zap, CheckCircle2, Clock, AlertCircle, Trash2, RefreshCw, Layers } from "lucide-react";
+import { useState } from "react";
+import { useParams, Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, Apple, Monitor, Cpu, MemoryStick, Activity, Zap, CheckCircle2, Clock, AlertCircle, Trash2, RefreshCw, Layers, RotateCcw } from "lucide-react";
+import { supabase } from "../lib/supabase";
 import TopBar from "../components/layout/TopBar";
 import HealthGauge from "../components/device/HealthGauge";
 import AIDiagnosisCard from "../components/device/AIDiagnosisCard";
@@ -36,6 +38,7 @@ import { healthBadge, timeAgo, cn } from "../lib/utils";
 
 export default function DeviceDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: reports = [], isLoading } = useDeviceReport(id!);
   const { data: device } = useDevice(id!);
   const { data: metrics = [] } = useMetrics(id!);
@@ -46,6 +49,35 @@ export default function DeviceDetail() {
   const killProcess = useKillProcess(id!);
   const execCmd = useExecuteCommand(id!);
   const { data: threatTimeline = [], isLoading: timelineLoading } = useThreatTimeline(id);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function deleteDevice() {
+    if (!id) return;
+    setDeleting(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-device?id=${id}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } }
+      );
+      navigate("/devices", { replace: true });
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
+
+  async function queueRestart() {
+    if (!id) return;
+    await supabase.from("device_commands").insert({
+      device_id: id,
+      command_type: "restart_device",
+      status: "pending",
+      payload: {},
+      created_at: new Date().toISOString(),
+    });
+  }
 
   const latest = reports[0];
   const pendingKills = new Set(
@@ -130,23 +162,43 @@ export default function DeviceDetail() {
               </div>
             </div>
 
-            {/* Device specs */}
-            <div className="flex items-center gap-4 text-xs" style={{ color: "var(--c-muted)" }}>
-              {device?.cpu_model && (
-                <div className="flex items-center gap-1.5">
-                  <Cpu className="w-3.5 h-3.5" />
-                  <span>{device.cpu_model}</span>
-                </div>
-              )}
-              {device?.ram_total_gb && (
-                <div className="flex items-center gap-1.5">
-                  <MemoryStick className="w-3.5 h-3.5" />
-                  <span>{device.ram_total_gb} GB RAM</span>
-                </div>
-              )}
-              {device?.serial_number && (
-                <span className="font-mono" style={{ color: "var(--c-faint)" }}>S/N: {device.serial_number}</span>
-              )}
+            <div className="flex items-center gap-2">
+              {/* Device specs */}
+              <div className="flex items-center gap-4 text-xs mr-2" style={{ color: "var(--c-muted)" }}>
+                {device?.cpu_model && (
+                  <div className="flex items-center gap-1.5">
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>{device.cpu_model}</span>
+                  </div>
+                )}
+                {device?.ram_total_gb && (
+                  <div className="flex items-center gap-1.5">
+                    <MemoryStick className="w-3.5 h-3.5" />
+                    <span>{device.ram_total_gb} GB RAM</span>
+                  </div>
+                )}
+                {device?.serial_number && (
+                  <span className="font-mono" style={{ color: "var(--c-faint)" }}>S/N: {device.serial_number}</span>
+                )}
+              </div>
+
+              {/* Management actions */}
+              <button
+                onClick={queueRestart}
+                title="Restart Device"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ background: "rgba(168,85,247,0.1)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Restart
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                title="Delete Device"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Delete
+              </button>
             </div>
           </div>
         </div>
@@ -495,6 +547,42 @@ export default function DeviceDetail() {
           </div>
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="rounded-2xl p-6 w-full max-w-sm shadow-2xl" style={{ background: "var(--c-card)", border: "1px solid var(--c-border2)" }}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center">
+                <Trash2 className="w-5 h-5 text-red-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Delete Device</h2>
+                <p className="text-xs" style={{ color: "var(--c-muted)" }}>This cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm mb-5" style={{ color: "var(--c-text)" }}>
+              Remove <span className="font-semibold" style={{ color: "var(--c-strong)" }}>{device?.hostname}</span> and all its metrics, alerts, and history from the dashboard?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 px-4 py-2 rounded-lg text-sm transition-colors"
+                style={{ background: "var(--c-card2)", color: "var(--c-text)", border: "1px solid var(--c-border)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={deleteDevice}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-500 disabled:opacity-50 transition-colors"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

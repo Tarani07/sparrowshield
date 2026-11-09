@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldX, Wifi, WifiOff, Search, AlertTriangle, CheckCircle2, Loader2, Terminal, X } from "lucide-react";
+import { ShieldX, Wifi, WifiOff, Search, AlertTriangle, CheckCircle2, Loader2, Terminal, X, RotateCcw } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
 interface Props {
@@ -54,6 +54,16 @@ const ACTIONS = [
     command: "kill_suspicious",
     confirm: true,
   },
+  {
+    key: "restart_device",
+    label: "Restart Device",
+    desc: "Send a graceful reboot command to this device",
+    icon: RotateCcw,
+    color: "#a855f7",
+    bg: "rgba(168,85,247,0.1)",
+    command: "restart_device",
+    confirm: true,
+  },
 ];
 
 export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Props) {
@@ -71,7 +81,7 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
   async function runAction(command: string, key: string, payload?: object) {
     setState(key, { status: "running", message: "" });
     try {
-      const { error } = await supabase.from("commands").insert({
+      const { error } = await supabase.from("device_commands").insert({
         device_id: deviceId,
         command_type: command,
         status: "pending",
@@ -94,7 +104,7 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
     const cmdToRun = customCmd.trim();
     setCustomCmd("");
     try {
-      const { data: inserted, error } = await supabase.from("commands").insert({
+      const { data: inserted, error } = await supabase.from("device_commands").insert({
         device_id: deviceId,
         command_type: "shell",
         status: "pending",
@@ -114,7 +124,7 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
             setCmdResult("Timed out waiting for agent response (30s).");
             return;
           }
-          const { data } = await supabase.from("commands")
+          const { data } = await supabase.from("device_commands")
             .select("status, result")
             .eq("id", inserted.id)
             .single();

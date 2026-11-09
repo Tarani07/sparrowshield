@@ -2033,6 +2033,17 @@ def handle_restart_ui(payload):
         return f"UI restart error: {e}", False
 
 
+def handle_restart_device(payload):
+    delay = int(payload.get("delay_seconds", 5))
+    try:
+        import subprocess as sp
+        logger.warning("Restart command received — rebooting in %ds", delay)
+        sp.Popen(["shutdown", "-r", f"+{delay // 60 or 1}"])
+        return f"Reboot scheduled in {delay} seconds", True
+    except Exception as e:
+        return f"Restart error: {e}", False
+
+
 def handle_kill_background_services(payload):
     threshold_mb = payload.get("threshold_mb", 200)
     try:
@@ -2191,6 +2202,7 @@ COMMAND_HANDLERS = {
     "optimize_memory":          handle_optimize_memory,
     "clear_cache":              handle_clear_cache,
     "restart_ui":               handle_restart_ui,
+    "restart_device":           handle_restart_device,
     "kill_background_services": handle_kill_background_services,
     "patch_app":                handle_patch_app,
     "patch_all_apps":           handle_patch_all_apps,
