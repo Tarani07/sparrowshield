@@ -294,7 +294,7 @@ Deno.serve(async (req) => {
   if (login_history != null)           deviceUpdate.login_history = login_history;
   if (pending_updates != null)         deviceUpdate.pending_updates = pending_updates;
   if (pending_update_count != null)    deviceUpdate.pending_update_count = pending_update_count;
-  if (outdated_apps != null)           deviceUpdate.outdated_apps = outdated_apps;
+  // outdated_apps is not a devices column — omitted intentionally
   if (bluetooth_devices != null)       deviceUpdate.bluetooth_devices = bluetooth_devices;
   if (connected_displays != null)      deviceUpdate.connected_displays = connected_displays;
   if (timemachine_enabled != null)     deviceUpdate.timemachine_enabled = timemachine_enabled;
@@ -316,10 +316,15 @@ Deno.serve(async (req) => {
   if (domain_name != null)               deviceUpdate.domain_name = domain_name;
   if (activation_status != null)         deviceUpdate.activation_status = activation_status;
 
-  await supabase
+  const { error: deviceErr } = await supabase
     .from("devices")
     .update(deviceUpdate)
     .eq("id", deviceId);
+
+  if (deviceErr) {
+    console.error("Device update failed:", deviceErr.message);
+    return failure(`Device update failed: ${deviceErr.message}`, 500);
+  }
 
   return success({ ok: true });
 });
