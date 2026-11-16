@@ -57,12 +57,12 @@ CREATE TABLE IF NOT EXISTS web_categories (
 );
 
 INSERT INTO web_categories (name, description, blocklist_url, enabled) VALUES
-  ('malware',       'Known malware distribution sites',         'https://raw.githubusercontent.com/blocklistproject/Lists/master/malware.txt',    true),
-  ('phishing',      'Phishing and credential harvesting sites', 'https://raw.githubusercontent.com/blocklistproject/Lists/master/phishing.txt',   true),
+  ('malware',       'Known malware distribution sites',         'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/tif.mini-onlydomains.txt', true),
+  ('phishing',      'Phishing and credential harvesting sites', 'https://phishing.army/download/phishing_army_blocklist.txt',   true),
   ('ransomware',    'Known ransomware C2 domains',              'https://raw.githubusercontent.com/blocklistproject/Lists/master/ransomware.txt', true),
   ('crypto_mining', 'Cryptomining scripts and pools',           'https://raw.githubusercontent.com/blocklistproject/Lists/master/crypto.txt',     true),
-  ('adult',         'Adult and pornographic content',           'https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt',       false),
-  ('gambling',      'Online gambling and betting sites',        'https://raw.githubusercontent.com/blocklistproject/Lists/master/gambling.txt',   false),
+  ('adult',         'Adult and pornographic content',           'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/nsfw-onlydomains.txt',       false),
+  ('gambling',      'Online gambling and betting sites',        'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/gambling.mini-onlydomains.txt',   false),
   ('gaming',        'Online gaming sites (Poki, Roblox, Steam, Epic, ...)', 'https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/games/domains', false),
   ('social',        'Social media platforms',                   'https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/social_networks/domains',   false),
   ('tracking',      'Ad tracking and analytics domains',        'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt',   false)

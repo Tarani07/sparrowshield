@@ -1867,6 +1867,7 @@ def inventory_loop(api_url: str, token: str, anon_key: str = "",
                         hostname         = hostname,
                         installed_apps   = installed_apps,
                         virustotal_api_key = config.get("virustotal_api_key", ""),
+                        abuse_ch_key       = config.get("abuse_ch_auth_key", ""),
                         auto_quarantine  = config.get("auto_quarantine", False),
                         auto_kill_blocked = config.get("auto_kill_blocked_apps", False),
                     )
@@ -2241,6 +2242,7 @@ def handle_run_edr_scan(payload):
         summary = edr_engine.run_full_edr(
             installed_apps     = get_installed_apps(),
             virustotal_api_key = config.get("virustotal_api_key", ""),
+            abuse_ch_key       = config.get("abuse_ch_auth_key", ""),
             auto_quarantine    = config.get("auto_quarantine", False),
             auto_kill_blocked  = config.get("auto_kill_blocked_apps", False),
             **_EDR_CTX,

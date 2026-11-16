@@ -5,7 +5,6 @@ Features: malware detection, web filter, app filter, suspicious behavior, device
 """
 
 import hashlib
-import json
 import logging
 import os
 import re
@@ -16,7 +15,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse
 
 import psutil
 import requests
@@ -25,29 +23,14 @@ logger = logging.getLogger("sparrowshield.edr")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 DATA_DIR        = "/var/lib/sparrowshield"
-IOC_CACHE_PATH  = f"{DATA_DIR}/ioc_cache.json"
-WEB_FILTER_PATH = f"{DATA_DIR}/web_filter.json"
-APP_FILTER_PATH = f"{DATA_DIR}/app_filter.json"
 QUARANTINE_DIR  = "/var/quarantine/sparrowshield"
 HOSTS_MARKER    = "# SparrowShield managed block — DO NOT EDIT"
 HOSTS_PATH      = "/etc/hosts"
 
-# ── IOC Feed URLs (all free, no API key) ──────────────────────────────────────
+# ── Threat intel feeds ────────────────────────────────────────────────────────
 IOC_FEEDS = {
-    "feodo_c2_ips":  "https://feodotracker.abuse.ch/downloads/ipblocklist.txt",
-    "urlhaus":       "https://urlhaus.abuse.ch/downloads/text_online/",
-    "malware_hashes":"https://bazaar.abuse.ch/export/txt/sha256/recent/",
-}
-
-CATEGORY_FEEDS = {
-    "malware":       "https://raw.githubusercontent.com/blocklistproject/Lists/master/malware.txt",
-    "phishing":      "https://raw.githubusercontent.com/blocklistproject/Lists/master/phishing.txt",
-    "ransomware":    "https://raw.githubusercontent.com/blocklistproject/Lists/master/ransomware.txt",
-    "crypto_mining": "https://raw.githubusercontent.com/blocklistproject/Lists/master/crypto.txt",
-    "adult":         "https://raw.githubusercontent.com/blocklistproject/Lists/master/adult.txt",
-    "gambling":      "https://raw.githubusercontent.com/blocklistproject/Lists/master/gambling.txt",
-    "gaming":        "https://raw.githubusercontent.com/blocklistproject/Lists/master/gaming.txt",
-    "social":        "https://raw.githubusercontent.com/blocklistproject/Lists/master/social.txt",
+    "feodo_c2_ips":   "https://feodotracker.abuse.ch/downloads/ipblocklist.txt",
+    "malware_hashes": "https://bazaar.abuse.ch/export/txt/sha256/recent/",   # needs free abuse.ch Auth-Key
 }
 
 REFRESH_INTERVAL = 3600  # 1 hour
@@ -90,10 +73,12 @@ def _api_headers(anon_key: str) -> dict:
 
 def _post(rest_url: str, anon_key: str, table: str, body: dict):
     try:
-        requests.post(f"{rest_url}/{table}", json=body,
-                      headers=_api_headers(anon_key), timeout=10)
+        r = requests.post(f"{rest_url}/{table}", json=body,
+                          headers=_api_headers(anon_key), timeout=10)
+        if r.status_code >= 300:
+            logger.warning("[EDR] insert into %s rejected (HTTP %s): %s", table, r.status_code, r.text[:200])
     except Exception as e:
-        logger.debug("_post %s error: %s", table, e)
+        logger.warning("[EDR] insert into %s failed: %s", table, e)
 
 
 def _patch(rest_url: str, anon_key: str, table: str, filters: str, body: dict):
@@ -116,8 +101,18 @@ def _get(rest_url: str, anon_key: str, path: str) -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# FEATURE 1: VIRUS / MALWARE DETECTION
+# FEATURE 1: VIRUS / MALWARE DETECTION  (ClamAV signatures + optional hash feeds)
 # ══════════════════════════════════════════════════════════════════════════════
+
+CLAMAV_BIN_DIRS   = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+CLAMAV_DB_DIR     = f"{DATA_DIR}/clamav"
+FRESHCLAM_CONF    = f"{DATA_DIR}/freshclam.conf"
+CLAMAV_UPDATE_SEC = 12 * 3600
+SCAN_MAX_FILES    = 5000
+SCAN_MAX_BYTES    = 100 * 1024 * 1024
+SCAN_RECENT_DAYS  = 30
+_SKIP_EXE_PREFIXES = ("/System/", "/usr/", "/bin/", "/sbin/", "/Library/Apple/")
+
 
 def _hash_file(path: str) -> Optional[str]:
     try:
@@ -130,148 +125,210 @@ def _hash_file(path: str) -> Optional[str]:
         return None
 
 
-def refresh_ioc_feeds(force=False) -> dict:
-    """Pull malware hash and C2 IP feeds from abuse.ch. Cache locally."""
-    global _last_refresh, _ioc_cache
+def _clam_bin(name: str) -> Optional[str]:
+    for d in CLAMAV_BIN_DIRS:
+        p = os.path.join(d, name)
+        if os.access(p, os.X_OK):
+            return p
+    return shutil.which(name)
 
+
+def _clam_db_age() -> Optional[float]:
+    newest = 0.0
+    for f in ("daily.cvd", "daily.cld", "main.cvd", "main.cld"):
+        p = os.path.join(CLAMAV_DB_DIR, f)
+        if os.path.isfile(p):
+            newest = max(newest, os.path.getmtime(p))
+    return (time.time() - newest) if newest else None
+
+
+def update_clamav_signatures(force: bool = False) -> dict:
+    freshclam = _clam_bin("freshclam")
+    if not freshclam:
+        return {"available": False}
+    age = _clam_db_age()
+    if not force and age is not None and age < CLAMAV_UPDATE_SEC:
+        return {"available": True, "updated": False, "age_h": round(age / 3600, 1)}
+
+    os.makedirs(CLAMAV_DB_DIR, exist_ok=True)
+    with open(FRESHCLAM_CONF, "w") as f:
+        f.write(f"DatabaseDirectory {CLAMAV_DB_DIR}\n"
+                "DatabaseOwner root\n"
+                "DatabaseMirror database.clamav.net\n"
+                "Checks 2\n")
+    logger.info("[AV] Updating ClamAV signatures…")
+    r = subprocess.run([freshclam, f"--config-file={FRESHCLAM_CONF}", "--stdout"],
+                       capture_output=True, text=True, timeout=900)
+    ok = r.returncode in (0, 1) and _clam_db_age() is not None
+    if not ok:
+        logger.warning("[AV] freshclam failed (%s): %s", r.returncode, (r.stdout + r.stderr)[-300:])
+    return {"available": True, "updated": ok}
+
+
+def _malware_scan_targets() -> list:
+    """Running non-system executables + recent files in Downloads/Desktop/tmp."""
+    targets, seen = [], set()
+
+    def add(p):
+        if p in seen or len(targets) >= SCAN_MAX_FILES:
+            return
+        try:
+            st = os.stat(p)
+            if os.path.isfile(p) and 0 < st.st_size <= SCAN_MAX_BYTES:
+                seen.add(p)
+                targets.append(p)
+        except OSError:
+            pass
+
+    for proc in psutil.process_iter(["exe"]):
+        try:
+            exe = proc.info.get("exe")
+            if exe and not exe.startswith(_SKIP_EXE_PREFIXES):
+                add(exe)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    cutoff = time.time() - SCAN_RECENT_DAYS * 86400
+    roots = []
+    for home in Path("/Users").glob("*"):
+        if home.name in ("Shared", "Guest") or home.name.startswith("."):
+            continue
+        roots += [str(home / "Downloads"), str(home / "Desktop")]
+    roots += ["/private/tmp", "/private/var/tmp"]
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for fn in filenames:
+                p = os.path.join(dirpath, fn)
+                try:
+                    if os.path.getmtime(p) >= cutoff:
+                        add(p)
+                except OSError:
+                    pass
+            if len(targets) >= SCAN_MAX_FILES:
+                break
+    return targets
+
+
+def _clamscan(paths: list) -> list:
+    """Return [(path, signature)] for infected files."""
+    clamscan = _clam_bin("clamscan")
+    if not clamscan or _clam_db_age() is None or not paths:
+        return []
+    list_file = f"{DATA_DIR}/scan_list.txt"
+    with open(list_file, "w") as f:
+        f.write("\n".join(paths))
+    r = subprocess.run([clamscan, f"--database={CLAMAV_DB_DIR}", f"--file-list={list_file}",
+                        "--infected", "--no-summary", "--stdout"],
+                       capture_output=True, text=True, timeout=1800)
+    hits = []
+    for line in r.stdout.splitlines():
+        if line.endswith(" FOUND") and ": " in line:
+            path, sig = line[:-6].rsplit(": ", 1)
+            hits.append((path, sig))
+    if r.returncode == 2:
+        logger.warning("[AV] clamscan error: %s", r.stderr[-300:])
+    return hits
+
+
+def refresh_ioc_feeds(force: bool = False, abuse_ch_key: str = "") -> dict:
+    """C2 IPs (Feodo, keyless) and, with a free abuse.ch Auth-Key, MalwareBazaar hashes."""
+    global _last_refresh, _ioc_cache
     now = time.time()
     if not force and (now - _last_refresh) < REFRESH_INTERVAL and _ioc_cache:
         return _ioc_cache
 
-    logger.info("[TI] Refreshing threat intelligence feeds")
-    cache = {"malware_hashes": set(), "c2_ips": set(), "malicious_domains": set(), "updated_at": now}
-
-    # MalwareBazaar hashes
-    try:
-        r = requests.get(IOC_FEEDS["malware_hashes"], timeout=20)
-        if r.status_code == 200:
-            for line in r.text.splitlines():
-                line = line.strip()
-                if line and not line.startswith("#") and len(line) == 64:
-                    cache["malware_hashes"].add(line.lower())
-            logger.info("[TI] MalwareBazaar: %d hashes", len(cache["malware_hashes"]))
-    except Exception as e:
-        logger.debug("[TI] MalwareBazaar error: %s", e)
-
-    # Feodo C2 IPs
+    cache = {"malware_hashes": set(), "c2_ips": set()}
     try:
         r = requests.get(IOC_FEEDS["feodo_c2_ips"], timeout=15)
         if r.status_code == 200:
-            for line in r.text.splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    cache["c2_ips"].add(line)
-            logger.info("[TI] Feodo: %d C2 IPs", len(cache["c2_ips"]))
+            cache["c2_ips"] = {l.strip() for l in r.text.splitlines() if l.strip() and not l.startswith("#")}
     except Exception as e:
         logger.debug("[TI] Feodo error: %s", e)
 
-    # URLhaus malicious domains
-    try:
-        r = requests.get(IOC_FEEDS["urlhaus"], timeout=15)
-        if r.status_code == 200:
-            for line in r.text.splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    try:
-                        domain = urlparse(line).netloc or line
-                        if domain:
-                            cache["malicious_domains"].add(domain.lower())
-                    except Exception:
-                        pass
-            logger.info("[TI] URLhaus: %d domains", len(cache["malicious_domains"]))
-    except Exception as e:
-        logger.debug("[TI] URLhaus error: %s", e)
+    if abuse_ch_key:
+        try:
+            r = requests.get(IOC_FEEDS["malware_hashes"], headers={"Auth-Key": abuse_ch_key}, timeout=30)
+            if r.status_code == 200:
+                cache["malware_hashes"] = {l.strip().lower() for l in r.text.splitlines()
+                                           if len(l.strip()) == 64 and not l.startswith("#")}
+            else:
+                logger.warning("[TI] MalwareBazaar returned HTTP %s — check abuse_ch_auth_key", r.status_code)
+        except Exception as e:
+            logger.debug("[TI] MalwareBazaar error: %s", e)
 
-    _ioc_cache  = cache
-    _last_refresh = now
-
-    # Persist to disk
-    _ensure_dirs()
-    try:
-        with open(IOC_CACHE_PATH, "w") as f:
-            json.dump({k: list(v) if isinstance(v, set) else v for k, v in cache.items()}, f)
-    except Exception:
-        pass
-
+    logger.info("[TI] %d C2 IPs, %d malware hashes", len(cache["c2_ips"]), len(cache["malware_hashes"]))
+    _ioc_cache, _last_refresh = cache, now
     return cache
 
 
-def scan_running_processes(ioc_cache: dict, rest_url: str, anon_key: str,
-                           device_id: str, hostname: str,
-                           virustotal_api_key: str = "",
-                           auto_quarantine: bool = False):
-    """
-    Hash-scan all running process binaries against malware hashes.
-    Posts alerts and optionally quarantines.
-    """
-    malware_hashes = ioc_cache.get("malware_hashes", set())
-    if not malware_hashes:
-        return {"scanned": 0, "threats": 0}
-
-    scanned = set()
-    threats_found = []
-
-    for proc in psutil.process_iter(["pid", "name", "exe"]):
+def scan_for_malware(rest_url: str, anon_key: str, device_id: str, hostname: str,
+                     virustotal_api_key: str = "", auto_quarantine: bool = False) -> dict:
+    started = time.time()
+    sig_status = update_clamav_signatures()
+    targets = _malware_scan_targets()
+    exe_pids = {}
+    for proc in psutil.process_iter(["pid", "exe"]):
         try:
-            path = proc.info.get("exe")
-            if not path or path in scanned or not os.path.isfile(path):
-                continue
-            # Skip immutable system paths
-            if path.startswith(("/System/", "/usr/lib/", "/usr/bin/", "/sbin/")):
-                continue
-            scanned.add(path)
-
-            file_hash = _hash_file(path)
-            if not file_hash:
-                continue
-
-            detected = False
-            source   = ""
-
-            if file_hash in malware_hashes:
-                detected = True
-                source   = "MalwareBazaar"
-
-            # VirusTotal check (if API key provided and not already flagged)
-            if not detected and virustotal_api_key:
-                vt = _check_virustotal(file_hash, virustotal_api_key)
-                if vt.get("malicious", 0) >= 3:
-                    detected = True
-                    source   = f"VirusTotal ({vt['malicious']}/{vt.get('total_engines',0)})"
-
-            if detected:
-                threat = {"pid": proc.info["pid"], "name": proc.info["name"],
-                          "path": path, "hash": file_hash, "source": source}
-                threats_found.append(threat)
-                logger.warning("[AV] MALWARE DETECTED: %s (%s) — %s", proc.info["name"], path[:60], source)
-
-                _post_security_event(rest_url, anon_key, device_id, hostname,
-                    event_type="malware_detected", severity="critical",
-                    description=f"Malware detected: '{proc.info['name']}' [{file_hash[:16]}] via {source}",
-                    details=threat, mitre="T1204")
-
-                _raise_alert(rest_url, anon_key, device_id, hostname,
-                    rule_id="malware_hash_match",
-                    message=f"Malware '{proc.info['name']}' detected on {hostname} (hash match: {source})",
-                    severity="critical", mitre="T1204")
-
-                if auto_quarantine and path:
-                    _kill_and_quarantine(proc.info["pid"], path, reason=f"malware_{source}")
-
+            if proc.info.get("exe"):
+                exe_pids.setdefault(proc.info["exe"], proc.info["pid"])
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
 
-    # Post scan result
+    detections = [{"path": p, "signature": sig, "engine": "ClamAV"} for p, sig in _clamscan(targets)]
+
+    hashes = _ioc_cache.get("malware_hashes", set())
+    if hashes or virustotal_api_key:
+        flagged = {d["path"] for d in detections}
+        for p in targets:
+            if p in flagged:
+                continue
+            h = _hash_file(p)
+            if not h:
+                continue
+            if h in hashes:
+                detections.append({"path": p, "signature": f"sha256:{h[:16]}", "engine": "MalwareBazaar"})
+            elif virustotal_api_key and p in exe_pids:
+                vt = _check_virustotal(h, virustotal_api_key)
+                if vt.get("malicious", 0) >= 3:
+                    detections.append({"path": p, "signature": f"{vt['malicious']}/{vt['total_engines']} engines",
+                                       "engine": "VirusTotal"})
+
+    for d in detections:
+        name = os.path.basename(d["path"])
+        pid = exe_pids.get(d["path"])
+        d["pid"] = pid
+        msg = f"Malware '{d['signature']}' found in {d['path']} on {hostname} ({d['engine']})"
+        logger.warning("[AV] %s", msg)
+        _post_security_event(rest_url, anon_key, device_id, hostname,
+            event_type="malware_detected", severity="critical", description=msg,
+            details=d, mitre="T1204")
+        _raise_alert(rest_url, anon_key, device_id, hostname,
+            rule_id=f"malware:{name[:60]}", severity="critical", message=msg, mitre="T1204")
+        if auto_quarantine:
+            if pid:
+                _kill_and_quarantine(pid, d["path"], reason=d["signature"])
+            else:
+                _quarantine_file(d["path"], reason=d["signature"])
+            d["quarantined"] = not os.path.exists(d["path"])
+
+    engines = [e for e, on in (("ClamAV", _clam_db_age() is not None),
+                               ("MalwareBazaar", bool(hashes)),
+                               ("VirusTotal", bool(virustotal_api_key))) if on]
     _post(rest_url, anon_key, "av_scan_results", {
-        "device_id":    device_id,
-        "hostname":     hostname,
-        "scan_type":    "quick",
-        "status":       "threats_found" if threats_found else "clean",
-        "threats_found": len(threats_found),
-        "files_scanned": len(scanned),
-        "threats":      threats_found,
+        "device_id":         device_id,
+        "hostname":          hostname,
+        "scan_type":         "quick",
+        "status":            "threats_found" if detections else "clean",
+        "threats_found":     len(detections),
+        "files_scanned":     len(targets),
+        "scan_duration_sec": int(time.time() - started),
+        "threats":           detections,
     })
-    return {"scanned": len(scanned), "threats": len(threats_found)}
+    if not engines:
+        logger.warning("[AV] No malware signatures available — install ClamAV (brew install clamav)")
+    return {"files_scanned": len(targets), "threats": len(detections), "engines": engines,
+            "signatures": sig_status, "seconds": int(time.time() - started)}
 
 
 def _check_virustotal(file_hash: str, api_key: str) -> dict:
@@ -423,25 +480,29 @@ def enforce_app_filter(rest_url: str, anon_key: str, device_id: str, hostname: s
 # FEATURE 4: WEBSITE FILTER (categories + custom whitelist/blacklist → /etc/hosts)
 # ══════════════════════════════════════════════════════════════════════════════
 
-MAX_HOSTS_ENTRIES = 150_000
+MAX_HOSTS_DOMAINS  = 250_000
+CONTENT_CATEGORIES = {"adult", "gambling", "gaming", "social"}
 _DOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*\.[a-z]{2,}$")
 
 
 def _clean_domain(raw: str) -> str:
     d = raw.strip().lower()
     d = re.sub(r"^https?://", "", d).split("/")[0].split(":")[0].strip(".")
+    if d.startswith("*."):
+        d = d[2:]
     return d if _DOMAIN_RE.match(d) else ""
 
 
 def _fetch_category(url: str) -> list:
     try:
-        r = requests.get(url, timeout=30)
+        r = requests.get(url, timeout=60)
         if r.status_code != 200:
+            logger.warning("[WEB FILTER] feed %s returned HTTP %s", url, r.status_code)
             return []
         out = []
         for line in r.text.splitlines():
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line or line[0] in "#!":
                 continue
             parts = line.split()
             d = _clean_domain(parts[1] if len(parts) >= 2 else parts[0])
@@ -449,8 +510,20 @@ def _fetch_category(url: str) -> list:
                 out.append(d)
         return out
     except Exception as e:
-        logger.debug("[WEB FILTER] feed %s error: %s", url, e)
+        logger.warning("[WEB FILTER] feed %s error: %s", url, e)
         return []
+
+
+def _fair_share(lists: dict, budget: int) -> dict:
+    """Split budget across categories; small lists fit fully, leftovers flow to big ones."""
+    alloc, remaining, pending = {}, budget, sorted(lists, key=lambda k: len(lists[k]))
+    while pending:
+        share = remaining // len(pending)
+        name = pending.pop(0)
+        take = min(len(lists[name]), share)
+        alloc[name] = lists[name][:take]
+        remaining -= take
+    return alloc
 
 
 def sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
@@ -461,35 +534,40 @@ def sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
     custom_block = [d for d in (_clean_domain(r.get("domain") or "") for r in rules if r.get("action") == "block") if d]
     allowed      = {d for d in (_clean_domain(r.get("domain") or "") for r in rules if r.get("action") == "allow") if d}
 
-    # Custom rules first so they survive the size cap; security categories before content categories.
-    ordered: list = list(custom_block)
-    priority = ["malware", "phishing", "ransomware", "crypto_mining"]
+    def is_allowed(d):
+        return d in allowed or any(d.endswith("." + a) for a in allowed)
+
     cats = _get(rest_url, anon_key, "web_categories?enabled=eq.true&select=name,blocklist_url")
-    cats.sort(key=lambda c: priority.index(c["name"]) if c.get("name") in priority else len(priority))
-    category_counts = {}
-    for cat in cats:
-        if cat.get("blocklist_url"):
-            domains = _fetch_category(cat["blocklist_url"])
-            category_counts[cat["name"]] = len(domains)
-            ordered.extend(domains)
+    raw = {c["name"]: _fetch_category(c["blocklist_url"]) for c in cats if c.get("blocklist_url")}
+    feed_sizes = {k: len(v) for k, v in raw.items()}
 
-    seen, blocked = set(), []
-    for d in ordered:
-        if d in seen or d in allowed or any(d == a or d.endswith("." + a) for a in allowed):
-            continue
-        seen.add(d)
-        blocked.append(d)
-        if len(blocked) >= MAX_HOSTS_ENTRIES:
-            break
+    seen = set(d for d in custom_block if not is_allowed(d))
+    lists = {}
+    for name, domains in raw.items():
+        uniq = []
+        for d in domains:
+            if d not in seen and not is_allowed(d):
+                seen.add(d)
+                uniq.append(d)
+        lists[name] = uniq
 
-    _web_filter = {"blocked": blocked, "allowed": allowed, "custom": set(custom_block)}
-    _apply_hosts_block(blocked, set(custom_block))
-    logger.info("[WEB FILTER] %d domains blocked (categories: %s, whitelist: %d)",
-                len(blocked), category_counts, len(allowed))
-    return {"blocked": len(blocked), "categories": category_counts, "allowed": len(allowed)}
+    custom = [d for d in dict.fromkeys(custom_block) if not is_allowed(d)]
+    alloc = _fair_share(lists, max(0, MAX_HOSTS_DOMAINS - len(custom)))
+
+    entries = list(custom) + [d for name in alloc for d in alloc[name]]
+    with_www = set(custom) | {d for name in alloc if name in CONTENT_CATEGORIES for d in alloc[name]}
+
+    _apply_hosts_block(entries, with_www)
+    applied = {k: len(v) for k, v in alloc.items()}
+    _web_filter = {"blocked": len(entries), "allowed": allowed}
+    logger.info("[WEB FILTER] %d domains blocked; per category %s (feed sizes %s); whitelist %d",
+                len(entries), applied, feed_sizes, len(allowed))
+    return {"blocked": len(entries), "custom": len(custom), "categories": applied,
+            "feed_sizes": feed_sizes, "allowed": len(allowed)}
 
 
-def _apply_hosts_block(domains: list, custom: set):
+def _apply_hosts_block(domains: list, with_www: set):
+    """Block over IPv4 and IPv6 so AAAA lookups can't bypass the filter."""
     try:
         with open(HOSTS_PATH, "r") as f:
             original = f.read()
@@ -497,9 +575,12 @@ def _apply_hosts_block(domains: list, custom: set):
 
         lines = [HOSTS_MARKER]
         for d in domains:
-            lines.append(f"0.0.0.0 {d}")
-            if d in custom and not d.startswith("www."):
-                lines.append(f"0.0.0.0 www.{d}")
+            names = [d]
+            if d in with_www and not d.startswith("www."):
+                names.append("www." + d)
+            for n in names:
+                lines.append(f"0.0.0.0 {n}")
+                lines.append(f":: {n}")
 
         tmp = HOSTS_PATH + ".sparrowshield.tmp"
         with open(tmp, "w") as f:
@@ -528,13 +609,8 @@ def get_device_group(rest_url: str, anon_key: str, device_id: str) -> Optional[s
 # QUARANTINE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _kill_and_quarantine(pid: int, file_path: str, reason: str = "malware"):
+def _quarantine_file(file_path: str, reason: str = "malware"):
     _ensure_dirs()
-    try:
-        psutil.Process(pid).kill()
-        logger.warning("[QUARANTINE] Killed PID %d", pid)
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
     try:
         if os.path.isfile(file_path):
             ts   = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -544,6 +620,15 @@ def _kill_and_quarantine(pid: int, file_path: str, reason: str = "malware"):
             logger.warning("[QUARANTINE] %s → %s (%s)", file_path, dest, reason)
     except Exception as e:
         logger.warning("[QUARANTINE] move error: %s", e)
+
+
+def _kill_and_quarantine(pid: int, file_path: str, reason: str = "malware"):
+    try:
+        psutil.Process(pid).kill()
+        logger.warning("[QUARANTINE] Killed PID %d", pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
+    _quarantine_file(file_path, reason)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -564,8 +649,8 @@ def _raise_alert(rest_url, anon_key, device_id, hostname,
         if mitre:
             body["mitre_technique"] = mitre
         r = requests.post(f"{rest_url}/alerts", json=body, headers=headers, timeout=10)
-        if r.status_code not in (200, 201, 204):
-            logger.debug("_raise_alert %s: %s", r.status_code, r.text[:200])
+        if r.status_code >= 300:
+            logger.warning("[EDR] alert %s rejected (HTTP %s): %s", rule_id, r.status_code, r.text[:200])
     except Exception as e:
         logger.debug("_raise_alert error: %s", e)
 
@@ -592,22 +677,23 @@ def run_full_edr(rest_url: str, anon_key: str, device_id: str, hostname: str,
                  installed_apps: list = None,
                  virustotal_api_key: str = "",
                  auto_quarantine: bool = False,
-                 auto_kill_blocked: bool = False) -> dict:
+                 auto_kill_blocked: bool = False,
+                 abuse_ch_key: str = "") -> dict:
     with _scan_lock:
         return _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
-                             virustotal_api_key, auto_quarantine, auto_kill_blocked)
+                             virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key)
 
 
 _scan_lock = threading.Lock()
 
 
 def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
-                  virustotal_api_key, auto_quarantine, auto_kill_blocked) -> dict:
+                  virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key) -> dict:
     logger.info("[EDR] Starting scan for %s", hostname)
     summary = {"group": None, "errors": []}
     group_id = None
     try:
-        refresh_ioc_feeds()
+        refresh_ioc_feeds(abuse_ch_key=abuse_ch_key)
         summary["threat_intel"] = {k: len(v) for k, v in _ioc_cache.items() if isinstance(v, set)}
     except Exception as e:
         logger.warning("[EDR] threat intel: %s", e)
@@ -621,9 +707,9 @@ def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
     for label, fn in [
         ("app filter sync", lambda: sync_app_filter(rest_url, anon_key, group_id)),
         ("web filter",      lambda: sync_web_filter(rest_url, anon_key, group_id)),
-        ("malware scan",    lambda: scan_running_processes(_ioc_cache, rest_url, anon_key, device_id, hostname,
-                                                           virustotal_api_key=virustotal_api_key,
-                                                           auto_quarantine=auto_quarantine)),
+        ("malware scan",    lambda: scan_for_malware(rest_url, anon_key, device_id, hostname,
+                                                     virustotal_api_key=virustotal_api_key,
+                                                     auto_quarantine=auto_quarantine)),
         ("behavior",        lambda: run_behavioral_detection(rest_url, anon_key, device_id, hostname)),
         ("app enforcement", lambda: enforce_app_filter(rest_url, anon_key, device_id, hostname,
                                                        installed_apps or [], auto_kill=auto_kill_blocked)),
