@@ -4,6 +4,7 @@ import {
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2,
   Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target, Terminal, BarChart2, Crosshair,
+  Globe, Users, AppWindow,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -152,6 +153,7 @@ export default function Sidebar() {
     { to: "/",        label: "Overview",    icon: LayoutDashboard },
     { to: "/devices", label: "All Devices", icon: Laptop          },
     { to: "/alerts",  label: "Alerts",      icon: BellRing        },
+    { to: "/groups",  label: "Device Groups", icon: Users         },
   ];
 
   const macNav: NavItem[] = [
@@ -173,6 +175,8 @@ export default function Sidebar() {
   ];
 
   const mgmtNav: NavItem[] = [
+    { to: "/web-filter",      label: "Web Filter",      icon: Globe      },
+    { to: "/app-filter",      label: "App Filter",      icon: AppWindow  },
     { to: "/executive",       label: "Exec Summary",    icon: BarChart2  },
     { to: "/threat-hunt",     label: "Threat Hunt",     icon: Crosshair  },
     { to: "/policy",          label: "Policy Manager",  icon: Shield     },

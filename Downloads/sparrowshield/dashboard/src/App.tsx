@@ -44,6 +44,9 @@ import NetworkActivity from "./pages/edr/NetworkActivity";
 import ExecutiveSummary from "./pages/ExecutiveSummary";
 import PolicyManager from "./pages/PolicyManager";
 import ThreatHunt from "./pages/ThreatHunt";
+import AppFilter from "./pages/AppFilter";
+import WebFilter from "./pages/WebFilter";
+import DeviceGroups from "./pages/DeviceGroups";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -99,6 +102,9 @@ function ProtectedLayout() {
           <Route path="/executive"    element={<ExecutiveSummary />} />
           <Route path="/threat-hunt"  element={<ThreatHunt />} />
           <Route path="/policy"       element={<PolicyManager />} />
+          <Route path="/web-filter"   element={<WebFilter />} />
+          <Route path="/app-filter"   element={<AppFilter />} />
+          <Route path="/groups"       element={<DeviceGroups />} />
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />

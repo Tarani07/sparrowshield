@@ -17,6 +17,12 @@ from pathlib import Path
 import psutil
 import requests
 
+try:
+    import edr_engine
+    _EDR_AVAILABLE = True
+except ImportError:
+    _EDR_AVAILABLE = False
+
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log")
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 HEARTBEAT_INTERVAL = 300
@@ -1824,8 +1830,10 @@ def get_top_processes(limit=20):
     return result
 
 
-def inventory_loop(api_url: str, token: str, anon_key: str = ""):
+def inventory_loop(api_url: str, token: str, anon_key: str = "",
+                    device_id: str = "", rest_url: str = ""):
     last_apps_sent = 0
+    hostname = platform.node()
 
     while True:
         time.sleep(INVENTORY_INTERVAL)
@@ -1839,10 +1847,28 @@ def inventory_loop(api_url: str, token: str, anon_key: str = ""):
 
             # Include installed apps in hourly inventory
             now = time.time()
+            installed_apps = []
             if now - last_apps_sent >= INVENTORY_INTERVAL:
                 installed_apps = get_installed_apps()
                 payload["installed_apps"] = installed_apps
                 last_apps_sent = now
+
+            # ── EDR full scan (AV + web filter + app filter + behavioral) ──
+            if _EDR_AVAILABLE and device_id and rest_url and anon_key:
+                config = load_config()
+                try:
+                    edr_engine.run_full_edr(
+                        rest_url         = rest_url,
+                        anon_key         = anon_key,
+                        device_id        = device_id,
+                        hostname         = hostname,
+                        installed_apps   = installed_apps,
+                        virustotal_api_key = config.get("virustotal_api_key", ""),
+                        auto_quarantine  = config.get("auto_quarantine", False),
+                        auto_kill_blocked = config.get("auto_kill_blocked_apps", False),
+                    )
+                except Exception as edr_err:
+                    logger.warning("EDR scan error: %s", edr_err)
 
             r = retry_request(
                 requests.post,
@@ -1887,7 +1913,9 @@ def main():
 
     logger.info("Starting agent for device_id=%s", device_id)
 
-    t = threading.Thread(target=inventory_loop, args=(api_url, token, anon_key), daemon=True)
+    t = threading.Thread(target=inventory_loop,
+                          args=(api_url, token, anon_key, device_id, supabase_rest_url),
+                          daemon=True)
     t.start()
 
     t2 = threading.Thread(target=command_loop, args=(device_id, anon_key, supabase_rest_url), daemon=True)
