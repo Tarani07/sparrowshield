@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { Package, Plus, Trash2, AlertTriangle, CheckCircle, Shield } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
+import ScanNowButton from "../components/ScanNowButton";
 
 interface AppRule {
   id: string;
@@ -108,13 +109,16 @@ export default function AppFilter() {
               Allow or block specific applications across all enrolled devices
             </p>
           </div>
-          <button
-            onClick={() => setAdding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-            style={{ background: "#6366f1" }}
-          >
-            <Plus className="w-4 h-4" /> Add Rule
-          </button>
+          <div className="flex gap-2">
+            <ScanNowButton />
+            <button
+              onClick={() => setAdding(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+              style={{ background: "#6366f1" }}
+            >
+              <Plus className="w-4 h-4" /> Add Rule
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

@@ -1834,9 +1834,12 @@ def inventory_loop(api_url: str, token: str, anon_key: str = "",
                     device_id: str = "", rest_url: str = ""):
     last_apps_sent = 0
     hostname = platform.node()
+    _EDR_CTX.update(rest_url=rest_url, anon_key=anon_key, device_id=device_id, hostname=hostname)
+    first_cycle = True
 
     while True:
-        time.sleep(INVENTORY_INTERVAL)
+        time.sleep(120 if first_cycle else INVENTORY_INTERVAL)
+        first_cycle = False
         try:
             software = get_software_list()
             processes = get_top_processes(20)
@@ -2225,7 +2228,30 @@ def handle_patch_all_apps(payload):
     return msg, success
 
 
+_EDR_CTX: dict = {}
+
+
+def handle_run_edr_scan(payload):
+    if not _EDR_AVAILABLE:
+        return "edr_engine module not installed next to agent_mac.py", False
+    if not _EDR_CTX:
+        return "EDR context not initialised", False
+    config = load_config()
+    try:
+        summary = edr_engine.run_full_edr(
+            installed_apps     = get_installed_apps(),
+            virustotal_api_key = config.get("virustotal_api_key", ""),
+            auto_quarantine    = config.get("auto_quarantine", False),
+            auto_kill_blocked  = config.get("auto_kill_blocked_apps", False),
+            **_EDR_CTX,
+        )
+        return json.dumps(summary, default=str), not summary.get("errors")
+    except Exception as e:
+        return f"EDR scan error: {e}", False
+
+
 COMMAND_HANDLERS = {
+    "run_edr_scan":             handle_run_edr_scan,
     "kill_process":             handle_kill_process,
     "optimize_memory":          handle_optimize_memory,
     "clear_cache":              handle_clear_cache,

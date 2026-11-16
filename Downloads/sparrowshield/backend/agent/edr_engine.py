@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -205,7 +206,7 @@ def scan_running_processes(ioc_cache: dict, rest_url: str, anon_key: str,
     """
     malware_hashes = ioc_cache.get("malware_hashes", set())
     if not malware_hashes:
-        return
+        return {"scanned": 0, "threats": 0}
 
     scanned = set()
     threats_found = []
@@ -270,6 +271,7 @@ def scan_running_processes(ioc_cache: dict, rest_url: str, anon_key: str,
         "files_scanned": len(scanned),
         "threats":      threats_found,
     })
+    return {"scanned": len(scanned), "threats": len(threats_found)}
 
 
 def _check_virustotal(file_hash: str, api_key: str) -> dict:
@@ -590,15 +592,29 @@ def run_full_edr(rest_url: str, anon_key: str, device_id: str, hostname: str,
                  installed_apps: list = None,
                  virustotal_api_key: str = "",
                  auto_quarantine: bool = False,
-                 auto_kill_blocked: bool = False):
+                 auto_kill_blocked: bool = False) -> dict:
+    with _scan_lock:
+        return _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
+                             virustotal_api_key, auto_quarantine, auto_kill_blocked)
+
+
+_scan_lock = threading.Lock()
+
+
+def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
+                  virustotal_api_key, auto_quarantine, auto_kill_blocked) -> dict:
     logger.info("[EDR] Starting scan for %s", hostname)
+    summary = {"group": None, "errors": []}
     group_id = None
     try:
         refresh_ioc_feeds()
+        summary["threat_intel"] = {k: len(v) for k, v in _ioc_cache.items() if isinstance(v, set)}
     except Exception as e:
         logger.warning("[EDR] threat intel: %s", e)
+        summary["errors"].append(f"threat intel: {e}")
     try:
         group_id = get_device_group(rest_url, anon_key, device_id)
+        summary["group"] = group_id
     except Exception as e:
         logger.warning("[EDR] group lookup: %s", e)
 
@@ -613,8 +629,13 @@ def run_full_edr(rest_url: str, anon_key: str, device_id: str, hostname: str,
                                                        installed_apps or [], auto_kill=auto_kill_blocked)),
     ]:
         try:
-            fn()
+            result = fn()
+            if result is not None:
+                summary[label] = result
         except Exception as e:
             logger.warning("[EDR] %s failed: %s", label, e)
+            summary["errors"].append(f"{label}: {e}")
 
-    logger.info("[EDR] Scan complete for %s (group=%s)", hostname, group_id or "none")
+    summary["app_blocklist"] = len(_app_filter.get("blocklist", ()))
+    logger.info("[EDR] Scan complete for %s: %s", hostname, summary)
+    return summary

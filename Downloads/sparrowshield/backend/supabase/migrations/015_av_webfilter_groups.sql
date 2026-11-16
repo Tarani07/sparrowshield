@@ -63,8 +63,8 @@ INSERT INTO web_categories (name, description, blocklist_url, enabled) VALUES
   ('crypto_mining', 'Cryptomining scripts and pools',           'https://raw.githubusercontent.com/blocklistproject/Lists/master/crypto.txt',     true),
   ('adult',         'Adult and pornographic content',           'https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt',       false),
   ('gambling',      'Online gambling and betting sites',        'https://raw.githubusercontent.com/blocklistproject/Lists/master/gambling.txt',   false),
-  ('gaming',        'Online gaming platforms',                  'https://raw.githubusercontent.com/blocklistproject/Lists/master/gaming.txt',     false),
-  ('social',        'Social media platforms',                   'https://raw.githubusercontent.com/blocklistproject/Lists/master/facebook.txt',   false),
+  ('gaming',        'Online gaming sites (Poki, Roblox, Steam, Epic, ...)', 'https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/games/domains', false),
+  ('social',        'Social media platforms',                   'https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/social_networks/domains',   false),
   ('tracking',      'Ad tracking and analytics domains',        'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt',   false)
 ON CONFLICT (name) DO NOTHING;
 

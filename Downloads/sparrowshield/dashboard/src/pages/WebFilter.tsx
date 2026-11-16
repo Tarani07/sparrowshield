@@ -6,6 +6,7 @@ import {
   Bug, Fish, Lock, Cpu, EyeOff, Dices, Gamepad2, MessageCircle, Eye,
 } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
+import ScanNowButton from "../components/ScanNowButton";
 
 interface WebRule {
   id: string;
@@ -140,13 +141,16 @@ export default function WebFilter() {
               Block websites by category or manage a custom domain whitelist/blacklist
             </p>
           </div>
-          {tab === "custom" && (
-            <button onClick={() => setAdding(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-              style={{ background: "#10b981" }}>
-              <Plus className="w-4 h-4" /> Add Domain
-            </button>
-          )}
+          <div className="flex gap-2">
+            <ScanNowButton />
+            {tab === "custom" && (
+              <button onClick={() => setAdding(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+                style={{ background: "#10b981" }}>
+                <Plus className="w-4 h-4" /> Add Domain
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Stats */}
@@ -168,7 +172,7 @@ export default function WebFilter() {
         <div className="flex items-start gap-3 p-3 rounded-lg border" style={{ borderColor: "#fbbf24", background: "#fefce8" }}>
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "#d97706" }} />
           <p className="text-xs" style={{ color: "#92400e" }}>
-            Category blocklists are downloaded by the agent and applied to <strong>/etc/hosts</strong> (up to 150,000 domains; security categories and custom rules take priority). Changes apply on the next agent scan (hourly). The agent must run as root.
+            Category blocklists are downloaded by the agent and applied to <strong>/etc/hosts</strong> (up to 150,000 domains; security categories and custom rules take priority). Changes apply on the next hourly scan, or within a minute if you click "Scan &amp; apply now". The agent must run as root.
           </p>
         </div>
 
