@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 import psutil
 import requests
@@ -189,24 +190,38 @@ def _malware_scan_targets() -> list:
             continue
 
     cutoff = time.time() - SCAN_RECENT_DAYS * 86400
-    roots = []
+    user_roots = []
     for home in Path("/Users").glob("*"):
         if home.name in ("Shared", "Guest") or home.name.startswith("."):
             continue
-        roots += [str(home / "Downloads"), str(home / "Desktop")]
-    roots += ["/private/tmp", "/private/var/tmp"]
-    for root in roots:
-        for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-            for fn in filenames:
-                p = os.path.join(dirpath, fn)
-                try:
-                    if os.path.getmtime(p) >= cutoff:
-                        add(p)
-                except OSError:
-                    pass
-            if len(targets) >= SCAN_MAX_FILES:
-                break
+        user_roots += [str(home / "Downloads"), str(home / "Desktop")]
+
+    denied = []
+    for group in (user_roots, ["/private/tmp", "/private/var/tmp"]):
+        recent = []
+        for root in group:
+            if not os.path.isdir(root):
+                continue
+            try:
+                os.listdir(root)
+            except PermissionError:
+                denied.append(root)
+                continue
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for fn in filenames:
+                    p = os.path.join(dirpath, fn)
+                    try:
+                        m = os.path.getmtime(p)
+                    except OSError:
+                        continue
+                    if m >= cutoff:
+                        recent.append((m, p))
+        for _, p in sorted(recent, reverse=True):
+            add(p)
+    if denied:
+        logger.warning("[AV] No access to %s — grant Full Disk Access to the agent's Python in "
+                       "System Settings > Privacy & Security", ", ".join(denied))
     return targets
 
 
@@ -446,12 +461,16 @@ def enforce_app_filter(rest_url: str, anon_key: str, device_id: str, hostname: s
         hit = _matches(app_name, blocklist)
         if not hit:
             continue
-        _post(rest_url, anon_key, "software_violations", {
-            "device_id":      device_id,
-            "app_name":       app_name,
-            "app_version":    app.get("version"),
-            "violation_type": "blocklist_hit",
-        })
+        open_rows = _get(rest_url, anon_key,
+                         f"software_violations?device_id=eq.{device_id}&app_name=eq.{quote(app_name)}"
+                         f"&resolved=eq.false&select=id&limit=1")
+        if not open_rows:
+            _post(rest_url, anon_key, "software_violations", {
+                "device_id":      device_id,
+                "app_name":       app_name,
+                "app_version":    app.get("version"),
+                "violation_type": "blocklist_hit",
+            })
         _raise_alert(rest_url, anon_key, device_id, hostname,
             rule_id=f"blocked_app:{hit[:40]}", severity="high",
             message=f"Blocked application '{app_name}' is installed on {hostname}",
