@@ -79,6 +79,22 @@ export default function WebFilter() {
     },
   });
 
+  // Push website-rule changes to every Mac right away (fast web-filter-only sync, no full scan).
+  async function pushWebFilter() {
+    const { data: devices } = await supabase
+      .from("devices").select("id").in("os_type", ["mac", "macos", "darwin"]);
+    const { data: queued } = await supabase
+      .from("device_commands").select("device_id")
+      .eq("command_type", "sync_web_filter").eq("status", "pending");
+    const busy = new Set((queued ?? []).map((q: { device_id: string }) => q.device_id));
+    const targets = (devices ?? []).filter((d: { id: string }) => !busy.has(d.id));
+    if (targets.length) {
+      await supabase.from("device_commands").insert(
+        targets.map((d: { id: string }) => ({ device_id: d.id, command_type: "sync_web_filter", payload: {} })),
+      );
+    }
+  }
+
   const toggleCategory = useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
       const { error } = await supabase
@@ -87,7 +103,7 @@ export default function WebFilter() {
         .eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["web-categories"] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-categories"] }); pushWebFilter(); },
   });
 
   const addRule = useMutation({
@@ -104,6 +120,7 @@ export default function WebFilter() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["web-filter-rules"] });
       setNewDomain(""); setNewNotes(""); setAdding(false);
+      pushWebFilter();
     },
   });
 
@@ -111,14 +128,23 @@ export default function WebFilter() {
     mutationFn: async (id: string) => {
       await supabase.from("web_filter_rules").delete().eq("id", id);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["web-filter-rules"] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
   });
 
   const toggleRule = useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
       await supabase.from("web_filter_rules").update({ enabled }).eq("id", id);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["web-filter-rules"] }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
+  });
+
+  // Turning a Block rule off only removes *your* block; a category (e.g. Gaming) may still
+  // list the site. Converting it to Allow overrides categories too.
+  const allowInstead = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from("web_filter_rules").update({ action: "allow", enabled: true }).eq("id", id);
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
   });
 
   const enabledCategories = categories.filter(c => c.enabled).length;
@@ -172,7 +198,7 @@ export default function WebFilter() {
         <div className="flex items-start gap-3 p-3 rounded-lg border" style={{ borderColor: "#fbbf24", background: "#fefce8" }}>
           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "#d97706" }} />
           <p className="text-xs" style={{ color: "#92400e" }}>
-            Category blocklists are downloaded by the agent and applied to <strong>/etc/hosts</strong> (up to 250,000 domains, shared fairly across enabled categories; custom rules always apply). Changes apply on the next hourly scan, or within a minute if you click "Scan &amp; apply now". The agent must run as root.
+            Category blocklists are downloaded by the agent and applied to <strong>/etc/hosts</strong> (up to 250,000 domains, shared fairly across enabled categories; custom rules always apply). Changes are pushed to every Mac as soon as you save them (usually applied within ~10 seconds; browsers may keep a site open until you reload or reopen the tab). The agent must run as root.
           </p>
         </div>
 
@@ -321,9 +347,19 @@ export default function WebFilter() {
                           </button>
                         </td>
                         <td className="px-4 py-3">
-                          <button onClick={() => deleteRule.mutate(rule.id)} className="p-1 rounded" style={{ color: "#ef4444" }}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center gap-2 justify-end">
+                            {rule.action === "block" && (
+                              <button onClick={() => allowInstead.mutate(rule.id)}
+                                title="Unblock this site even if a category (e.g. Gaming) lists it"
+                                className="text-xs px-2 py-1 rounded whitespace-nowrap"
+                                style={{ color: "#16a34a", background: "var(--c-surface)" }}>
+                                Allow instead
+                              </button>
+                            )}
+                            <button onClick={() => deleteRule.mutate(rule.id)} className="p-1 rounded" style={{ color: "#ef4444" }}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -331,6 +367,11 @@ export default function WebFilter() {
                 </table>
               )}
             </div>
+            <p className="text-xs mt-2" style={{ color: "var(--c-muted)" }}>
+              Turning a <b>Block</b> rule off removes only your own block — if an enabled category
+              (such as Gaming) also lists the site, it stays blocked. To unblock it everywhere, use
+              <b> Allow instead</b> or add the domain as <b>Allow</b>.
+            </p>
           </div>
         )}
       </div>

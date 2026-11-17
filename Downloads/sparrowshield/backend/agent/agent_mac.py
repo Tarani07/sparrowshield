@@ -2280,6 +2280,19 @@ def handle_run_edr_scan(payload):
         return f"EDR scan error: {e}", False
 
 
+def handle_sync_web_filter(payload):
+    """Fast path after a Web Filter change in the dashboard: re-apply website rules only."""
+    if not _EDR_AVAILABLE or not _EDR_CTX:
+        return "EDR not ready", False
+    try:
+        ctx = _EDR_CTX
+        group = edr_engine.get_device_group(ctx["rest_url"], ctx["anon_key"], ctx["device_id"])
+        r = edr_engine.sync_web_filter(ctx["rest_url"], ctx["anon_key"], group)
+        return json.dumps(r, default=str), True
+    except Exception as e:
+        return f"sync_web_filter error: {e}", False
+
+
 def handle_remove_app(payload):
     """Admin-approved: close an app and move its .app bundle to quarantine (restorable)."""
     if not _EDR_AVAILABLE:
@@ -2303,6 +2316,7 @@ def handle_restore_app(payload):
 
 
 COMMAND_HANDLERS = {
+    "sync_web_filter":          handle_sync_web_filter,
     "remove_app":               handle_remove_app,
     "restore_app":              handle_restore_app,
     "run_edr_scan":             handle_run_edr_scan,

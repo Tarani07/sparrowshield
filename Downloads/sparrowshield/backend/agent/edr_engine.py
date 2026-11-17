@@ -738,13 +738,23 @@ def _fair_share(lists: dict, budget: int) -> dict:
     return alloc
 
 
+_web_lock = threading.Lock()
+
+
 def sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
+    with _web_lock:          # scan and on-demand sync can overlap; serialize hosts writes
+        return _sync_web_filter(rest_url, anon_key, group_id)
+
+
+def _sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
     global _web_filter
 
     rules = _get(rest_url, anon_key,
                  f"web_filter_rules?enabled=eq.true&select=domain,action&{_group_scope(group_id)}&limit=10000")
     custom_block = [d for d in (_clean_domain(r.get("domain") or "") for r in rules if r.get("action") == "block") if d]
-    allowed      = {d for d in (_clean_domain(r.get("domain") or "") for r in rules if r.get("action") == "allow") if d}
+    # Allowing "www.site.com" means the site: also allow "site.com" (category lists use bare domains).
+    allowed      = {d[4:] if d.startswith("www.") else d
+                    for d in (_clean_domain(r.get("domain") or "") for r in rules if r.get("action") == "allow") if d}
 
     def is_allowed(d):
         return d in allowed or any(d.endswith("." + a) for a in allowed)
