@@ -1,0 +1,22 @@
+#!/bin/bash
+# Finishes a SparrowShield .pkg install: config, permissions, cleanup of the old Python
+# install, and starting the daemon. The agent enrolls itself on first run.
+set -u
+DIR="/usr/local/sparrowshield"
+PLIST="/Library/LaunchDaemons/com.sparrowshield.sensor.plist"
+
+# Keep an existing enrollment (device_id/token); otherwise start from the packaged defaults.
+if [ ! -s "$DIR/config.json" ]; then
+  cp "$DIR/config.default.json" "$DIR/config.json"
+fi
+chown -R root:wheel "$DIR"
+chmod 755 "$DIR"
+chmod 600 "$DIR/config.json" "$DIR/config.default.json"
+chown root:wheel "$PLIST"
+chmod 644 "$PLIST"
+
+# Remove the interpreter-based install this package replaces.
+rm -rf "$DIR/venv" "$DIR/__pycache__" "$DIR/agent_mac.py" "$DIR/edr_engine.py"
+
+launchctl bootstrap system "$PLIST" 2>/dev/null || launchctl kickstart -k system/com.sparrowshield.sensor
+exit 0

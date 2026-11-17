@@ -1,0 +1,6 @@
+#!/bin/bash
+# Stop any running SparrowShield agent (old Python install or previous .pkg) before files are replaced.
+launchctl bootout system/com.sparrowshield.sensor 2>/dev/null || true
+pkill -f /usr/local/sparrowshield/agent_mac.py 2>/dev/null || true
+pkill -f /usr/local/sparrowshield/bin/sparrowshield-agent 2>/dev/null || true
+exit 0

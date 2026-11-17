@@ -23,8 +23,14 @@ try:
 except ImportError:
     _EDR_AVAILABLE = False
 
-LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent.log")
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+# The signed .pkg build is a frozen executable under /usr/local/sparrowshield/bin;
+# its config and log live in the install root, not next to the extracted code.
+if getattr(sys, "frozen", False):
+    BASE_DIR = "/usr/local/sparrowshield"
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, "agent.log")
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600
 
@@ -1916,6 +1922,11 @@ def main():
     anon_key = config.get("anon_key", "")
 
     logger.info("Starting agent for device_id=%s", device_id)
+    if has_full_disk_access():
+        logger.info("Full Disk Access: granted")
+    else:
+        logger.warning("Full Disk Access: NOT granted — user folders cannot be scanned. "
+                       "Deploy the SparrowShield PPPC profile via Jamf.")
 
     t = threading.Thread(target=inventory_loop,
                           args=(api_url, token, anon_key, device_id, supabase_rest_url),
@@ -2232,6 +2243,16 @@ def handle_patch_all_apps(payload):
 _EDR_CTX: dict = {}
 
 
+def has_full_disk_access() -> bool:
+    """The system TCC database is readable only by a process holding Full Disk Access."""
+    try:
+        with open("/Library/Application Support/com.apple.TCC/TCC.db", "rb") as f:
+            f.read(16)
+        return True
+    except OSError:
+        return False
+
+
 def handle_run_edr_scan(payload):
     if not _EDR_AVAILABLE:
         return "edr_engine module not installed next to agent_mac.py", False
@@ -2247,6 +2268,7 @@ def handle_run_edr_scan(payload):
             auto_kill_blocked  = config.get("auto_kill_blocked_apps", False),
             **_EDR_CTX,
         )
+        summary["full_disk_access"] = has_full_disk_access()
         return json.dumps(summary, default=str), not summary.get("errors")
     except Exception as e:
         return f"EDR scan error: {e}", False

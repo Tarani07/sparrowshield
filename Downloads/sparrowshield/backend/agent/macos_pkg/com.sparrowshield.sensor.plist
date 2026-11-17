@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.sparrowshield.sensor</string>
+  <!-- Fixed, signed executable: the path the Jamf PPPC profile grants Full Disk Access to. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/sparrowshield/bin/sparrowshield-agent/sparrowshield-agent</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>UserName</key>
+  <string>root</string>
+  <key>WorkingDirectory</key>
+  <string>/usr/local/sparrowshield</string>
+  <key>StandardOutPath</key>
+  <string>/var/log/sparrowshield-sensor.log</string>
+  <key>StandardErrorPath</key>
+  <string>/var/log/sparrowshield-sensor.log</string>
+</dict>
+</plist>
