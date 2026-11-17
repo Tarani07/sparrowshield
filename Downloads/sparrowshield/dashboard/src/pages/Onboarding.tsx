@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shield, Zap, Bell, Eye, Apple, Monitor, Terminal, Download, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
+import { Shield, Zap, Bell, Eye, Apple, Monitor, Download, CheckCircle, ArrowRight, ChevronRight } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
-type Platform = "macos" | "windows" | "linux";
+type Platform = "macos" | "windows";
 
 const STEPS = ["Welcome", "Platform", "Install", "Waiting"];
 
@@ -90,7 +90,6 @@ function Step2({ onNext, selected, onSelect }: {
   const platforms: { id: Platform; label: string; icon: React.ElementType; color: string }[] = [
     { id: "macos",   label: "macOS",   icon: Apple,    color: "#a78bfa" },
     { id: "windows", label: "Windows", icon: Monitor,  color: "#60a5fa" },
-    { id: "linux",   label: "Linux",   icon: Terminal, color: "#34d399" },
   ];
 
   return (
@@ -146,7 +145,6 @@ function Step3({ platform, onNext }: { platform: Platform; onNext: () => void })
   const info: Record<Platform, { file: string; dl: string; cmd: string }> = {
     macos:   { file: "/agents/SparrowShield-Mac-Install.sh",   dl: "SparrowShield-Mac-Install.sh",   cmd: "sudo bash SparrowShield-Mac-Install.sh" },
     windows: { file: "/agents/SparrowShieldInstaller.bat",     dl: "SparrowShieldInstaller.bat",     cmd: "Run SparrowShieldInstaller.bat as Administrator" },
-    linux:   { file: "/agents/SparrowShield-Linux-Install.sh", dl: "SparrowShield-Linux-Install.sh", cmd: "sudo bash SparrowShield-Linux-Install.sh" },
   };
   const { file, dl, cmd } = info[platform];
 
@@ -167,7 +165,7 @@ function Step3({ platform, onNext }: { platform: Platform; onNext: () => void })
       .catch(() => alert("Download failed. Check your internet connection."));
   }
 
-  const platformLabel = platform === "macos" ? "macOS" : platform === "windows" ? "Windows" : "Linux";
+  const platformLabel = platform === "macos" ? "macOS" : "Windows";
 
   return (
     <div className="flex flex-col items-center text-center max-w-lg w-full">
@@ -205,7 +203,6 @@ function Step3({ platform, onNext }: { platform: Platform; onNext: () => void })
           <span className="font-semibold" style={{ color: "var(--c-primary)" }}>Note: </span>
           {platform === "macos" && "Requires macOS 11+, python3, and root access. The sensor runs as a background daemon."}
           {platform === "windows" && "Requires Windows 10/11 and Administrator rights. The sensor runs as a Windows service."}
-          {platform === "linux" && "Requires a systemd-based distro (Ubuntu 20+, Debian 11+, etc.) and root access."}
         </p>
       </div>
 

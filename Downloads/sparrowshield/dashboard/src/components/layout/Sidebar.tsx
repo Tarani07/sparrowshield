@@ -3,7 +3,7 @@ import {
   LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
   Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Trash2,
-  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target, Terminal, BarChart2, Crosshair,
+  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target, BarChart2, Crosshair,
   Globe, Users, AppWindow,
 } from "lucide-react";
 import { useState } from "react";
@@ -103,16 +103,6 @@ export default function Sidebar() {
     refetchInterval: 30_000,
   });
 
-  const { data: linuxCount = 0 } = useQuery<number>({
-    queryKey: ["linux-device-count"],
-    queryFn: async () => {
-      const { count } = await supabase.from("devices")
-        .select("*", { count: "exact", head: true })
-        .in("os_type", ["linux", "debian", "ubuntu", "centos", "rhel"]);
-      return count ?? 0;
-    },
-    refetchInterval: 30_000,
-  });
 
   const { data: alertCount = 0 } = useQuery<number>({
     queryKey: ["open-alert-count"],
@@ -170,9 +160,6 @@ export default function Sidebar() {
     { to: "/windows/isolation", label: "Host Isolation", icon: WifiOff  },
   ];
 
-  const linuxNav: NavItem[] = [
-    { to: "/linux/devices", label: "Linux Devices", icon: Terminal },
-  ];
 
   const mgmtNav: NavItem[] = [
     { to: "/web-filter",      label: "Web Filter",      icon: Globe      },
@@ -252,19 +239,6 @@ export default function Sidebar() {
           <NavGroup items={winNav} isLight={isLight} />
         </div>
 
-        <div>
-          <div className="flex items-center gap-2 px-4 mb-1">
-            <Terminal className="w-3 h-3" style={{ color: "#34d399" }} />
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>Linux</p>
-            {linuxCount > 0 && (
-              <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(52,211,153,0.15)", color: "#34d399" }}>
-                {linuxCount}
-              </span>
-            )}
-          </div>
-          <NavGroup items={linuxNav} isLight={isLight} />
-        </div>
 
         <div>
           <SectionLabel label="Management" />
@@ -307,8 +281,6 @@ export default function Sidebar() {
               { label: "macOS Install (.sh)",  icon: Apple,    file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
               { label: "Windows Installer",    icon: Monitor,  file: "/agents/SparrowShieldInstaller.bat",   dl: "SparrowShieldInstaller.bat"   },
               { label: "Windows Sensor (.py)", icon: Monitor,  file: "/agents/agent_windows.py",             dl: "agent_windows.py"             },
-              { label: "Linux Install (.sh)",  icon: Terminal, file: "/agents/SparrowShield-Linux-Install.sh", dl: "SparrowShield-Linux-Install.sh" },
-              { label: "Linux Sensor (.py)",   icon: Terminal, file: "/agents/sparrowshield_linux.py",       dl: "sparrowshield_linux.py"       },
             ].map(item => (
               <button
                 key={item.label}

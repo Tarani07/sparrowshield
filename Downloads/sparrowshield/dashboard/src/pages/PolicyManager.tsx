@@ -325,7 +325,6 @@ export default function PolicyManager() {
                     <option value="all">All Platforms</option>
                     <option value="macos">macOS</option>
                     <option value="windows">Windows</option>
-                    <option value="linux">Linux</option>
                   </select>
                 </div>
               </div>

@@ -24,8 +24,6 @@ import MacAV from "./pages/mac/MacAV";
 import MacEDR from "./pages/mac/MacEDR";
 import MacNetwork from "./pages/mac/MacNetwork";
 
-// Linux
-import LinuxDevices from "./pages/linux/LinuxDevices";
 
 // Windows
 import WindowsDevices from "./pages/windows/WindowsDevices";
@@ -69,7 +67,6 @@ function ProtectedLayout() {
           <Route path="/devices" element={<DeviceList />} />
           <Route path="/device/:id" element={<DeviceDetail />} />
 
-          <Route path="/linux/devices" element={<LinuxDevices />} />
 
           <Route path="/mac/devices" element={<MacDevices />} />
           <Route path="/mac/av" element={<MacAV />} />
