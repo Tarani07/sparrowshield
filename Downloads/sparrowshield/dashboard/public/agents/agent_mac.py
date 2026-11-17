@@ -2317,6 +2317,28 @@ COMMAND_HANDLERS = {
 }
 
 
+_scan_running = threading.Event()
+
+
+def _run_command(cmd, headers, supabase_rest_url):
+    cmd_id, cmd_type = cmd["id"], cmd.get("command_type")
+    handler = COMMAND_HANDLERS.get(cmd_type)
+    try:
+        result, success = handler(cmd.get("payload") or {}) if handler else (f"Unknown command: {cmd_type}", False)
+    except Exception as e:
+        result, success = f"{cmd_type} error: {e}", False
+    finally:
+        if cmd_type == "run_edr_scan":
+            _scan_running.clear()
+    requests.patch(
+        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
+        headers=headers,
+        json={"status": "done" if success else "failed", "result": result,
+              "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+        timeout=10,
+    )
+
+
 def command_loop(device_id, anon_key, supabase_rest_url):
     if not supabase_rest_url or not anon_key:
         logger.warning("Command loop: missing REST URL or anon_key — optimizer disabled")
@@ -2326,38 +2348,43 @@ def command_loop(device_id, anon_key, supabase_rest_url):
         "apikey": anon_key,
         "Content-Type": "application/json",
     }
-    logger.info("Optimizer command loop started — polling every 10s")
+    # Commands left "running" by a previous agent process (restart/reinstall) will never finish.
+    try:
+        requests.patch(
+            f"{supabase_rest_url}/device_commands?device_id=eq.{device_id}&status=eq.running",
+            headers=headers, json={"status": "failed", "result": "Agent restarted before this finished — run it again",
+                                   "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            timeout=10)
+    except Exception as e:
+        logger.debug("stale command cleanup failed: %s", e)
+
+    logger.info("Command loop started — polling every 5s")
     while True:
         try:
             r = requests.get(
                 f"{supabase_rest_url}/device_commands"
-                f"?device_id=eq.{device_id}&status=eq.pending&order=created_at.asc&limit=10",
+                f"?device_id=eq.{device_id}&status=eq.pending&order=created_at.asc&limit=20",
                 headers=headers, timeout=10,
             )
             if r.status_code == 200:
                 for cmd in r.json():
-                    cmd_id = cmd["id"]
-                    cmd_type = cmd.get("command_type")
-                    payload = cmd.get("payload", {})
-                    requests.patch(
-                        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
-                        headers=headers, json={"status": "running"}, timeout=10,
-                    )
-                    handler = COMMAND_HANDLERS.get(cmd_type)
-                    result, success = handler(payload) if handler else (f"Unknown command: {cmd_type}", False)
-                    requests.patch(
-                        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
-                        headers=headers,
-                        json={
-                            "status": "done" if success else "failed",
-                            "result": result,
-                            "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                        },
-                        timeout=10,
-                    )
+                    url = f"{supabase_rest_url}/device_commands?id=eq.{cmd['id']}"
+                    # A scan is already running: fold duplicate Scan Now requests into it.
+                    if cmd.get("command_type") == "run_edr_scan" and _scan_running.is_set():
+                        requests.patch(url, headers=headers, timeout=10, json={
+                            "status": "done", "result": "Merged into the scan already running",
+                            "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+                        continue
+                    if cmd.get("command_type") == "run_edr_scan":
+                        _scan_running.set()
+                    requests.patch(url, headers=headers, json={"status": "running"}, timeout=10)
+                    # Each command runs on its own thread so a long scan never delays
+                    # quick actions such as remove_app or kill_process.
+                    threading.Thread(target=_run_command, args=(cmd, headers, supabase_rest_url),
+                                     daemon=True).start()
         except Exception as e:
             logger.warning("Command loop error: %s", e)
-        time.sleep(10)
+        time.sleep(5)
 
 
 # ── ES Sensor integration ──────────────────────────────────────────────────────

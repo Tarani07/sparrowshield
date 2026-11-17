@@ -11,10 +11,18 @@ export default function ScanNowButton() {
     const { data: devices, error } = await supabase
       .from("devices").select("id").in("os_type", ["mac", "macos", "darwin"]);
     if (error || !devices?.length) { setState("error"); return; }
-    const { error: insErr } = await supabase.from("device_commands").insert(
-      devices.map((d: { id: string }) => ({ device_id: d.id, command_type: "run_edr_scan", payload: {} })),
-    );
-    if (insErr) { setState("error"); return; }
+    // Don't queue another full scan for a Mac that already has one waiting or running.
+    const { data: queued } = await supabase
+      .from("device_commands").select("device_id")
+      .eq("command_type", "run_edr_scan").in("status", ["pending", "running"]);
+    const busy = new Set((queued ?? []).map((q: { device_id: string }) => q.device_id));
+    const targets = devices.filter((d: { id: string }) => !busy.has(d.id));
+    if (targets.length) {
+      const { error: insErr } = await supabase.from("device_commands").insert(
+        targets.map((d: { id: string }) => ({ device_id: d.id, command_type: "run_edr_scan", payload: {} })),
+      );
+      if (insErr) { setState("error"); return; }
+    }
     setCount(devices.length);
     setState("sent");
     setTimeout(() => setState("idle"), 6000);

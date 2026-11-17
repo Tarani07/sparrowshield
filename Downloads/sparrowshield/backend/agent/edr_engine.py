@@ -682,25 +682,48 @@ def _clean_domain(raw: str) -> str:
     return d if _DOMAIN_RE.match(d) else ""
 
 
+FEED_CACHE_DIR = os.path.join(DATA_DIR, "feeds")
+FEED_MAX_AGE   = 6 * 3600     # category lists change slowly; re-download at most every 6h
+
+
+def _parse_feed(text: str) -> list:
+    out = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line[0] in "#!":
+            continue
+        parts = line.split()
+        d = _clean_domain(parts[1] if len(parts) >= 2 else parts[0])
+        if d and d not in ("localhost", "0.0.0.0"):
+            out.append(d)
+    return out
+
+
 def _fetch_category(url: str) -> list:
+    cache = os.path.join(FEED_CACHE_DIR, hashlib.sha1(url.encode()).hexdigest() + ".txt")
+    try:
+        if time.time() - os.path.getmtime(cache) < FEED_MAX_AGE:
+            with open(cache, encoding="utf-8", errors="ignore") as f:
+                return _parse_feed(f.read())
+    except OSError:
+        pass
     try:
         r = requests.get(url, timeout=60)
         if r.status_code != 200:
-            logger.warning("[WEB FILTER] feed %s returned HTTP %s", url, r.status_code)
-            return []
-        out = []
-        for line in r.text.splitlines():
-            line = line.strip()
-            if not line or line[0] in "#!":
-                continue
-            parts = line.split()
-            d = _clean_domain(parts[1] if len(parts) >= 2 else parts[0])
-            if d and d not in ("localhost", "0.0.0.0"):
-                out.append(d)
-        return out
+            raise RuntimeError(f"HTTP {r.status_code}")
+        os.makedirs(FEED_CACHE_DIR, exist_ok=True)
+        tmp = cache + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(r.text)
+        os.replace(tmp, cache)
+        return _parse_feed(r.text)
     except Exception as e:
-        logger.warning("[WEB FILTER] feed %s error: %s", url, e)
-        return []
+        logger.warning("[WEB FILTER] feed %s error: %s — using cached copy if any", url, e)
+        try:
+            with open(cache, encoding="utf-8", errors="ignore") as f:
+                return _parse_feed(f.read())
+        except OSError:
+            return []
 
 
 def _fair_share(lists: dict, budget: int) -> dict:
@@ -746,7 +769,20 @@ def sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
     entries = list(custom) + [d for name in alloc for d in alloc[name]]
     with_www = set(custom) | {d for name in alloc if name in CONTENT_CATEGORIES for d in alloc[name]}
 
-    _apply_hosts_block(entries, with_www)
+    # Rewriting a 700k-line hosts file and flushing DNS is the slow part; skip it when unchanged.
+    digest = hashlib.sha1(("\n".join(entries) + "|" + ",".join(sorted(with_www))).encode()).hexdigest()
+    digest_file = os.path.join(DATA_DIR, "hosts.sha1")
+    try:
+        unchanged = open(digest_file).read().strip() == digest and HOSTS_MARKER in open(HOSTS_PATH).read()
+    except OSError:
+        unchanged = False
+    if not unchanged and _apply_hosts_block(entries, with_www):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(digest_file, "w") as f:
+                f.write(digest)
+        except OSError:
+            pass
     applied = {k: len(v) for k, v in alloc.items()}
     _web_filter = {"blocked": len(entries), "allowed": allowed}
     logger.info("[WEB FILTER] %d domains blocked; per category %s (feed sizes %s); whitelist %d",
@@ -755,7 +791,7 @@ def sync_web_filter(rest_url: str, anon_key: str, group_id: Optional[str]):
             "feed_sizes": feed_sizes, "allowed": len(allowed)}
 
 
-def _apply_hosts_block(domains: list, with_www: set):
+def _apply_hosts_block(domains: list, with_www: set) -> bool:
     """Block over IPv4 and IPv6 so AAAA lookups can't bypass the filter."""
     try:
         with open(HOSTS_PATH, "r") as f:
@@ -779,10 +815,12 @@ def _apply_hosts_block(domains: list, with_www: set):
 
         subprocess.run(["dscacheutil", "-flushcache"], capture_output=True, timeout=5)
         subprocess.run(["killall", "-HUP", "mDNSResponder"], capture_output=True, timeout=5)
+        return True
     except PermissionError:
         logger.warning("[WEB FILTER] Cannot write /etc/hosts — agent must run as root")
     except Exception as e:
         logger.warning("[WEB FILTER] /etc/hosts update error: %s", e)
+    return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
