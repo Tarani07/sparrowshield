@@ -21,7 +21,17 @@ interface Violation {
   violation_type: string;
   detected_at: string;
   resolved: boolean;
+  device_id: string;
   hostname: string | null;
+}
+
+interface AppCommand {
+  device_id: string;
+  command_type: "remove_app" | "restore_app";
+  status: string;
+  result: string | null;
+  payload: { app_name?: string };
+  created_at: string;
 }
 
 export default function AppFilter() {
@@ -48,7 +58,7 @@ export default function AppFilter() {
     queryFn: async () => {
       const { data } = await supabase
         .from("software_violations")
-        .select("id, app_name, app_version, violation_type, detected_at, resolved, devices(hostname)")
+        .select("id, app_name, app_version, violation_type, detected_at, resolved, device_id, devices(hostname)")
         .order("detected_at", { ascending: false })
         .limit(100);
       return (data ?? []).map((v: any) => ({
@@ -89,6 +99,36 @@ export default function AppFilter() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["app-violations"] }),
   });
 
+  // Latest remove/restore command per device+app drives the row's action state.
+  const { data: appCommands = [] } = useQuery<AppCommand[]>({
+    queryKey: ["app-commands"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("device_commands")
+        .select("device_id, command_type, status, result, payload, created_at")
+        .in("command_type", ["remove_app", "restore_app"])
+        .order("created_at", { ascending: false })
+        .limit(200);
+      return (data ?? []) as AppCommand[];
+    },
+    refetchInterval: 5_000,
+  });
+
+  const appAction = useMutation({
+    mutationFn: async (v: { device_id: string; app_name: string; command: "remove_app" | "restore_app" }) => {
+      const { error } = await supabase.from("device_commands").insert({
+        device_id: v.device_id, command_type: v.command, payload: { app_name: v.app_name },
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["app-commands"] }),
+  });
+
+  function lastCommand(v: Violation) {
+    return appCommands.find(c => c.device_id === v.device_id
+      && (c.payload?.app_name ?? "").toLowerCase() === v.app_name.toLowerCase());
+  }
+
   const blocked  = rules.filter(r => r.list_type === "blocklist");
   const allowed  = rules.filter(r => r.list_type === "allowlist");
   const openViolations = violations.filter(v => !v.resolved);
@@ -106,7 +146,9 @@ export default function AppFilter() {
               Application Filter
             </h1>
             <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-              Allow or block specific applications across all enrolled devices
+              Allow or block specific applications across all enrolled devices. Blocked apps are closed
+              within ~15 seconds of opening; use <b>Remove app</b> under Violations to uninstall
+              (moved to quarantine, restorable).
             </p>
           </div>
           <div className="flex gap-2">
@@ -283,12 +325,49 @@ export default function AppFilter() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {!v.resolved && (
-                          <button onClick={() => resolveViolation.mutate(v.id)}
-                            className="text-xs px-2 py-1 rounded" style={{ color: "#6366f1", background: "var(--c-surface)" }}>
-                            Resolve
-                          </button>
-                        )}
+                        {(() => {
+                          const cmd = lastCommand(v);
+                          const busy = cmd && (cmd.status === "pending" || cmd.status === "running");
+                          const removed = cmd?.command_type === "remove_app" && cmd.status === "done";
+                          const failed = cmd?.status === "failed";
+                          return (
+                            <div className="flex items-center gap-2 justify-end flex-wrap">
+                              {busy && (
+                                <span className="text-xs" style={{ color: "var(--c-muted)" }}>
+                                  {cmd!.command_type === "remove_app" ? "Removing…" : "Restoring…"}
+                                </span>
+                              )}
+                              {failed && (
+                                <span className="text-xs" style={{ color: "#ef4444" }} title={cmd!.result ?? ""}>
+                                  {cmd!.command_type === "remove_app" ? "Remove failed" : "Restore failed"}
+                                </span>
+                              )}
+                              {removed && !busy && (
+                                <>
+                                  <span className="text-xs font-medium" style={{ color: "#16a34a" }}>Removed (quarantined)</span>
+                                  <button
+                                    onClick={() => appAction.mutate({ device_id: v.device_id, app_name: v.app_name, command: "restore_app" })}
+                                    className="text-xs px-2 py-1 rounded" style={{ color: "var(--c-muted)", background: "var(--c-surface)" }}>
+                                    Restore
+                                  </button>
+                                </>
+                              )}
+                              {!v.resolved && !busy && !removed && (
+                                <button
+                                  onClick={() => appAction.mutate({ device_id: v.device_id, app_name: v.app_name, command: "remove_app" })}
+                                  className="text-xs px-2 py-1 rounded font-medium" style={{ color: "#fff", background: "#ef4444" }}>
+                                  Remove app
+                                </button>
+                              )}
+                              {!v.resolved && (
+                                <button onClick={() => resolveViolation.mutate(v.id)}
+                                  className="text-xs px-2 py-1 rounded" style={{ color: "#6366f1", background: "var(--c-surface)" }}>
+                                  Resolve
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   ))}

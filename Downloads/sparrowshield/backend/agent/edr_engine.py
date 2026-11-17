@@ -473,26 +473,196 @@ def enforce_app_filter(rest_url: str, anon_key: str, device_id: str, hostname: s
             })
         _raise_alert(rest_url, anon_key, device_id, hostname,
             rule_id=f"blocked_app:{hit[:40]}", severity="high",
-            message=f"Blocked application '{app_name}' is installed on {hostname}",
+            message=f"Blocked application '{app_name}' is installed on {hostname} — "
+                    f"remove it from App Filter → Violations",
             mitre="T1204")
+    # Running blocked apps are closed by the real-time loop (enforce_running_apps).
 
-    for proc in psutil.process_iter(["pid", "name"]):
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REAL-TIME ENFORCEMENT (every 15s): App Filter blocklist + Policy Manager rules
+# ══════════════════════════════════════════════════════════════════════════════
+
+APP_ENFORCE_INTERVAL = 15
+RULES_REFRESH_SEC    = 60
+APP_QUARANTINE_DIR   = os.path.join(QUARANTINE_DIR, "apps")
+_APP_ROOTS           = ("/Applications/",)
+_MIN_PATTERN         = 3          # never act on 1–2 character patterns ("a" would match everything)
+_policy_rules: list  = []
+_alerted_pids: set   = set()      # (rule_id, pid) already alerted, so a long-lived process alerts once
+
+
+def _app_bundle_of(exe: str) -> Optional[str]:
+    """'/Applications/Slack.app/Contents/MacOS/Slack' → '/Applications/Slack.app' (user apps only)."""
+    m = re.match(r"^(/Applications/.+?\.app|/Users/[^/]+/Applications/.+?\.app)/", exe or "")
+    return m.group(1) if m else None
+
+
+def sync_policy_rules(rest_url: str, anon_key: str, device_id: str):
+    """Policy Manager (block_rules) rules for macOS that target this device or all devices."""
+    global _policy_rules
+    rows = _get(rest_url, anon_key,
+                f"block_rules?enabled=eq.true&or=(device_id.is.null,device_id.eq.{device_id})"
+                f"&select=id,name,pattern,rule_type,action,platform,severity,mitre_id&limit=500")
+    _policy_rules = [
+        r for r in rows
+        if (r.get("platform") or "all") in ("all", "mac", "macos")
+        and r.get("rule_type") in ("process_name", "path")
+        and len((r.get("pattern") or "").strip()) >= _MIN_PATTERN
+    ]
+
+
+def _policy_hit(name: str, exe: str) -> Optional[dict]:
+    for r in _policy_rules:
+        pat = r["pattern"].strip().lower()
+        if r["rule_type"] == "process_name" and name.lower() == pat:
+            return r
+        if r["rule_type"] == "path" and pat in exe.lower():
+            return r
+    return None
+
+
+def enforce_running_apps(rest_url: str, anon_key: str, device_id: str, hostname: str):
+    """Close blocked apps and Policy-Manager-blocked processes; alert on 'alert' rules."""
+    blocklist = {p for p in _app_filter.get("blocklist", set()) if len(p) >= _MIN_PATTERN}
+    me = os.getpid()
+    live = set()
+    for proc in psutil.process_iter(["pid", "name", "exe"]):
         try:
-            pname = proc.info.get("name") or ""
-            hit = _matches(pname, blocklist)
-            if not hit:
+            pid, name, exe = proc.info["pid"], proc.info.get("name") or "", proc.info.get("exe") or ""
+            if pid in (0, 1, me):
                 continue
-            if auto_kill:
+            live.add(pid)
+
+            # App Filter: match the .app bundle name, so helpers and renderers go too.
+            bundle = _app_bundle_of(exe)
+            if bundle and blocklist:
+                app_name = os.path.basename(bundle)[:-4]
+                hit = _matches(app_name, blocklist)
+                if hit:
+                    proc.kill()
+                    logger.warning("[APP FILTER] Closed blocked app %s (PID %d)", app_name, pid)
+                    if exe.startswith(bundle + "/Contents/MacOS/"):   # report main process only
+                        _post_security_event(rest_url, anon_key, device_id, hostname,
+                            event_type="blocked_app_killed", severity="warning",
+                            description=f"Blocked app '{app_name}' was closed on {hostname}",
+                            details={"pid": pid, "app": app_name, "path": bundle, "rule": hit},
+                            mitre="T1204")
+                        _raise_alert(rest_url, anon_key, device_id, hostname,
+                            rule_id=f"blocked_app:{hit[:40]}", severity="high",
+                            message=f"Blocked application '{app_name}' was opened and closed on {hostname} — "
+                                    f"remove it from App Filter → Violations",
+                            mitre="T1204")
+                    continue
+
+            # Policy Manager rules.
+            rule = _policy_hit(name, exe)
+            if not rule:
+                continue
+            key = (rule["id"], pid)
+            if rule.get("action") == "block":
                 proc.kill()
-                logger.warning("[APP FILTER] Killed blocked app %s (PID %d)", pname, proc.info["pid"])
+                logger.warning("[POLICY] Blocked %s (PID %d) by rule '%s'", name, pid, rule.get("name"))
+            elif key in _alerted_pids:
+                continue
+            _alerted_pids.add(key)
+            verb = "blocked" if rule.get("action") == "block" else "detected"
             _post_security_event(rest_url, anon_key, device_id, hostname,
-                event_type="blocked_app_killed" if auto_kill else "blocked_app_running",
-                severity="warning",
-                description=f"Blocked app '{pname}' {'was terminated' if auto_kill else 'is running'} on {hostname}",
-                details={"pid": proc.info["pid"], "name": pname, "rule": hit},
-                mitre="T1204")
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                event_type=f"policy_{verb}", severity="high" if rule.get("severity") in ("high", "critical") else "warning",
+                description=f"Policy '{rule.get('name')}' {verb} '{name}' on {hostname}",
+                details={"pid": pid, "process": name, "path": exe, "rule_id": rule["id"]},
+                mitre=rule.get("mitre_id"))
+            _raise_alert(rest_url, anon_key, device_id, hostname,
+                rule_id=f"policy:{rule['id']}", severity=rule.get("severity") or "high",
+                message=f"Policy '{rule.get('name')}' {verb} '{name}' on {hostname}",
+                mitre=rule.get("mitre_id"))
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
+    _alerted_pids.intersection_update({k for k in _alerted_pids if k[1] in live})
+
+
+def app_enforcement_loop(rest_url: str, anon_key: str, device_id: str, hostname: str):
+    last_sync = 0.0
+    while True:
+        try:
+            if time.time() - last_sync > RULES_REFRESH_SEC:
+                sync_app_filter(rest_url, anon_key, get_device_group(rest_url, anon_key, device_id))
+                sync_policy_rules(rest_url, anon_key, device_id)
+                last_sync = time.time()
+            enforce_running_apps(rest_url, anon_key, device_id, hostname)
+        except Exception as e:
+            logger.warning("[APP FILTER] enforcement error: %s", e)
+        time.sleep(APP_ENFORCE_INTERVAL)
+
+
+def _find_app_bundles(app_name: str) -> list:
+    """Installed .app bundles for an app name: exact name match first, else name contains it."""
+    want = app_name.strip().lower().removesuffix(".app")
+    if len(want) < _MIN_PATTERN:
+        return []
+    roots = ["/Applications"] + [str(p) for p in Path("/Users").glob("*/Applications")]
+    found = []
+    for root in roots:
+        try:
+            for entry in os.scandir(root):
+                if entry.name.endswith(".app") and entry.is_dir(follow_symlinks=False):
+                    found.append(entry.path)
+        except OSError:
+            continue
+    exact = [p for p in found if os.path.basename(p)[:-4].lower() == want]
+    return exact or [p for p in found if want in os.path.basename(p)[:-4].lower()]
+
+
+def remove_app(app_name: str) -> dict:
+    """Admin-approved removal: close the app and move its bundle to quarantine (restorable)."""
+    bundles = _find_app_bundles(app_name)
+    if not bundles:
+        return {"removed": [], "message": f"'{app_name}' is not installed"}
+    os.makedirs(APP_QUARANTINE_DIR, exist_ok=True)
+    os.chmod(APP_QUARANTINE_DIR, 0o700)
+    removed = []
+    for bundle in bundles:
+        for proc in psutil.process_iter(["pid", "exe"]):
+            try:
+                if (proc.info.get("exe") or "").startswith(bundle + "/"):
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        ts   = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = os.path.join(APP_QUARANTINE_DIR, f"{ts}_{os.path.basename(bundle)}")
+        shutil.move(bundle, dest)
+        with open(dest + ".origin", "w") as f:
+            f.write(bundle)
+        logger.warning("[APP FILTER] Removed %s → %s", bundle, dest)
+        removed.append({"from": bundle, "quarantine": dest})
+    return {"removed": removed, "message": f"Removed {len(removed)} app bundle(s)"}
+
+
+def restore_app(app_name: str) -> dict:
+    """Undo remove_app: move the most recent quarantined bundle(s) of this app back."""
+    want = app_name.strip().lower().removesuffix(".app")
+    restored = []
+    if not os.path.isdir(APP_QUARANTINE_DIR):
+        return {"restored": [], "message": "nothing in quarantine"}
+    latest: dict = {}
+    for entry in sorted(os.scandir(APP_QUARANTINE_DIR), key=lambda e: e.name):
+        if not entry.name.endswith(".app"):
+            continue
+        origin_file = entry.path + ".origin"
+        if not os.path.exists(origin_file):
+            continue
+        origin = open(origin_file).read().strip()
+        if want in os.path.basename(origin)[:-4].lower():
+            latest[origin] = entry.path          # later timestamps win
+    for origin, qpath in latest.items():
+        if os.path.exists(origin):
+            continue
+        shutil.move(qpath, origin)
+        os.remove(qpath + ".origin")
+        restored.append(origin)
+        logger.warning("[APP FILTER] Restored %s", origin)
+    return {"restored": restored,
+            "message": f"Restored {len(restored)} app bundle(s)" if restored else f"no quarantined copy of '{app_name}'"}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

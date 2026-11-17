@@ -1939,6 +1939,12 @@ def main():
     t3 = threading.Thread(target=es_sensor_loop, args=(api_url, supabase_rest_url, anon_key, device_id), daemon=True)
     t3.start()
 
+    if _EDR_AVAILABLE:
+        # Closes blocked apps / Policy Manager matches within ~15s of launch.
+        threading.Thread(target=edr_engine.app_enforcement_loop,
+                         args=(supabase_rest_url, anon_key, device_id, platform.node()),
+                         daemon=True).start()
+
     heartbeat_loop(api_url, token, anon_key, device_id=device_id, rest_url=supabase_rest_url)
 
 
@@ -2274,7 +2280,31 @@ def handle_run_edr_scan(payload):
         return f"EDR scan error: {e}", False
 
 
+def handle_remove_app(payload):
+    """Admin-approved: close an app and move its .app bundle to quarantine (restorable)."""
+    if not _EDR_AVAILABLE:
+        return "edr_engine module not installed", False
+    app_name = (payload or {}).get("app_name", "")
+    try:
+        r = edr_engine.remove_app(app_name)
+        return json.dumps(r), bool(r["removed"]) or "not installed" in r["message"]
+    except Exception as e:
+        return f"remove_app error: {e}", False
+
+
+def handle_restore_app(payload):
+    if not _EDR_AVAILABLE:
+        return "edr_engine module not installed", False
+    try:
+        r = edr_engine.restore_app((payload or {}).get("app_name", ""))
+        return json.dumps(r), bool(r["restored"])
+    except Exception as e:
+        return f"restore_app error: {e}", False
+
+
 COMMAND_HANDLERS = {
+    "remove_app":               handle_remove_app,
+    "restore_app":              handle_restore_app,
     "run_edr_scan":             handle_run_edr_scan,
     "kill_process":             handle_kill_process,
     "optimize_memory":          handle_optimize_memory,
