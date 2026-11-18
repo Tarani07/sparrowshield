@@ -2016,6 +2016,59 @@ def update_loop():
         time.sleep(UPDATE_INTERVAL)
 
 
+NOTICE_POLL_SEC  = 60
+NOTICES_SEEN     = os.path.join(BASE_DIR, "notices_seen.json")
+_NOTICE_SCRIPT   = [
+    "on run argv",
+    "display dialog (item 1 of argv) with title (item 2 of argv) buttons {\"OK\"} "
+    "default button 1 with icon caution giving up after 3600",
+    "end run",
+]
+
+
+def _show_notice_to_user(message: str, title: str) -> bool:
+    """Pop up a dialog in the logged-in user's session (the agent runs as root)."""
+    user = subprocess.run(["stat", "-f", "%Su", "/dev/console"], capture_output=True, text=True).stdout.strip()
+    uid  = subprocess.run(["stat", "-f", "%u",  "/dev/console"], capture_output=True, text=True).stdout.strip()
+    if not user or user == "root" or not uid:
+        return False                     # nobody logged in yet — try again next poll
+    cmd = ["launchctl", "asuser", uid, "sudo", "-u", user, "osascript"]
+    for line in _NOTICE_SCRIPT:
+        cmd += ["-e", line]
+    cmd += [message, title]              # passed as argv, never interpolated into the script
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
+def notice_loop(rest_url: str, anon_key: str):
+    """Show each active IT notice once per Mac."""
+    headers = {"Authorization": f"Bearer {anon_key}", "apikey": anon_key}
+    try:
+        seen = set(json.load(open(NOTICES_SEEN)))
+    except (OSError, ValueError):
+        seen = set()
+    while True:
+        try:
+            now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            r = requests.get(
+                f"{rest_url}/it_notices?active=eq.true&or=(expires_at.is.null,expires_at.gt.{now})"
+                f"&select=id,message,sender&order=created_at.asc&limit=20",
+                headers=headers, timeout=15)
+            if r.status_code == 200:
+                for n in r.json():
+                    if n["id"] in seen:
+                        continue
+                    title = f"IT Notice — {n.get('sender') or 'IT Team'}"
+                    if _show_notice_to_user(n.get("message") or "", title):
+                        seen.add(n["id"])
+                        with open(NOTICES_SEEN, "w") as fh:
+                            json.dump(sorted(seen), fh)
+                        logger.info("Showed IT notice %s", n["id"])
+        except Exception as e:
+            logger.debug("notice loop error: %s", e)
+        time.sleep(NOTICE_POLL_SEC)
+
+
 def handle_update_agent(payload):
     try:
         return check_for_update(), True
@@ -2066,6 +2119,7 @@ def main():
     t3.start()
 
     threading.Thread(target=update_loop, daemon=True).start()
+    threading.Thread(target=notice_loop, args=(supabase_rest_url, anon_key), daemon=True).start()
 
     if _EDR_AVAILABLE:
         # Closes blocked apps / Policy Manager matches within ~15s of launch.
@@ -2433,6 +2487,18 @@ def handle_remove_app(payload):
         return f"remove_app error: {e}", False
 
 
+def handle_uninstall_software(payload):
+    """Device page 'Uninstall': close the app and move its bundle to quarantine (restorable)."""
+    if not _EDR_AVAILABLE:
+        return "edr_engine module not installed", False
+    name = (payload or {}).get("name") or (payload or {}).get("app_name") or ""
+    try:
+        r = edr_engine.remove_app(name)
+        return json.dumps(r), bool(r["removed"])
+    except Exception as e:
+        return f"uninstall error: {e}", False
+
+
 def handle_restore_app(payload):
     if not _EDR_AVAILABLE:
         return "edr_engine module not installed", False
@@ -2447,6 +2513,7 @@ COMMAND_HANDLERS = {
     "update_agent":             handle_update_agent,
     "sync_web_filter":          handle_sync_web_filter,
     "remove_app":               handle_remove_app,
+    "uninstall_software":       handle_uninstall_software,
     "restore_app":              handle_restore_app,
     "run_edr_scan":             handle_run_edr_scan,
     "kill_process":             handle_kill_process,

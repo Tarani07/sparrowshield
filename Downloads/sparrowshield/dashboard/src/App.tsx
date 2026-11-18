@@ -45,6 +45,7 @@ import ThreatHunt from "./pages/ThreatHunt";
 import AppFilter from "./pages/AppFilter";
 import WebFilter from "./pages/WebFilter";
 import DeviceGroups from "./pages/DeviceGroups";
+import ITNotices from "./pages/ITNotices";
 
 function ProtectedLayout() {
   const { session, loading } = useAuth();
@@ -102,6 +103,7 @@ function ProtectedLayout() {
           <Route path="/web-filter"   element={<WebFilter />} />
           <Route path="/app-filter"   element={<AppFilter />} />
           <Route path="/groups"       element={<DeviceGroups />} />
+          <Route path="/notices"      element={<ITNotices />} />
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />
