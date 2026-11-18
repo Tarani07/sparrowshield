@@ -77,6 +77,7 @@ interface HeartbeatBody {
   pending_update_count?: number;
   outdated_apps?: Record<string, unknown>[];
   agent_version?: string;
+  hostname?: string;
   bluetooth_devices?: Record<string, unknown>[];
   connected_displays?: Record<string, unknown>[];
   timemachine_enabled?: boolean;
@@ -190,6 +191,7 @@ Deno.serve(async (req) => {
     pending_update_count,
     outdated_apps,
     agent_version,
+    hostname,
     bluetooth_devices,
     connected_displays,
     timemachine_enabled,
@@ -298,6 +300,8 @@ Deno.serve(async (req) => {
   if (pending_update_count != null)    deviceUpdate.pending_update_count = pending_update_count;
   // outdated_apps is not a devices column — omitted intentionally
   if (agent_version != null)           deviceUpdate.agent_version = agent_version;
+  // Keep the console in sync when the Mac is renamed (System Settings → About → Name).
+  if (typeof hostname === "string" && hostname.trim()) deviceUpdate.hostname = hostname.trim().slice(0, 255);
   if (bluetooth_devices != null)       deviceUpdate.bluetooth_devices = bluetooth_devices;
   if (connected_displays != null)      deviceUpdate.connected_displays = connected_displays;
   if (timemachine_enabled != null)     deviceUpdate.timemachine_enabled = timemachine_enabled;

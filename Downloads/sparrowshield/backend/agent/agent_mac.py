@@ -146,7 +146,7 @@ def save_config(config):
 
 
 def enroll(api_url: str, config: dict) -> bool:
-    hostname = platform.node()
+    hostname = get_computer_name()
     try:
         sn = subprocess.run(
             ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
@@ -1235,6 +1235,19 @@ def get_login_items() -> dict:
     except Exception:
         return {"login_items": [], "login_item_count": 0}
 
+def get_computer_name() -> str:
+    """The name set in System Settings → General → About (what admins rename).
+    platform.node() returns the network hostname, which can lag or differ."""
+    try:
+        r = subprocess.run(["scutil", "--get", "ComputerName"], capture_output=True, text=True, timeout=5)
+        name = r.stdout.strip()
+        if r.returncode == 0 and name:
+            return name
+    except Exception:
+        pass
+    return platform.node()
+
+
 def get_proxy_configured() -> bool:
     try:
         r = subprocess.run(["networksetup", "-getwebproxy", "Wi-Fi"], capture_output=True, text=True, timeout=5)
@@ -1545,6 +1558,7 @@ def collect_metrics() -> dict:
         "pending_updates": pending.get("pending_updates"),
         "pending_update_count": pending.get("pending_update_count"),
         "agent_version": AGENT_VERSION,
+        "hostname": get_computer_name(),
         "timemachine_enabled": timemachine.get("timemachine_enabled"),
         "timemachine_last_backup": timemachine.get("timemachine_last_backup"),
         "proxy_configured": get_proxy_configured(),
@@ -1565,7 +1579,7 @@ def heartbeat_loop(api_url: str, token: str, anon_key: str = "", device_id: str 
     prev_remote_session = False
     prev_crash_count = 0
     first_run = True
-    hostname = platform.node()
+    hostname = get_computer_name()
 
     while True:
         try:
@@ -1868,7 +1882,7 @@ def get_top_processes(limit=20):
 def inventory_loop(api_url: str, token: str, anon_key: str = "",
                     device_id: str = "", rest_url: str = ""):
     last_apps_sent = 0
-    hostname = platform.node()
+    hostname = get_computer_name()
     _EDR_CTX.update(rest_url=rest_url, anon_key=anon_key, device_id=device_id, hostname=hostname)
     first_cycle = True
 
@@ -2124,7 +2138,7 @@ def main():
     if _EDR_AVAILABLE:
         # Closes blocked apps / Policy Manager matches within ~15s of launch.
         threading.Thread(target=edr_engine.app_enforcement_loop,
-                         args=(supabase_rest_url, anon_key, device_id, platform.node()),
+                         args=(supabase_rest_url, anon_key, device_id, get_computer_name()),
                          daemon=True).start()
 
     heartbeat_loop(api_url, token, anon_key, device_id=device_id, rest_url=supabase_rest_url)
