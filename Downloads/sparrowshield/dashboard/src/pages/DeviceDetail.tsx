@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Apple, Monitor, Cpu, MemoryStick, Activity, Zap, CheckCircle2, Clock, AlertCircle, Trash2, RefreshCw, Layers, RotateCcw } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import TopBar from "../components/layout/TopBar";
+import { Badge, Button } from "../components/ui";
 import HealthGauge from "../components/device/HealthGauge";
 import AIDiagnosisCard from "../components/device/AIDiagnosisCard";
 import MetricBar from "../components/device/MetricBar";
@@ -57,32 +58,34 @@ export default function DeviceDetail() {
   const { data: threatTimeline = [], isLoading: timelineLoading } = useThreatTimeline(id);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [restartState, setRestartState] = useState<"idle" | "confirm" | "sending" | "sent" | "error">("idle");
 
   async function deleteDevice() {
     if (!id) return;
-    setDeleting(true);
+    setDeleting(true); setDeleteError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch(
+      const r = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-device?id=${id}`,
         { method: "DELETE", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } }
       );
+      if (!r.ok) throw new Error(`Server returned ${r.status}`);
+      setShowDeleteConfirm(false);
       navigate("/devices", { replace: true });
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setDeleting(false);
-      setShowDeleteConfirm(false);
     }
   }
 
   async function queueRestart() {
     if (!id) return;
-    await supabase.from("device_commands").insert({
-      device_id: id,
-      command_type: "restart_device",
-      status: "pending",
-      payload: {},
-      created_at: new Date().toISOString(),
-    });
+    setRestartState("sending");
+    const { error } = await supabase.from("device_commands").insert({ device_id: id, command_type: "restart_device", payload: {} });
+    setRestartState(error ? "error" : "sent");
+    setTimeout(() => setRestartState("idle"), 6000);
   }
 
   const latest = reports[0];
@@ -142,79 +145,54 @@ export default function DeviceDetail() {
       <TopBar title="Device Detail" />
 
       <div className="flex-1 overflow-y-auto p-6 space-y-5">
-        {/* Back + header */}
-        <div>
-          <Link to="/" className="inline-flex items-center gap-1.5 text-xs transition-colors mb-3" style={{ color: "var(--c-muted)" }}>
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Fleet
-          </Link>
-
-          <div className="flex items-start justify-between flex-wrap gap-3">
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                {device?.os_type === "mac"
-                  ? <Apple className="w-5 h-5" style={{ color: "var(--c-muted)" }} />
-                  : <Monitor className="w-5 h-5" style={{ color: "var(--c-muted)" }} />}
-                <span className={cn(
-                  "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2",
-                  isOnline ? "bg-green-500" : "bg-slate-600"
-                )} style={{ borderColor: "var(--c-bg)" }} />
+        {/* Header */}
+        <div className="pb-1">
+          <nav className="flex items-center gap-1 text-[11px] font-medium mb-1.5" style={{ color: "var(--c-muted)" }}>
+            <Link to="/devices" className="hover:underline inline-flex items-center gap-1"><ArrowLeft className="w-3 h-3" /> All Devices</Link>
+            <span className="opacity-60">/</span><span>{device?.hostname ?? "Device"}</span>
+          </nav>
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-11 h-11 rounded-lg border flex items-center justify-center shrink-0" style={{ background: "var(--c-card2)", borderColor: "var(--c-border2)" }}>
+                {device?.os_type === "windows"
+                  ? <Monitor className="w-5 h-5" style={{ color: "var(--sev-low)" }} />
+                  : <Apple className="w-5 h-5" style={{ color: "var(--c-strong)" }} />}
               </div>
-              <div>
-                <h1 className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{device?.hostname ?? "—"}</h1>
-                <p className="text-xs" style={{ color: "var(--c-muted)" }}>
-                  {device?.assigned_user ?? "Unassigned"} · {device?.os_type} {device?.os_version}
-                </p>
-                {device?.agent_version && (
-                  <p className="text-[11px] mt-0.5" style={{ color: "var(--c-muted)" }}>
-                    Agent {device.agent_version}
-                    {latestAgent && device.agent_version !== "pkg" && (
-                      device.agent_version === latestAgent
-                        ? <span style={{ color: "#16a34a" }}> · up to date</span>
-                        : <span style={{ color: "#d97706" }}> · updating to {latestAgent} (auto, within 1h)</span>
-                    )}
-                  </p>
-                )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-[22px] leading-7 font-semibold tracking-tight truncate" style={{ color: "var(--c-strong)" }}>{device?.hostname ?? "—"}</h1>
+                  <Badge tone={isOnline ? "ok" : "neutral"} dot>{isOnline ? "Online" : "Offline"}</Badge>
+                  {device?.agent_version && latestAgent && device.agent_version !== "pkg" && (
+                    device.agent_version === latestAgent
+                      ? <Badge tone="ok">Agent up to date</Badge>
+                      : <Badge tone="medium">Agent updating to {latestAgent}</Badge>
+                  )}
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]" style={{ color: "var(--c-muted)" }}>
+                  <span>{device?.assigned_user || "Unassigned"}</span>
+                  <span>{device?.os_type === "windows" ? "Windows" : "macOS"} {device?.os_version}</span>
+                  {device?.serial_number && <span className="font-mono">S/N {device.serial_number}</span>}
+                  {device?.cpu_model && <span className="inline-flex items-center gap-1"><Cpu className="w-3.5 h-3.5" />{device.cpu_model}</span>}
+                  {device?.ram_total_gb && <span className="inline-flex items-center gap-1"><MemoryStick className="w-3.5 h-3.5" />{device.ram_total_gb} GB</span>}
+                  {device?.agent_version && <span className="font-mono">Agent {device.agent_version}</span>}
+                  {device?.last_seen && <span>Last seen {timeAgo(device.last_seen)}</span>}
+                </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Device specs */}
-              <div className="flex items-center gap-4 text-xs mr-2" style={{ color: "var(--c-muted)" }}>
-                {device?.cpu_model && (
-                  <div className="flex items-center gap-1.5">
-                    <Cpu className="w-3.5 h-3.5" />
-                    <span>{device.cpu_model}</span>
-                  </div>
-                )}
-                {device?.ram_total_gb && (
-                  <div className="flex items-center gap-1.5">
-                    <MemoryStick className="w-3.5 h-3.5" />
-                    <span>{device.ram_total_gb} GB RAM</span>
-                  </div>
-                )}
-                {device?.serial_number && (
-                  <span className="font-mono" style={{ color: "var(--c-faint)" }}>S/N: {device.serial_number}</span>
-                )}
-              </div>
-
-              {/* Management actions */}
-              <button
-                onClick={queueRestart}
-                title="Restart Device"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{ background: "rgba(168,85,247,0.1)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}
-              >
-                <RotateCcw className="w-3.5 h-3.5" /> Restart
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(true)}
-                title="Delete Device"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}
-              >
-                <Trash2 className="w-3.5 h-3.5" /> Delete
-              </button>
+              {restartState === "confirm" ? (
+                <>
+                  <span className="text-[12px]" style={{ color: "var(--c-text)" }}>Restart now? Unsaved work is lost.</span>
+                  <Button size="sm" onClick={() => setRestartState("idle")}>Cancel</Button>
+                  <Button size="sm" variant="danger" onClick={queueRestart}>Restart</Button>
+                </>
+              ) : (
+                <Button icon={RotateCcw} onClick={() => setRestartState("confirm")} disabled={restartState === "sending"}>
+                  {restartState === "sending" ? "Sending…" : restartState === "sent" ? "Restart queued ✓" : restartState === "error" ? "Failed — retry" : "Restart"}
+                </Button>
+              )}
+              <Button variant="danger" icon={Trash2} onClick={() => { setDeleteError(null); setShowDeleteConfirm(true); }}>Remove</Button>
             </div>
           </div>
         </div>
@@ -325,8 +303,8 @@ export default function DeviceDetail() {
           />
         )}
 
-        {/* Optimizer Panel */}
-        <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
+        {/* Optimizer Panel — macOS agent only */}
+        {device?.os_type !== "windows" && <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
           <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: "1px solid var(--c-border)" }}>
             <div>
               <h2 className="text-sm font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
@@ -383,7 +361,7 @@ export default function DeviceDetail() {
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {/* Top 10 Apps + Optimizer */}
         <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
@@ -579,7 +557,9 @@ export default function DeviceDetail() {
             </div>
             <p className="text-sm mb-5" style={{ color: "var(--c-text)" }}>
               Remove <span className="font-semibold" style={{ color: "var(--c-strong)" }}>{device?.hostname}</span> and all its metrics, alerts, and history from the dashboard?
+              The agent is not uninstalled; if it keeps running it will enroll again.
             </p>
+            {deleteError && <p className="text-[12.5px] -mt-3 mb-4" style={{ color: "var(--sev-critical)" }}>Could not remove: {deleteError}</p>}
             <div className="flex gap-3">
               <button
                 onClick={() => setShowDeleteConfirm(false)}

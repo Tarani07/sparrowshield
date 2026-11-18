@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { Megaphone, Send, Trash2 } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
+import { Page, PageHeader, Panel, Badge, Button, inputClass } from "../components/ui";
 
 interface Notice {
   id: string;
@@ -70,65 +71,45 @@ export default function ITNotices() {
 
   const isLive = (n: Notice) => n.active && (!n.expires_at || new Date(n.expires_at) > new Date());
 
+  const live = notices.filter(isLive).length;
+
   return (
-    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }}>
+    <div className="flex flex-col min-h-full">
       <TopBar title="IT Notices" />
-      <div className="p-6 space-y-6 max-w-4xl">
-        <div>
-          <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
-            <Megaphone className="w-5 h-5" style={{ color: "#f59e0b" }} /> IT Notices
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-            Send a message to every Mac. It pops up for the logged-in user within about a minute and is
-            shown once per Mac. Macs that are asleep see it when they wake, until it expires.
-          </p>
-        </div>
+      <Page className="max-w-5xl">
+        <PageHeader
+          title="IT Notices"
+          icon={Megaphone}
+          crumbs={[{ label: "Operations" }, { label: "IT Notices" }]}
+          description="Broadcast a message to every Mac. It pops up for the logged-in user within about a minute, once per Mac; sleeping Macs see it when they wake, until it expires."
+          actions={<Badge tone={live ? "ok" : "neutral"} dot>{live} live</Badge>}
+        />
 
-        <form
-          onSubmit={e => { e.preventDefault(); if (message.trim()) send.mutate(); }}
-          className="rounded-xl border p-4 space-y-3"
-          style={{ borderColor: "var(--c-border)", background: "var(--c-surface)" }}
-        >
-          <textarea
-            value={message}
-            onChange={e => setMessage(e.target.value)}
-            rows={3}
-            maxLength={500}
-            placeholder="e.g. Please restart your Mac before 6 PM today to install security updates."
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y"
-            style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-strong)" }}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              value={sender}
-              onChange={e => setSender(e.target.value)}
-              placeholder="From"
-              className="px-3 py-2 rounded-lg text-sm outline-none w-40"
-              style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-strong)" }}
+        <Panel title="New notice" className="mb-4">
+          <form onSubmit={e => { e.preventDefault(); if (message.trim()) send.mutate(); }} className="space-y-3">
+            <textarea
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+              rows={3}
+              maxLength={500}
+              placeholder="e.g. Please restart your Mac before 6 PM today to install security updates."
+              className="w-full px-3 py-2 rounded-md border text-[13px] outline-none resize-y bg-[var(--c-card2)] border-[var(--c-border2)] text-[var(--c-strong)] focus:border-[var(--c-accent)]"
             />
-            <select
-              value={expiry}
-              onChange={e => setExpiry(Number(e.target.value))}
-              className="px-3 py-2 rounded-lg text-sm outline-none"
-              style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-strong)" }}
-            >
-              {EXPIRY_OPTIONS.map(o => <option key={o.hours} value={o.hours}>Expires: {o.label}</option>)}
-            </select>
-            <button
-              type="submit"
-              disabled={!message.trim() || send.isPending}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: "#f59e0b" }}
-            >
-              <Send className="w-4 h-4" /> {send.isPending ? "Sending…" : "Send to all Macs"}
-            </button>
-          </div>
-          {send.isError && (
-            <p className="text-xs" style={{ color: "#ef4444" }}>Could not send: {(send.error as Error).message}</p>
-          )}
-        </form>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={sender} onChange={e => setSender(e.target.value)} placeholder="From" className={`${inputClass} w-44`} aria-label="From" />
+              <select value={expiry} onChange={e => setExpiry(Number(e.target.value))} className={inputClass} aria-label="Expiry">
+                {EXPIRY_OPTIONS.map(o => <option key={o.hours} value={o.hours}>Expires: {o.label}</option>)}
+              </select>
+              <span className="text-[11.5px] tabular-nums" style={{ color: "var(--c-muted)" }}>{message.length}/500</span>
+              <Button type="submit" variant="primary" icon={Send} className="ml-auto" disabled={!message.trim() || send.isPending}>
+                {send.isPending ? "Sending…" : "Send to all Macs"}
+              </Button>
+            </div>
+            {send.isError && <p className="text-[12.5px]" style={{ color: "var(--sev-critical)" }}>Could not send: {(send.error as Error).message}</p>}
+          </form>
+        </Panel>
 
-        <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--c-border)" }}>
+        <Panel title="Sent notices" noPad>
           {isLoading ? (
             <div className="p-8 text-center text-sm" style={{ color: "var(--c-muted)" }}>Loading…</div>
           ) : notices.length === 0 ? (
@@ -163,8 +144,8 @@ export default function ITNotices() {
               ))}
             </ul>
           )}
-        </div>
-      </div>
+        </Panel>
+      </Page>
     </div>
   );
 }

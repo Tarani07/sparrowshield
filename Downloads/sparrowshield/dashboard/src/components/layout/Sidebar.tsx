@@ -1,329 +1,244 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import {
-  LayoutDashboard, BellRing, Activity, ChevronDown, ChevronUp,
-  Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
-  Info, Package, Shield, Download, ScanLine, Trash2,
-  Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio, Target, BarChart2, Crosshair,
-  Globe, Users, AppWindow, Megaphone,
+  LayoutDashboard, BellRing, ChevronDown, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
+  Info, Package, Shield, Download, ScanLine, Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
+  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ElementType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/ThemeContext";
 
-type NavItem = { to: string; label: string; icon: React.ElementType };
+type NavItem = { to: string; label: string; icon: ElementType; count?: number; tone?: string };
+type Section = { id: string; label?: string; items: NavItem[]; collapsible?: boolean; defaultOpen?: boolean };
 
-function SectionLabel({ label }: { label: string }) {
+const MAC_INSTALL = "curl -fsSL sparrowshield.vercel.app/mac | sudo bash";
+
+function useCount(key: string, build: () => PromiseLike<{ count: number | null }>) {
+  return useQuery<number>({
+    queryKey: [key],
+    queryFn: async () => (await build()).count ?? 0,
+    refetchInterval: 30_000,
+  }).data ?? 0;
+}
+
+function NavRow({ item }: { item: NavItem }) {
+  const Icon = item.icon;
   return (
-    <p className="px-4 mb-1 mt-1 text-[10px] font-bold uppercase tracking-widest"
-      style={{ color: "var(--c-faint)" }}>
-      {label}
-    </p>
+    <NavLink
+      to={item.to}
+      end={item.to === "/"}
+      className="group relative flex items-center gap-2.5 h-8 pl-3 pr-2 rounded-md text-[13px] transition-colors"
+      style={({ isActive }) => ({
+        background: isActive ? "var(--c-sb-active)" : undefined,
+        color: isActive ? "var(--c-sb-strong)" : "var(--c-sb-text)",
+        fontWeight: isActive ? 600 : 500,
+      })}
+    >
+      {({ isActive }) => (
+        <>
+          {isActive && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r" style={{ background: "var(--c-accent)" }} />}
+          <Icon className="w-4 h-4 shrink-0" style={{ color: isActive ? "#8fb0ff" : undefined }} />
+          <span className="flex-1 truncate group-hover:text-[var(--c-sb-strong)]">{item.label}</span>
+          {item.count ? (
+            <span className="min-w-[20px] h-[18px] px-1 rounded text-[10px] font-bold flex items-center justify-center tabular-nums"
+              style={{ background: item.tone ?? "#1c2740", color: item.tone ? "#fff" : "var(--c-sb-text)" }}>
+              {item.count > 99 ? "99+" : item.count}
+            </span>
+          ) : null}
+        </>
+      )}
+    </NavLink>
   );
 }
 
-function NavGroup({ items, badge, isLight }: {
-  items: NavItem[];
-  badge?: Record<string, number>;
-  isLight: boolean;
-}) {
+function NavSection({ section }: { section: Section }) {
+  const storageKey = `ss-nav-${section.id}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      const v = localStorage.getItem(storageKey);
+      return v == null ? section.defaultOpen !== false : v === "1";
+    } catch { return section.defaultOpen !== false; }
+  });
+  useEffect(() => { try { localStorage.setItem(storageKey, open ? "1" : "0"); } catch { /* ignore */ } }, [open, storageKey]);
+
   return (
-    <div className="space-y-0.5">
-      {items.map(({ to, label, icon: Icon }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={to === "/"}
-          style={({ isActive }) => isActive
-            ? {
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 16px",
-                borderRadius: 10,
-                fontSize: 13, fontWeight: 600,
-                background: "var(--c-nav-active-bg)",
-                color: "var(--c-nav-active)",
-                borderLeft: isLight ? "3px solid var(--c-primary)" : "none",
-              }
-            : {
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 16px",
-                borderRadius: 10,
-                fontSize: 13, fontWeight: 500,
-                color: "var(--c-muted)",
-                borderLeft: "3px solid transparent",
-              }
-          }
-          className="transition-all duration-150 hover:opacity-80"
+    <div>
+      {section.label && (
+        <button
+          onClick={() => section.collapsible !== false && setOpen(o => !o)}
+          className="w-full flex items-center justify-between px-3 pt-4 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.09em]"
+          style={{ color: "#62718f" }}
         >
-          {({ isActive }) => (
-            <>
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="flex-1">{label}</span>
-              {badge?.[to] ? (
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold"
-                  style={{
-                    background: isActive ? "var(--c-primary-bg)" : "var(--c-border2)",
-                    color: isActive ? "var(--c-nav-active)" : "var(--c-muted)",
-                  }}>
-                  {badge[to]}
-                </span>
-              ) : null}
-            </>
+          {section.label}
+          {section.collapsible !== false && (
+            <ChevronDown className="w-3 h-3 transition-transform" style={{ transform: open ? undefined : "rotate(-90deg)" }} />
           )}
-        </NavLink>
-      ))}
+        </button>
+      )}
+      {open && <div className="space-y-px">{section.items.map(i => <NavRow key={i.to} item={i} />)}</div>}
+    </div>
+  );
+}
+
+function DeployMenu() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  function download(url: string, filename: string) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setOpen(false);
+  }
+
+  async function copy() {
+    try { await navigator.clipboard.writeText(MAC_INSTALL); } catch { /* clipboard blocked */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full h-8 rounded-md text-[12.5px] font-semibold flex items-center justify-center gap-2 transition-[filter] hover:brightness-110"
+        style={{ background: "var(--c-accent)", color: "#fff" }}
+      >
+        <Rocket className="w-3.5 h-3.5" /> Deploy agent
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 right-0 mb-2 rounded-lg border p-3 shadow-2xl z-30"
+          style={{ background: "#0f1626", borderColor: "#283453" }}>
+          <p className="text-[11px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "#8b9ab8" }}>macOS — one line</p>
+          <div className="flex items-center gap-1.5 rounded-md border px-2 py-1.5" style={{ background: "#0a0f1a", borderColor: "#1c2740" }}>
+            <code className="flex-1 text-[10.5px] font-mono truncate" style={{ color: "#dbe6ff" }}>{MAC_INSTALL}</code>
+            <button onClick={copy} className="p-1 rounded hover:bg-white/10" style={{ color: copied ? "#34d399" : "#8b9ab8" }} aria-label="Copy install command">
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          <p className="text-[10.5px] mt-1.5 leading-snug" style={{ color: "#8b9ab8" }}>Run in Terminal on the Mac. Agents update themselves hourly.</p>
+          <div className="mt-3 space-y-px">
+            {[
+              { label: "macOS installer (.sh)", icon: Apple, file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
+              { label: "Windows installer (.bat)", icon: Monitor, file: "/agents/SparrowShieldInstaller.bat", dl: "SparrowShieldInstaller.bat" },
+            ].map(i => (
+              <button key={i.label} onClick={() => download(i.file, i.dl)}
+                className="w-full flex items-center gap-2 h-8 px-2 rounded-md text-[12px] hover:bg-white/5" style={{ color: "#c3cde0" }}>
+                <i.icon className="w-3.5 h-3.5 opacity-80" />
+                <span className="flex-1 text-left">{i.label}</span>
+                <Download className="w-3.5 h-3.5 opacity-60" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function Sidebar() {
   const { theme, toggle } = useTheme();
-  const isLight = theme === "light";
-  const [expanded, setExpanded] = useState(false);
+  const location = useLocation();
+  // Below the lg breakpoint the sidebar is an overlay opened from the top bar's menu button.
+  const [mobileOpen, setMobileOpen] = useState(false);
+  useEffect(() => {
+    const t = () => setMobileOpen(o => !o);
+    window.addEventListener("ss-toggle-nav", t);
+    return () => window.removeEventListener("ss-toggle-nav", t);
+  }, []);
+  useEffect(() => { setMobileOpen(false); }, [location.pathname]);
 
-  const { data: macCount = 0 } = useQuery<number>({
-    queryKey: ["mac-device-count"],
-    queryFn: async () => {
-      const { count } = await supabase.from("devices")
-        .select("*", { count: "exact", head: true })
-        .in("os_type", ["mac", "macos", "darwin"]);
-      return count ?? 0;
-    },
-    refetchInterval: 30_000,
-  });
+  const macCount = useCount("mac-device-count", () =>
+    supabase.from("devices").select("*", { count: "exact", head: true }).in("os_type", ["mac", "macos", "darwin"]));
+  const winCount = useCount("win-device-count", () =>
+    supabase.from("devices").select("*", { count: "exact", head: true }).eq("os_type", "windows"));
+  const alertCount = useCount("open-alert-count", () =>
+    supabase.from("alerts").select("*", { count: "exact", head: true }).eq("resolved", false));
 
-  const { data: winCount = 0 } = useQuery<number>({
-    queryKey: ["win-device-count"],
-    queryFn: async () => {
-      const { count } = await supabase.from("devices")
-        .select("*", { count: "exact", head: true })
-        .eq("os_type", "windows");
-      return count ?? 0;
-    },
-    refetchInterval: 30_000,
-  });
-
-
-  const { data: alertCount = 0 } = useQuery<number>({
-    queryKey: ["open-alert-count"],
-    queryFn: async () => {
-      const { count } = await supabase.from("alerts")
-        .select("*", { count: "exact", head: true })
-        .eq("resolved", false);
-      return count ?? 0;
-    },
-    refetchInterval: 30_000,
-  });
-
-  function downloadFile(url: string, filename: string) {
-    fetch(url)
-      .then(r => {
-        const ct = r.headers.get("content-type") ?? "";
-        if (!r.ok || ct.includes("text/html")) {
-          alert(`File not available: ${filename}`);
-          return;
-        }
-        return r.blob();
-      })
-      .then(blob => {
-        if (!blob) return;
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      })
-      .catch(() => alert(`Download failed: ${filename}`));
-  }
-
-  const alertBadge: Record<string, number> = {};
-  if (alertCount > 0) alertBadge["/alerts"] = alertCount;
-
-  const fleetNav: NavItem[] = [
-    { to: "/",        label: "Overview",    icon: LayoutDashboard },
-    { to: "/devices", label: "All Devices", icon: Laptop          },
-    { to: "/alerts",  label: "Alerts",      icon: BellRing        },
-    { to: "/groups",  label: "Device Groups", icon: Users         },
-  ];
-
-  const macNav: NavItem[] = [
-    { to: "/mac/devices", label: "Mac Devices",      icon: Apple    },
-    { to: "/mac/av",      label: "AV Scanner",       icon: ScanLine },
-    { to: "/mac/edr",     label: "EDR Detections",   icon: BellRing },
-    { to: "/mac/network", label: "Network Activity", icon: Network  },
-  ];
-
-  const winNav: NavItem[] = [
-    { to: "/windows/devices",   label: "Win Devices",    icon: Monitor  },
-    { to: "/windows/av",        label: "AV Scanner",     icon: ScanLine },
-    { to: "/windows/edr",       label: "EDR Detections", icon: BellRing },
-    { to: "/windows/isolation", label: "Host Isolation", icon: WifiOff  },
-  ];
-
-
-  const mgmtNav: NavItem[] = [
-    { to: "/web-filter",      label: "Web Filter",      icon: Globe      },
-    { to: "/app-filter",      label: "App Filter",      icon: AppWindow  },
-    { to: "/notices",         label: "IT Notices",      icon: Megaphone  },
-    { to: "/executive",       label: "Exec Summary",    icon: BarChart2  },
-    { to: "/threat-hunt",     label: "Threat Hunt",     icon: Crosshair  },
-    { to: "/policy",          label: "Policy Manager",  icon: Shield     },
-    { to: "/patches",         label: "Patches",         icon: Package    },
-    { to: "/compliance",      label: "Compliance",      icon: ShieldCheck},
-    { to: "/vulnerabilities", label: "Vulnerabilities", icon: Bug        },
-    { to: "/reports",         label: "Reports",         icon: FileText   },
-    { to: "/process-tree",    label: "Process Tree",    icon: GitBranch  },
-    { to: "/live-alerts",     label: "Live Alerts",     icon: Radio      },
-    { to: "/mitre",           label: "ATT&CK Matrix",   icon: Target     },
-  ];
-
-  const systemNav: NavItem[] = [
-    { to: "/settings", label: "Settings", icon: Settings },
-    { to: "/about",    label: "About",    icon: Info     },
+  const sections: Section[] = [
+    { id: "home", items: [
+      { to: "/", label: "Overview", icon: LayoutDashboard },
+      { to: "/alerts", label: "Alerts", icon: BellRing, count: alertCount, tone: alertCount ? "#e11d48" : undefined },
+      { to: "/live-alerts", label: "Live Activity", icon: Radio },
+    ]},
+    { id: "endpoints", label: "Endpoints", items: [
+      { to: "/devices", label: "All Devices", icon: Laptop, count: macCount + winCount },
+      { to: "/mac/devices", label: "macOS", icon: Apple, count: macCount },
+      { to: "/windows/devices", label: "Windows", icon: Monitor, count: winCount },
+      { to: "/groups", label: "Device Groups", icon: Users },
+    ]},
+    { id: "detect", label: "Detection & Response", items: [
+      { to: "/mac/edr", label: "Detections", icon: Crosshair },
+      { to: "/mac/av", label: "Malware Scanner", icon: ScanLine },
+      { to: "/threat-hunt", label: "Threat Hunting", icon: Target },
+      { to: "/process-tree", label: "Process Tree", icon: GitBranch },
+      { to: "/mac/network", label: "Network Activity", icon: Network },
+      { to: "/mitre", label: "MITRE ATT&CK", icon: Shield },
+    ]},
+    { id: "policy", label: "Protection Policies", items: [
+      { to: "/app-filter", label: "Application Control", icon: AppWindow },
+      { to: "/web-filter", label: "Web Filtering", icon: Globe },
+      { to: "/policy", label: "Process Policies", icon: ShieldCheck },
+    ]},
+    { id: "vuln", label: "Vulnerability & Compliance", items: [
+      { to: "/vulnerabilities", label: "Vulnerabilities", icon: Bug },
+      { to: "/patches", label: "Patch Management", icon: Package },
+      { to: "/compliance", label: "Compliance", icon: ShieldCheck },
+    ]},
+    { id: "ops", label: "Operations", items: [
+      { to: "/notices", label: "IT Notices", icon: Megaphone },
+      { to: "/reports", label: "Reports", icon: FileText },
+      { to: "/executive", label: "Executive Summary", icon: BarChart2 },
+    ]},
+    { id: "win", label: "Windows Console", defaultOpen: false, items: [
+      { to: "/windows/av", label: "Windows Antivirus", icon: ScanLine },
+      { to: "/windows/edr", label: "Windows Detections", icon: Crosshair },
+      { to: "/windows/isolation", label: "Host Isolation", icon: WifiOff },
+    ]},
   ];
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-56 flex flex-col z-20"
-      style={{
-        background: "var(--c-sidebar-bg)",
-        borderRight: "1px solid var(--c-border)",
-        transition: "background 0.2s",
-      }}>
-
-      {/* Logo */}
-      <div className="px-4 pt-6 pb-5" style={{ borderBottom: "1px solid var(--c-border)" }}>
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: "linear-gradient(135deg, #1B5E37, #2E7D52)" }}>
-            <Shield className="w-4 h-4 text-white" />
-          </div>
-          <div>
-            <p className="text-sm font-bold leading-none tracking-tight" style={{ color: "var(--c-strong)" }}>SparrowShield</p>
-            <p className="text-[10px] mt-1" style={{ color: "var(--c-muted)" }}>Security Platform</p>
-          </div>
+    <>
+    {mobileOpen && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setMobileOpen(false)} />}
+    <aside className={`fixed left-0 top-0 h-full w-60 flex flex-col border-r transition-transform z-40 lg:z-20 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+      style={{ background: "var(--c-sb-bg)", borderColor: "var(--c-sb-border)" }}>
+      {/* Brand */}
+      <div className="h-14 px-4 flex items-center gap-2.5 border-b shrink-0" style={{ borderColor: "var(--c-sb-border)" }}>
+        <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: "linear-gradient(135deg,#10b981,#047857)" }}>
+          <Shield className="w-4 h-4 text-white" />
+        </div>
+        <div className="leading-tight">
+          <p className="text-[14px] font-semibold tracking-tight" style={{ color: "var(--c-sb-strong)" }}>SparrowShield</p>
+          <p className="text-[10.5px] font-medium" style={{ color: "#62718f" }}>Endpoint Security Console</p>
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-2 py-4 space-y-5 overflow-y-auto">
-
-        <div>
-          <SectionLabel label="Menu" />
-          <NavGroup items={fleetNav} badge={alertBadge} isLight={isLight} />
-        </div>
-
-        <div>
-          <div className="flex items-center gap-2 px-4 mb-1">
-            <Apple className="w-3 h-3" style={{ color: "#a78bfa" }} />
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>macOS</p>
-            {macCount > 0 && (
-              <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(167,139,250,0.15)", color: "#a78bfa" }}>
-                {macCount}
-              </span>
-            )}
-          </div>
-          <NavGroup items={macNav} isLight={isLight} />
-        </div>
-
-        <div>
-          <div className="flex items-center gap-2 px-4 mb-1">
-            <Monitor className="w-3 h-3" style={{ color: "#60a5fa" }} />
-            <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "var(--c-faint)" }}>Windows</p>
-            {winCount > 0 && (
-              <span className="ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded"
-                style={{ background: "rgba(96,165,250,0.15)", color: "#60a5fa" }}>
-                {winCount}
-              </span>
-            )}
-          </div>
-          <NavGroup items={winNav} isLight={isLight} />
-        </div>
-
-
-        <div>
-          <SectionLabel label="Management" />
-          <NavGroup items={mgmtNav} isLight={isLight} />
-        </div>
-
-        <div>
-          <SectionLabel label="General" />
-          <NavGroup items={systemNav} isLight={isLight} />
-        </div>
-
+      <nav className="flex-1 overflow-y-auto px-2 pb-4">
+        {sections.map(s => <NavSection key={s.id} section={s} />)}
       </nav>
 
       {/* Footer */}
-      <div className="mx-3 mb-3 rounded-xl p-4 space-y-3"
-        style={{ background: "linear-gradient(135deg, #1B5E37, #154D2D)", flexShrink: 0 }}>
-        <div className="flex items-center gap-2">
-          <Shield className="w-4 h-4 text-white opacity-80" />
-          <span className="text-xs font-semibold text-white">Quick Deploy</span>
-        </div>
-        <p className="text-[10px] text-white opacity-60 leading-relaxed">
-          Install agents on your devices to start monitoring
-        </p>
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="w-full py-1.5 rounded-lg text-[11px] font-semibold text-center transition-all flex items-center justify-center gap-1.5"
-          style={{ background: "rgba(255,255,255,0.15)", color: "#fff" }}
-          onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.25)")}
-          onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.15)")}
-        >
-          <Download className="w-3 h-3" />
-          Get Agent
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      <div className="shrink-0 border-t px-2 py-2 space-y-px" style={{ borderColor: "var(--c-sb-border)" }}>
+        <NavRow item={{ to: "/settings", label: "Settings", icon: Settings }} />
+        <NavRow item={{ to: "/about", label: "About & Docs", icon: Info }} />
+        <button onClick={toggle}
+          className="w-full flex items-center gap-2.5 h-8 pl-3 pr-2 rounded-md text-[13px] font-medium hover:text-[var(--c-sb-strong)]"
+          style={{ color: "var(--c-sb-text)" }}>
+          {theme === "dark" ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          {theme === "dark" ? "Light theme" : "Dark theme"}
         </button>
-
-        {expanded && (
-          <div className="mt-2 rounded-lg overflow-hidden" style={{ background: "rgba(0,0,0,0.25)" }}>
-            {[
-              { label: "macOS Sensor (.py)",   icon: Apple,    file: "/agents/agent_mac.py",                dl: "agent_mac.py"                 },
-              { label: "macOS Install (.sh)",  icon: Apple,    file: "/agents/SparrowShield-Mac-Install.sh", dl: "SparrowShield-Mac-Install.sh" },
-              { label: "Windows Installer",    icon: Monitor,  file: "/agents/SparrowShieldInstaller.bat",   dl: "SparrowShieldInstaller.bat"   },
-              { label: "Windows Sensor (.py)", icon: Monitor,  file: "/agents/agent_windows.py",             dl: "agent_windows.py"             },
-            ].map(item => (
-              <button
-                key={item.label}
-                onClick={() => downloadFile(item.file, item.dl)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left transition-all"
-                style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-              >
-                <item.icon className="w-3 h-3 flex-shrink-0 opacity-70" />
-                <span>{item.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {/* Theme toggle in footer */}
-        <div className="flex items-center justify-between pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          <div className="flex items-center gap-1.5">
-            {theme === "dark" ? <Moon className="w-3 h-3 text-white opacity-60" /> : <Sun className="w-3 h-3 text-white opacity-60" />}
-            <span className="text-[10px] text-white opacity-60">{theme === "dark" ? "Dark" : "Light"}</span>
-          </div>
-          <button
-            onClick={toggle}
-            className="relative flex-shrink-0 rounded-full transition-all"
-            style={{
-              width: 32, height: 18,
-              background: "rgba(255,255,255,0.2)",
-              border: "1px solid rgba(255,255,255,0.3)",
-            }}
-            aria-label="Toggle theme"
-          >
-            <span
-              className="absolute top-0.5 rounded-full transition-all duration-200"
-              style={{
-                width: 14, height: 14,
-                background: "#ffffff",
-                left: theme === "dark" ? 1 : 15,
-              }}
-            />
-          </button>
-        </div>
+        <div className="pt-2 px-1"><DeployMenu /></div>
       </div>
     </aside>
+    </>
   );
 }

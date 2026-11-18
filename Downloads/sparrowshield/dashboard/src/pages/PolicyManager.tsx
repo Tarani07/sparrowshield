@@ -79,6 +79,7 @@ export default function PolicyManager() {
   const { data: rules = [], isLoading } = useBlockRules();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BlockRule | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
 
@@ -89,7 +90,7 @@ export default function PolicyManager() {
 
   async function saveRule() {
     if (!form.name || !form.pattern) return;
-    setSaving(true);
+    setSaving(true); setSaveError(null);
     try {
       const { error } = await supabase.from("block_rules").insert({
         name:        form.name,
@@ -107,7 +108,7 @@ export default function PolicyManager() {
       setForm({ ...EMPTY_FORM });
       qc.invalidateQueries({ queryKey: ["block-rules"] });
     } catch (e) {
-      if (import.meta.env.DEV) console.error("Save rule failed:", e);
+      setSaveError(e instanceof Error ? e.message : "Could not save rule");
     } finally {
       setSaving(false);
     }
@@ -169,7 +170,7 @@ export default function PolicyManager() {
           <p className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>
             Block Rules
             <span className="ml-2 px-2 py-0.5 rounded-full text-xs"
-              style={{ background: "rgba(27,94,55,0.15)", color: "#1B5E37", border: "1px solid rgba(27,94,55,0.25)" }}>
+              style={{ background: "rgba(27,94,55,0.15)", color: "var(--c-primary)", border: "1px solid rgba(27,94,55,0.25)" }}>
               {totalRules}
             </span>
           </p>
@@ -404,6 +405,9 @@ export default function PolicyManager() {
               </div>
             </div>
 
+            {saveError && (
+              <p className="px-6 pt-3 text-[12.5px]" style={{ color: "var(--sev-critical)" }}>Could not save: {saveError}</p>
+            )}
             <div className="px-6 py-4 flex gap-3" style={{ borderTop: "1px solid var(--c-border)" }}>
               <button onClick={() => setDrawerOpen(false)}
                 className="flex-1 py-2 rounded-xl text-sm transition-colors"

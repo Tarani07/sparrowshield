@@ -1,336 +1,257 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { CheckCircle, ExternalLink, ShieldAlert, ThumbsUp, X, Zap, Clock } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import TopBar from "../components/layout/TopBar";
-import { useAlerts, useResolveAlert } from "../hooks/useAlerts";
-import { cn, healthBadge, timeAgo } from "../lib/utils";
+import { ShieldAlert, Flame, AlertTriangle, Info, CheckCircle2, ExternalLink, RotateCcw, Check, X, Laptop } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { timeAgo } from "../lib/utils";
+import TopBar from "../components/layout/TopBar";
+import {
+  Page, PageHeader, Panel, StatTile, DataTable, SeverityBadge, Badge, Button, Drawer, KeyValue, Tabs,
+  SEVERITY_ORDER, type Column, type FilterDef,
+} from "../components/ui";
 
-const SEVERITY_FILTERS = [
-  { key: "all", label: "All" },
-  { key: "critical", label: "🔴 Critical" },
-  { key: "warning", label: "⚠️ Warning" },
-];
-
-const ALERT_TYPE_LABELS: Record<string, string> = {
-  high_disk: "High Disk Usage",
-  high_ram: "High RAM Usage",
-  device_offline: "Device Offline",
-  low_battery: "Low Battery",
-  encryption_disabled: "Encryption Off",
-  firewall_disabled: "Firewall Off",
+type AlertRow = {
+  id: string; device_id: string; alert_type: string; severity: string; message: string; resolved: boolean;
+  created_at: string; resolved_at: string | null; mitre_technique: string | null; rule_id: string | null;
+  threat_score: number | null; devices: { hostname: string } | null;
 };
+type PendingCommand = { id: string; device_id: string; command_type: string; payload: Record<string, unknown>; created_at: string; devices?: { hostname: string } };
+type SecEvent = { id: string; event_type: string; severity: string; description: string; created_at: string };
 
-const ACTION_LABELS: Record<string, { label: string; color: string; icon: string }> = {
-  kill_process: { label: "Kill Process", color: "text-red-400 bg-red-500/10 border-red-500/30", icon: "🔪" },
-  optimize_memory: { label: "Optimize Memory", color: "text-blue-400 bg-blue-500/10 border-blue-500/30", icon: "🧹" },
-  clear_cache: { label: "Clear Cache", color: "text-amber-400 bg-amber-500/10 border-amber-500/30", icon: "🗑️" },
-  restart_ui: { label: "Restart UI", color: "text-purple-400 bg-purple-500/10 border-purple-500/30", icon: "🔄" },
-  kill_background_services: { label: "Kill Background Services", color: "text-orange-400 bg-orange-500/10 border-orange-500/30", icon: "⚡" },
-  install_software: { label: "Install Software", color: "text-green-400 bg-green-500/10 border-green-500/30", icon: "📦" },
-  uninstall_software: { label: "Uninstall Software", color: "text-pink-400 bg-pink-500/10 border-pink-500/30", icon: "🗑️" },
-  install_updates: { label: "Install Updates", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/30", icon: "⬆️" },
+const TYPE_LABELS: Record<string, string> = {
+  blocked_app: "Blocked application", malware: "Malware", policy: "Process policy", firewall_disabled: "Firewall disabled",
+  device_offline: "Device offline", low_battery: "Low battery", encryption_disabled: "Encryption off",
+  high_cpu: "High CPU", high_ram: "High memory", disk_full: "Disk full", c2_connection: "C2 connection",
 };
-
-interface PendingCommand {
-  id: string;
-  device_id: string;
-  command_type: string;
-  payload: Record<string, unknown>;
-  status: string;
-  created_at: string;
-  devices?: { hostname: string };
-}
+const typeLabel = (t: string) => TYPE_LABELS[t] ?? t.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
+const normSev = (s: string) => (s === "warning" ? "medium" : s);
 
 export default function AlertCenter() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [showResolved, setShowResolved] = useState(false);
-  const [severityFilter, setSeverityFilter] = useState("all");
+  const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+  const [tab, setTab] = useState<"open" | "resolved" | "all">("open");
+  const [sev, setSev] = useState<string | null>(params.get("severity"));
+  const [selectedId, setSelectedId] = useState<string | null>(params.get("id"));
 
-  // Single query for ALL alerts — split client-side (avoids 2 network calls)
-  const { data: allAlerts = [], isLoading: loadingOpen } = useAlerts(undefined, undefined);
-  const openAlerts     = allAlerts.filter(a => !a.resolved);
-  const resolvedAlerts = allAlerts.filter(a =>  a.resolved);
-  const loadingResolved = false; // derived from same query
-  const { mutate: resolve, isPending } = useResolveAlert();
-
-  // ── Pending Approval Commands ──
-  const { data: pendingCommands = [], isLoading: loadingPending } = useQuery<PendingCommand[]>({
-    queryKey: ["pending-approvals"],
+  const { data: alerts = [], isLoading } = useQuery<AlertRow[]>({
+    queryKey: ["alerts", "center"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("device_commands")
-        .select("id, device_id, command_type, payload, status, created_at, devices(hostname)")
-        .eq("status", "awaiting_approval")
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("alerts")
+        .select("id, device_id, alert_type, severity, message, resolved, created_at, resolved_at, mitre_technique, rule_id, threat_score, devices(hostname)")
+        .order("created_at", { ascending: false }).limit(2000);
       if (error) throw error;
-      return (data ?? []) as unknown as PendingCommand[];
+      return (data ?? []) as unknown as AlertRow[];
     },
-    staleTime: 15_000,
+    refetchInterval: 20_000,
+  });
+
+  const { data: pending = [] } = useQuery<PendingCommand[]>({
+    queryKey: ["pending-approvals"],
+    queryFn: async () => (await supabase.from("device_commands")
+      .select("id, device_id, command_type, payload, created_at, devices(hostname)")
+      .eq("status", "awaiting_approval").order("created_at", { ascending: false })).data as unknown as PendingCommand[] ?? [],
     refetchInterval: 30_000,
   });
 
-  // Approve mutation
-  const approveMutation = useMutation({
-    mutationFn: async (commandId: string) => {
-      const { data, error } = await supabase.functions.invoke("approve-command", {
-        body: { command_id: commandId, action: "approve" },
-      });
+  const setResolved = useMutation({
+    mutationFn: async ({ id, resolved }: { id: string; resolved: boolean }) => {
+      const { error } = await supabase.from("alerts")
+        .update({ resolved, resolved_at: resolved ? new Date().toISOString() : null }).eq("id", id);
       if (error) throw error;
-      return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
-      queryClient.invalidateQueries({ queryKey: ["remediation-log"] });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["alerts"] }); qc.invalidateQueries({ queryKey: ["open-alert-count"] }); },
   });
 
-  // Dismiss mutation
-  const dismissMutation = useMutation({
-    mutationFn: async (commandId: string) => {
-      const { data, error } = await supabase.functions.invoke("approve-command", {
-        body: { command_id: commandId, action: "dismiss" },
-      });
+  const decide = useMutation({
+    mutationFn: async ({ id, action }: { id: string; action: "approve" | "dismiss" }) => {
+      const { error } = await supabase.functions.invoke("approve-command", { body: { command_id: id, action } });
       if (error) throw error;
-      return data;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pending-approvals"] });
-      queryClient.invalidateQueries({ queryKey: ["remediation-log"] });
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pending-approvals"] }),
   });
 
-  const alerts = showResolved ? resolvedAlerts : openAlerts;
+  // keep URL in sync so links like /alerts?severity=high work and are shareable
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (sev) next.set("severity", sev);
+    if (selectedId) next.set("id", selectedId);
+    setParams(next, { replace: true });
+  }, [sev, selectedId, setParams]);
 
-  const filtered = severityFilter === "all"
-    ? alerts
-    : alerts.filter((a) => a.severity === severityFilter);
+  const open = alerts.filter(a => !a.resolved);
+  const count = (s: string) => open.filter(a => normSev(a.severity) === s).length;
+  const resolved30 = alerts.filter(a => a.resolved && a.resolved_at && Date.now() - new Date(a.resolved_at).getTime() < 30 * 86400_000).length;
 
-  const isLoading = showResolved ? loadingResolved : loadingOpen;
+  const rows = useMemo(() => alerts
+    .filter(a => (tab === "open" ? !a.resolved : tab === "resolved" ? a.resolved : true))
+    .filter(a => !sev || normSev(a.severity) === sev), [alerts, tab, sev]);
+
+  const selected = alerts.find(a => a.id === selectedId) ?? null;
+
+  const { data: related = [] } = useQuery<SecEvent[]>({
+    queryKey: ["alert-related", selected?.device_id],
+    enabled: !!selected,
+    queryFn: async () => (await supabase.from("security_events")
+      .select("id, event_type, severity, description, created_at")
+      .eq("device_id", selected!.device_id).order("created_at", { ascending: false }).limit(8)).data as SecEvent[] ?? [],
+  });
+
+  const types = [...new Set(alerts.map(a => a.alert_type))].sort();
+  const hosts = [...new Set(alerts.map(a => a.devices?.hostname).filter(Boolean) as string[])].sort();
+
+  const columns: Column<AlertRow>[] = [
+    { key: "severity", header: "Severity", width: "110px", value: a => SEVERITY_ORDER[a.severity] ?? 9,
+      render: a => <SeverityBadge severity={a.severity} /> },
+    { key: "message", header: "Detection", value: a => a.message, render: a => (
+      <div className="min-w-0">
+        <p className="truncate max-w-[520px] font-medium" style={{ color: "var(--c-strong)" }}>{a.message}</p>
+        <p className="text-[11.5px]" style={{ color: "var(--c-muted)" }}>{typeLabel(a.alert_type)}</p>
+      </div>) },
+    { key: "device", header: "Device", hideBelow: "md", value: a => a.devices?.hostname ?? "",
+      render: a => <span className="truncate max-w-[200px] inline-block align-middle">{a.devices?.hostname ?? "—"}</span> },
+    { key: "mitre_technique", header: "MITRE", hideBelow: "lg", value: a => a.mitre_technique ?? "",
+      render: a => a.mitre_technique ? <Badge tone="accent" className="font-mono">{a.mitre_technique}</Badge> : <span style={{ color: "var(--c-muted)" }}>—</span> },
+    { key: "created_at", header: "Detected", value: a => a.created_at,
+      render: a => <span title={new Date(a.created_at).toLocaleString()}>{timeAgo(a.created_at)}</span> },
+    { key: "status", header: "Status", value: a => (a.resolved ? "Resolved" : "Open"),
+      render: a => <Badge tone={a.resolved ? "ok" : "high"} dot>{a.resolved ? "Resolved" : "Open"}</Badge> },
+    { key: "actions", header: "", sortable: false, align: "right", width: "110px", render: a => (
+      <div onClick={e => e.stopPropagation()}>
+        {a.resolved
+          ? <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => setResolved.mutate({ id: a.id, resolved: false })}>Reopen</Button>
+          : <Button size="sm" icon={Check} onClick={() => setResolved.mutate({ id: a.id, resolved: true })}>Resolve</Button>}
+      </div>) },
+  ];
+
+  const filters: FilterDef<AlertRow>[] = [
+    { key: "type", label: "Type", options: types.map(t => ({ value: t, label: typeLabel(t) })), get: a => a.alert_type },
+    { key: "device", label: "Device", options: hosts.map(h => ({ value: h, label: h })), get: a => a.devices?.hostname ?? "" },
+  ];
+
+  const sevTile = (key: string, label: string, tone: "critical" | "high" | "medium" | "low", Icon: typeof Flame) => (
+    <StatTile label={label} icon={Icon} tone={tone} value={key === "medium" ? count("medium") : key === "low" ? count("low") + count("info") : count(key)}
+      onClick={() => { setTab("open"); setSev(sev === key ? null : key); }} active={sev === key} />
+  );
 
   return (
-    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }} className="flex flex-col">
-      <TopBar title="Alert Center" />
+    <div className="flex flex-col min-h-full">
+      <TopBar title="Alerts" />
+      <Page>
+        <PageHeader
+          title="Alerts"
+          crumbs={[{ label: "Detection & Response" }, { label: "Alerts" }]}
+          description="Every detection raised by your endpoints, prioritised by severity. Click an alert for details and response actions."
+        />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {/* ── Pending Approvals Banner ── */}
-        {pendingCommands.length > 0 && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-3 border-b border-amber-500/20 bg-amber-500/10">
-              <ShieldAlert className="w-5 h-5 text-amber-400" />
-              <div className="flex-1">
-                <p className="text-sm font-bold text-amber-300">
-                  {pendingCommands.length} Action{pendingCommands.length > 1 ? "s" : ""} Awaiting Your Approval
-                </p>
-                <p className="text-[11px] text-amber-400/70 mt-0.5">
-                  The system detected issues and recommends these actions. Review and approve or dismiss.
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-amber-500/20 border border-amber-500/30">
-                <Clock className="w-3 h-3 text-amber-400" />
-                <span className="text-[10px] font-bold text-amber-400">MANUAL APPROVAL REQUIRED</span>
-              </div>
-            </div>
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+          <StatTile label="Open" icon={ShieldAlert} tone={open.length ? "high" : "ok"} value={open.length}
+            onClick={() => { setTab("open"); setSev(null); }} active={tab === "open" && !sev} />
+          {sevTile("critical", "Critical", "critical", Flame)}
+          {sevTile("high", "High", "high", AlertTriangle)}
+          {sevTile("medium", "Medium", "medium", AlertTriangle)}
+          <StatTile label="Resolved (30d)" icon={CheckCircle2} tone="ok" value={resolved30}
+            onClick={() => { setTab("resolved"); setSev(null); }} active={tab === "resolved"} />
+        </div>
 
-            <div className="divide-y divide-amber-500/10">
-              <AnimatePresence>
-                {pendingCommands.map((cmd, i) => {
-                  const actionInfo = ACTION_LABELS[cmd.command_type] ?? {
-                    label: cmd.command_type.replace(/_/g, " "),
-                    color: "text-slate-400 bg-slate-500/10 border-slate-500/30",
-                    icon: "⚡",
-                  };
+        {pending.length > 0 && (
+          <Panel title={`Awaiting approval (${pending.length})`} subtitle="Automated remediations that need an admin decision" className="mb-4" noPad>
+            <ul>
+              {pending.map(c => (
+                <li key={c.id} className="flex items-center gap-3 px-4 h-12 border-b" style={{ borderColor: "var(--c-divider)" }}>
+                  <Badge tone="medium">{c.command_type.replace(/_/g, " ")}</Badge>
+                  <Link to={`/device/${c.device_id}`} className="text-[13px] font-medium hover:underline" style={{ color: "var(--c-strong)" }}>
+                    {c.devices?.hostname ?? c.device_id}
+                  </Link>
+                  <span className="flex-1 text-[12px] truncate" style={{ color: "var(--c-muted)" }}>
+                    {Object.entries(c.payload ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join(" · ")}
+                  </span>
+                  <span className="text-[12px]" style={{ color: "var(--c-muted)" }}>{timeAgo(c.created_at)}</span>
+                  <Button size="sm" variant="primary" icon={Check} disabled={decide.isPending} onClick={() => decide.mutate({ id: c.id, action: "approve" })}>Approve</Button>
+                  <Button size="sm" icon={X} disabled={decide.isPending} onClick={() => decide.mutate({ id: c.id, action: "dismiss" })}>Dismiss</Button>
+                </li>
+              ))}
+            </ul>
+            {decide.isError && <p className="px-4 py-2 text-[12px]" style={{ color: "var(--sev-critical)" }}>Action failed: {(decide.error as Error).message}</p>}
+          </Panel>
+        )}
 
-                  return (
-                    <motion.div
-                      key={cmd.id}
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, x: 50 }}
-                      transition={{ delay: i * 0.05 }}
-                      className="flex items-center gap-4 px-5 py-3.5 hover:bg-amber-500/5 transition-colors group"
-                    >
-                      {/* Action type badge */}
-                      <span className={cn(
-                        "text-[10px] font-bold px-2.5 py-1 rounded-lg border flex items-center gap-1.5",
-                        actionInfo.color
-                      )}>
-                        <span>{actionInfo.icon}</span>
-                        {actionInfo.label}
-                      </span>
+        <div className="mb-3">
+          <Tabs
+            value={tab}
+            onChange={t => setTab(t)}
+            tabs={[
+              { id: "open", label: "Open", count: open.length },
+              { id: "resolved", label: "Resolved", count: alerts.length - open.length },
+              { id: "all", label: "All", count: alerts.length },
+            ]}
+          />
+        </div>
 
-                      {/* Device & details */}
-                      <div className="flex-1 min-w-0">
-                        <button
-                          onClick={() => navigate(`/device/${cmd.device_id}`)}
-                          className="text-xs font-semibold hover:text-green-600 transition-colors flex items-center gap-1"
-                          style={{ color: "var(--c-strong)" }}
-                        >
-                          {cmd.devices?.hostname ?? "Unknown device"}
-                          <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                        {cmd.payload && Object.keys(cmd.payload).length > 0 && (
-                          <p className="text-[10px] mt-0.5 font-mono" style={{ color: "var(--c-faint)" }}>
-                            {Object.entries(cmd.payload).map(([k, v]) => `${k}: ${v}`).join(", ")}
-                          </p>
-                        )}
-                      </div>
+        <DataTable
+          rows={rows}
+          columns={columns}
+          rowKey={a => a.id}
+          loading={isLoading}
+          filters={filters}
+          searchPlaceholder="Search detections, devices, rules…"
+          searchText={a => [a.message, a.alert_type, a.devices?.hostname, a.mitre_technique, a.rule_id].join(" ")}
+          initialSort={{ key: "severity", dir: "asc" }}
+          onRowClick={a => setSelectedId(a.id)}
+          selectedKey={selectedId}
+          exportName="alerts"
+          empty={tab === "open" ? "No open alerts — all clear." : "No alerts."}
+          rowTone={a => (a.resolved ? undefined : `var(--sev-${normSev(a.severity) === "info" ? "info" : normSev(a.severity)})`)}
+          toolbar={sev ? <Badge tone="accent">Severity: {sev} <button onClick={() => setSev(null)} aria-label="Clear severity"><X className="w-3 h-3" /></button></Badge> : undefined}
+        />
+      </Page>
 
-                      {/* Time */}
-                      <span className="text-[10px] font-mono flex-shrink-0" style={{ color: "var(--c-faint)" }}>
-                        {timeAgo(cmd.created_at)}
-                      </span>
-
-                      {/* Approve / Dismiss buttons */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => approveMutation.mutate(cmd.id)}
-                          disabled={approveMutation.isPending}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 hover:border-green-500/50 transition-all disabled:opacity-50"
-                        >
-                          <ThumbsUp className="w-3.5 h-3.5" />
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => dismissMutation.mutate(cmd.id)}
-                          disabled={dismissMutation.isPending}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
-                          style={{ background: "var(--c-card2)", color: "var(--c-muted)", border: "1px solid var(--c-border)" }}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                          Dismiss
-                        </button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
+      <Drawer
+        open={!!selected}
+        onClose={() => setSelectedId(null)}
+        title={selected?.message ?? ""}
+        subtitle={selected && <span className="flex items-center gap-2"><SeverityBadge severity={selected.severity} /> {typeLabel(selected.alert_type)}</span>}
+        footer={selected && <>
+          <Button icon={Laptop} onClick={() => navigate(`/device/${selected.device_id}`)}>Open device</Button>
+          {selected.resolved
+            ? <Button icon={RotateCcw} onClick={() => setResolved.mutate({ id: selected.id, resolved: false })}>Reopen</Button>
+            : <Button variant="primary" icon={Check} onClick={() => setResolved.mutate({ id: selected.id, resolved: true })}>Resolve</Button>}
+        </>}
+      >
+        {selected && (
+          <div className="space-y-6">
+            <KeyValue items={[
+              { label: "Status", value: <Badge tone={selected.resolved ? "ok" : "high"} dot>{selected.resolved ? "Resolved" : "Open"}</Badge> },
+              { label: "Device", value: <Link className="hover:underline" style={{ color: "var(--c-accent)" }} to={`/device/${selected.device_id}`}>{selected.devices?.hostname ?? selected.device_id}</Link> },
+              { label: "Detected", value: new Date(selected.created_at).toLocaleString() },
+              { label: "Resolved", value: selected.resolved_at ? new Date(selected.resolved_at).toLocaleString() : "—" },
+              { label: "Rule", value: <span className="font-mono text-[12px]">{selected.rule_id ?? "—"}</span> },
+              { label: "MITRE ATT&CK", value: selected.mitre_technique
+                  ? <a className="inline-flex items-center gap-1 font-mono hover:underline" style={{ color: "var(--c-accent)" }}
+                      href={`https://attack.mitre.org/techniques/${selected.mitre_technique.replace(".", "/")}/`} target="_blank" rel="noreferrer">
+                      {selected.mitre_technique} <ExternalLink className="w-3 h-3" />
+                    </a> : "—" },
+              ...(selected.threat_score != null ? [{ label: "Threat score", value: String(selected.threat_score) }] : []),
+            ]} />
+            <div>
+              <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] mb-2" style={{ color: "var(--c-muted)" }}>Recent activity on this device</h4>
+              {related.length === 0 ? (
+                <p className="text-[12.5px] flex items-center gap-2" style={{ color: "var(--c-muted)" }}><Info className="w-3.5 h-3.5" /> No recent security events.</p>
+              ) : (
+                <ol className="relative border-l pl-4 space-y-3" style={{ borderColor: "var(--c-border2)" }}>
+                  {related.map(e => (
+                    <li key={e.id} className="relative">
+                      <span className="absolute -left-[21px] top-1.5 w-2 h-2 rounded-full" style={{ background: "var(--c-accent)" }} />
+                      <p className="text-[12.5px]" style={{ color: "var(--c-strong)" }}>{e.description}</p>
+                      <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>{e.event_type.replace(/_/g, " ")} · {timeAgo(e.created_at)}</p>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
           </div>
         )}
-
-        {/* Header */}
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--c-strong)" }}>Alerts</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-              {openAlerts.length} open · {resolvedAlerts.length} resolved
-              {pendingCommands.length > 0 && (
-                <span className="text-amber-400 ml-1">· {pendingCommands.length} pending approval</span>
-              )}
-            </p>
-          </div>
-
-          {/* Controls */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {SEVERITY_FILTERS.map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setSeverityFilter(f.key)}
-                style={severityFilter === f.key
-                  ? { background: "#1B5E37", color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600 }
-                  : { color: "var(--c-muted)", borderRadius: 8, padding: "6px 14px", fontSize: 12 }}
-              >
-                {f.label}
-              </button>
-            ))}
-
-            <div className="w-px h-5 mx-1" style={{ background: "var(--c-border)" }} />
-
-            <button
-              onClick={() => setShowResolved(!showResolved)}
-              style={showResolved
-                ? { background: "var(--c-card2)", color: "var(--c-strong)", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600 }
-                : { color: "var(--c-muted)", borderRadius: 8, padding: "6px 14px", fontSize: 12 }}
-            >
-              {showResolved ? "← Open Alerts" : "Show Resolved"}
-            </button>
-          </div>
-        </div>
-
-        {/* Alert list */}
-        <div className="rounded-xl overflow-hidden" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-          {isLoading ? (
-            <div className="py-16 text-center text-sm" style={{ color: "var(--c-muted)" }}>Loading alerts…</div>
-          ) : filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <p className="text-sm font-medium" style={{ color: "var(--c-muted)" }}>
-                {showResolved ? "No resolved alerts" : "🎉 No open alerts — fleet looks healthy!"}
-              </p>
-            </div>
-          ) : (
-            <AnimatePresence>
-              {filtered.map((alert, i) => (
-                <motion.div
-                  key={alert.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 8 }}
-                  transition={{ delay: i * 0.03 }}
-                  className="flex items-center gap-4 px-5 py-4 transition-colors group"
-                  style={{ borderBottom: "1px solid var(--c-divider)" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "")}
-                >
-                  {/* Severity badge */}
-                  <span className={cn(
-                    "text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase flex-shrink-0",
-                    healthBadge(alert.resolved ? "healthy" : alert.severity === "critical" ? "critical" : "warning")
-                  )}>
-                    {alert.resolved ? "Resolved" : alert.severity}
-                  </span>
-
-                  {/* Device */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => navigate(`/device/${alert.device_id}`)}
-                        className="text-xs font-semibold hover:text-green-600 transition-colors flex items-center gap-1"
-                        style={{ color: "var(--c-strong)" }}
-                      >
-                        {alert.devices?.hostname ?? "Unknown device"}
-                        <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </button>
-                    </div>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-muted)" }}>
-                      {ALERT_TYPE_LABELS[alert.alert_type] ?? alert.alert_type.replace(/_/g, " ")}
-                      <span className="mx-1.5" style={{ color: "var(--c-faint)" }}>·</span>
-                      {alert.message}
-                    </p>
-                  </div>
-
-                  {/* Time */}
-                  <span className="text-[10px] font-mono flex-shrink-0" style={{ color: "var(--c-faint)" }}>
-                    {timeAgo(alert.created_at)}
-                  </span>
-
-                  {/* Resolve button */}
-                  {!alert.resolved && (
-                    <button
-                      onClick={() => resolve(alert.id)}
-                      disabled={isPending}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-green-500/10 hover:text-green-400 hover:border-green-500/30 transition-all disabled:opacity-50"
-                      style={{ background: "var(--c-card2)", color: "var(--c-muted)", border: "1px solid var(--c-border)" }}
-                    >
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      Resolve
-                    </button>
-                  )}
-
-                  {alert.resolved && alert.resolved_at && (
-                    <span className="text-[10px] font-mono flex-shrink-0" style={{ color: "var(--c-faint)" }}>
-                      ✓ {timeAgo(alert.resolved_at)}
-                    </span>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          )}
-        </div>
-      </div>
+      </Drawer>
     </div>
   );
 }

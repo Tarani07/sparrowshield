@@ -1,35 +1,63 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, Bell, LogOut, ChevronDown } from "lucide-react";
-import { useAlerts } from "../../hooks/useAlerts";
+import { useQuery } from "@tanstack/react-query";
+import { Search, Bell, LogOut, ChevronDown, Settings, Apple, Monitor, Menu } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
+
+type DeviceHit = { id: string; hostname: string; serial_number: string | null; os_type: string; status: string | null; assigned_user: string | null };
 
 export default function TopBar({ title }: { title: string }) {
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const { data: alerts } = useAlerts(undefined, false);
-  const openCount = alerts?.length ?? 0;
   const { user, signOut } = useAuth();
 
-  const email = user?.email ?? "Admin";
+  const { data: openCount = 0 } = useQuery<number>({
+    queryKey: ["open-alert-count"],
+    queryFn: async () => (await supabase.from("alerts").select("*", { count: "exact", head: true }).eq("resolved", false)).count ?? 0,
+    refetchInterval: 30_000,
+  });
+
+  const { data: devices = [] } = useQuery<DeviceHit[]>({
+    queryKey: ["topbar-devices"],
+    queryFn: async () => {
+      const { data } = await supabase.from("devices").select("id, hostname, serial_number, os_type, status, assigned_user").limit(1000);
+      return (data ?? []) as DeviceHit[];
+    },
+    staleTime: 60_000,
+  });
+
+  const hits = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return devices.filter(d =>
+      [d.hostname, d.serial_number, d.assigned_user].some(v => (v ?? "").toLowerCase().includes(q))).slice(0, 8);
+  }, [devices, query]);
+
+  const email = user?.email ?? "admin@local";
   const initials = email.slice(0, 2).toUpperCase();
 
-  // Close menu on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setUserMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); inputRef.current?.focus(); setSearchOpen(true); }
     }
     document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => { document.removeEventListener("mousedown", handleClick); document.removeEventListener("keydown", handleKey); };
   }, []);
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (query.trim()) navigate(`/?search=${encodeURIComponent(query.trim())}`);
+  function openDevice(id: string) {
+    setQuery(""); setSearchOpen(false);
+    navigate(`/device/${id}`);
   }
 
   async function handleSignOut() {
@@ -39,104 +67,94 @@ export default function TopBar({ title }: { title: string }) {
   }
 
   return (
-    <header className="h-16 flex items-center px-6 gap-4 sticky top-0 z-10 flex-shrink-0"
-      style={{ background: "var(--c-card)", borderBottom: "1px solid var(--c-border)" }}>
+    <header className="h-14 flex items-center px-3 sm:px-6 gap-2 sm:gap-4 sticky top-0 z-10 shrink-0 border-b backdrop-blur"
+      style={{ background: "color-mix(in srgb, var(--c-card) 92%, transparent)", borderColor: "var(--c-border)" }}>
+      <button onClick={() => window.dispatchEvent(new Event("ss-toggle-nav"))} aria-label="Open navigation"
+        className="lg:hidden w-9 h-9 rounded-md flex items-center justify-center border hover:bg-[var(--c-card2)]"
+        style={{ borderColor: "var(--c-border)", color: "var(--c-text)" }}>
+        <Menu className="w-4 h-4" />
+      </button>
+      <span className="hidden md:block text-[13px] font-semibold truncate max-w-[220px]" style={{ color: "var(--c-strong)" }}>{title}</span>
 
-      <h1 className="text-base font-bold flex-shrink-0 tracking-tight" style={{ color: "var(--c-strong)" }}>
-        {title}
-      </h1>
+      {/* Global device search */}
+      <div ref={searchRef} className="relative flex-1 max-w-lg mx-auto">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none" style={{ color: "var(--c-muted)" }} />
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setSearchOpen(true); }}
+          onFocus={() => setSearchOpen(true)}
+          onKeyDown={e => {
+            if (e.key === "Enter" && hits[0]) openDevice(hits[0].id);
+            if (e.key === "Escape") { setSearchOpen(false); inputRef.current?.blur(); }
+          }}
+          placeholder="Search devices…"
+          className="w-full h-9 rounded-md pl-9 pr-3 sm:pr-14 text-[13px] border outline-none focus:border-[var(--c-accent)]"
+          style={{ background: "var(--c-card2)", borderColor: "var(--c-border2)", color: "var(--c-strong)" }}
+        />
+        <kbd className="hidden sm:block absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-mono rounded px-1.5 py-0.5 border pointer-events-none"
+          style={{ borderColor: "var(--c-border2)", color: "var(--c-muted)" }}>⌘K</kbd>
+        {searchOpen && query.trim() && (
+          <div className="absolute left-0 right-0 top-full mt-1.5 rounded-lg border shadow-2xl overflow-hidden z-40"
+            style={{ background: "var(--c-card)", borderColor: "var(--c-border2)" }}>
+            {hits.length === 0 ? (
+              <p className="px-3 py-3 text-[12.5px]" style={{ color: "var(--c-muted)" }}>No devices match “{query}”.</p>
+            ) : hits.map(d => {
+              const Icon = d.os_type === "windows" ? Monitor : Apple;
+              return (
+                <button key={d.id} onClick={() => openDevice(d.id)}
+                  className="w-full flex items-center gap-3 px-3 h-11 text-left hover:bg-[var(--c-row-hover)]">
+                  <Icon className="w-4 h-4 shrink-0" style={{ color: "var(--c-muted)" }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-medium truncate" style={{ color: "var(--c-strong)" }}>{d.hostname}</p>
+                    <p className="text-[11px] truncate" style={{ color: "var(--c-muted)" }}>{d.serial_number ?? "—"}{d.assigned_user ? ` · ${d.assigned_user}` : ""}</p>
+                  </div>
+                  <span className="w-2 h-2 rounded-full" style={{ background: d.status === "online" ? "var(--ok)" : "var(--c-faint)" }} />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-      {/* Search */}
-      <form onSubmit={handleSearch} className="flex-1 max-w-md mx-4">
-        <div className="relative flex items-center">
-          <Search className="absolute left-3.5 w-4 h-4 pointer-events-none" style={{ color: "var(--c-muted)" }} />
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder="Search devices…"
-            className="w-full rounded-2xl pl-10 pr-16 py-2.5 text-sm focus:outline-none transition-all"
-            style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-text)" }}
-            onFocus={e => (e.currentTarget.style.borderColor = "var(--c-primary)")}
-            onBlur={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
-          />
-          <kbd className="absolute right-3 text-[10px] font-mono rounded px-1.5 py-0.5 pointer-events-none"
-            style={{ background: "var(--c-border)", color: "var(--c-muted)" }}>
-            ⌘ F
-          </kbd>
-        </div>
-      </form>
-
-      <div className="ml-auto flex items-center gap-3">
-        {/* Alert bell */}
-        <button
-          onClick={() => navigate("/alerts")}
-          className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
-          style={{ background: "var(--c-bg)", border: "1px solid var(--c-border)", color: "var(--c-muted)" }}
-          onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
-          onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--c-border)")}
-        >
+      <div className="flex items-center gap-2">
+        <button onClick={() => navigate("/alerts")} aria-label="Open alerts"
+          className="relative w-9 h-9 rounded-md flex items-center justify-center border hover:bg-[var(--c-card2)]"
+          style={{ borderColor: "var(--c-border)", color: "var(--c-text)" }}>
           <Bell className="w-4 h-4" />
           {openCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold text-white flex items-center justify-center">
-              {openCount > 9 ? "9+" : openCount}
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center"
+              style={{ background: "var(--sev-critical)" }}>
+              {openCount > 99 ? "99+" : openCount}
             </span>
           )}
         </button>
 
-        {/* User menu */}
-        <div className="relative" ref={menuRef} style={{ borderLeft: "1px solid var(--c-border)", paddingLeft: 12 }}>
-          <button
-            onClick={() => setUserMenuOpen(v => !v)}
-            className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition-colors"
-            style={{ color: "var(--c-strong)" }}
-            onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
-            onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-          >
-            {/* Avatar */}
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-              style={{ background: "linear-gradient(135deg, #1B5E37, #2E7D52)" }}>
-              {initials}
+        <div className="relative pl-2 ml-1 border-l" ref={menuRef} style={{ borderColor: "var(--c-border)" }}>
+          <button onClick={() => setUserMenuOpen(v => !v)} className="flex items-center gap-2 rounded-md px-1.5 h-9 hover:bg-[var(--c-card2)]">
+            <div className="w-7 h-7 rounded-md flex items-center justify-center text-white text-[11px] font-bold"
+              style={{ background: "linear-gradient(135deg,#3b6cf6,#1d4ed8)" }}>{initials}</div>
+            <div className="hidden md:block text-left leading-tight">
+              <p className="text-[12px] font-semibold truncate max-w-[140px]" style={{ color: "var(--c-strong)" }}>{email.split("@")[0]}</p>
+              <p className="text-[10.5px]" style={{ color: "var(--c-muted)" }}>Security Admin</p>
             </div>
-            <div className="hidden sm:block text-left">
-              <p className="text-xs font-semibold leading-none truncate max-w-[120px]" style={{ color: "var(--c-strong)" }}>
-                {email.split("@")[0]}
-              </p>
-              <p className="text-[10px] mt-0.5 truncate max-w-[120px]" style={{ color: "var(--c-muted)" }}>
-                {email.includes("@") ? email.split("@")[1] : "Security Admin"}
-              </p>
-            </div>
-            <ChevronDown className="w-3 h-3 hidden sm:block" style={{ color: "var(--c-muted)" }} />
+            <ChevronDown className="w-3.5 h-3.5 hidden md:block" style={{ color: "var(--c-muted)" }} />
           </button>
-
-          {/* Dropdown */}
           {userMenuOpen && (
-            <div className="absolute right-0 top-full mt-2 w-52 rounded-xl shadow-xl z-50 overflow-hidden"
-              style={{ background: "var(--c-card)", border: "1px solid var(--c-border2)" }}>
-              <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--c-border)" }}>
-                <p className="text-xs font-semibold" style={{ color: "var(--c-strong)" }}>{email}</p>
-                <p className="text-[10px] mt-0.5" style={{ color: "var(--c-muted)" }}>Security Admin</p>
+            <div className="absolute right-0 top-full mt-2 w-56 rounded-lg border shadow-2xl z-50 overflow-hidden"
+              style={{ background: "var(--c-card)", borderColor: "var(--c-border2)" }}>
+              <div className="px-3.5 py-3 border-b" style={{ borderColor: "var(--c-border)" }}>
+                <p className="text-[12.5px] font-semibold truncate" style={{ color: "var(--c-strong)" }}>{email}</p>
+                <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Security Admin</p>
               </div>
-              <div className="py-1">
-                <button
-                  onClick={() => { setUserMenuOpen(false); navigate("/settings"); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors"
-                  style={{ color: "var(--c-text)" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                >
-                  Settings
-                </button>
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors"
-                  style={{ color: "#ef4444" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "var(--c-bg)")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  Sign Out
-                </button>
-              </div>
+              <button onClick={() => { setUserMenuOpen(false); navigate("/settings"); }}
+                className="w-full flex items-center gap-2.5 px-3.5 h-9 text-[13px] hover:bg-[var(--c-card2)]" style={{ color: "var(--c-text)" }}>
+                <Settings className="w-3.5 h-3.5" /> Settings
+              </button>
+              <button onClick={handleSignOut}
+                className="w-full flex items-center gap-2.5 px-3.5 h-9 text-[13px] hover:bg-[var(--c-card2)]" style={{ color: "var(--sev-critical)" }}>
+                <LogOut className="w-3.5 h-3.5" /> Sign out
+              </button>
             </div>
           )}
         </div>

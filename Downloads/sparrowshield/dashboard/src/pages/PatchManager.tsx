@@ -92,9 +92,11 @@ export default function PatchManager() {
     mutationFn: async ({ deviceId, appName, source, patchAll }: {
       deviceId: string; appName?: string; source?: string; patchAll?: boolean;
     }) => {
+      const { data: dev } = await supabase.from("devices").select("os_type").eq("id", deviceId).single();
       const { error } = await supabase.from("device_commands").insert({
         device_id: deviceId,
-        command_type: patchAll ? "patch_all_apps" : "patch_app",
+        // Mac agent: patch_all_apps · Windows agent: patch_all
+        command_type: patchAll ? (dev?.os_type === "windows" ? "patch_all" : "patch_all_apps") : "patch_app",
         payload: patchAll ? {} : { app_name: appName, source },
         status: "pending",
       });

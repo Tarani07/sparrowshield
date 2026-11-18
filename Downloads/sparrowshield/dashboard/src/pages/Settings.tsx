@@ -162,7 +162,7 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["slack-settings"] });
       setTimeout(() => setSaveStatus("idle"), 2000);
     },
-    onError: () => setSaveStatus("idle"),
+    onError: () => { setSaveStatus("idle"); alert("Could not save email settings."); },
   });
 
   const testMutation = useMutation({
@@ -1068,16 +1068,19 @@ function EmailAlertsTab() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [testStatus, setTestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
 
-  const { isLoading } = useQuery({
+  // React Query v5 dropped useQuery onSuccess — load saved values into the form with an effect,
+  // otherwise Save would overwrite the stored config with an empty form.
+  const { data: savedEmail, isLoading } = useQuery<EmailConfig>({
     queryKey: ["email-config"],
     queryFn: async () => {
-      const { data } = await supabase.from("config").select("value").eq("key", "email_config").single();
+      const { data } = await supabase.from("config").select("value").eq("key", "email_config").maybeSingle();
       return (data?.value ?? {}) as EmailConfig;
     },
-    onSuccess: (data: EmailConfig) => {
-      setForm({ enabled: data.enabled ?? false, resend_api_key: data.resend_api_key ?? "", to: data.to ?? "", from: data.from ?? "" });
-    },
-  } as Parameters<typeof useQuery>[0]);
+  });
+  useEffect(() => {
+    if (!savedEmail) return;
+    setForm({ enabled: savedEmail.enabled ?? false, resend_api_key: savedEmail.resend_api_key ?? "", to: savedEmail.to ?? "", from: savedEmail.from ?? "" });
+  }, [savedEmail]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {

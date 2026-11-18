@@ -104,7 +104,7 @@ export default function ProcessMonitor() {
                             background: p.mem > 80 ? "#ef4444" : "#1B5E37",
                           }} />
                       </div>
-                      <span className="text-xs tabular-nums" style={{ color: "#1B5E37" }}>
+                      <span className="text-xs tabular-nums" style={{ color: "var(--c-primary)" }}>
                         {p.mem.toFixed(1)}%
                       </span>
                     </div>

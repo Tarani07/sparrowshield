@@ -1,380 +1,239 @@
-import { useState } from "react";
+import { useState, type ElementType } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Globe, Plus, Trash2, Bug, Fish, Lock, Cpu, EyeOff, Dices, Gamepad2, MessageCircle, Eye, Ban, CheckCircle2, Layers, Unlock } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import {
-  Globe, Plus, Trash2, ToggleLeft, ToggleRight, AlertCircle,
-  Bug, Fish, Lock, Cpu, EyeOff, Dices, Gamepad2, MessageCircle, Eye,
-} from "lucide-react";
+import { timeAgo } from "../lib/utils";
 import TopBar from "../components/layout/TopBar";
 import ScanNowButton from "../components/ScanNowButton";
+import { Page, PageHeader, Panel, StatTile, DataTable, Badge, Button, Drawer, Tabs, inputClass, type Column, type FilterDef } from "../components/ui";
 
-interface WebRule {
-  id: string;
-  domain: string;
-  action: "block" | "allow";
-  category: string;
-  notes: string | null;
-  enabled: boolean;
-  created_at: string;
-}
+interface WebRule { id: string; domain: string; action: "block" | "allow"; category: string; notes: string | null; enabled: boolean; created_at: string }
+interface Category { id: string; name: string; description: string; enabled: boolean }
 
-interface Category {
-  id: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  malware:      "#ef4444",
-  phishing:     "#f97316",
-  ransomware:   "#dc2626",
-  crypto_mining:"#7c3aed",
-  adult:        "#ec4899",
-  gambling:     "#f59e0b",
-  gaming:       "#3b82f6",
-  social:       "#06b6d4",
-  tracking:     "#6b7280",
+const CATEGORY_META: Record<string, { icon: ElementType; label: string; group: "Security" | "Content" }> = {
+  malware:       { icon: Bug,           label: "Malware & C2",   group: "Security" },
+  phishing:      { icon: Fish,          label: "Phishing",       group: "Security" },
+  ransomware:    { icon: Lock,          label: "Ransomware",     group: "Security" },
+  crypto_mining: { icon: Cpu,           label: "Crypto-mining",  group: "Security" },
+  adult:         { icon: EyeOff,        label: "Adult content",  group: "Content" },
+  gambling:      { icon: Dices,         label: "Gambling",       group: "Content" },
+  gaming:        { icon: Gamepad2,      label: "Gaming",         group: "Content" },
+  social:        { icon: MessageCircle, label: "Social media",   group: "Content" },
+  tracking:      { icon: Eye,           label: "Ads & tracking", group: "Content" },
 };
 
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  malware:       Bug,
-  phishing:      Fish,
-  ransomware:    Lock,
-  crypto_mining: Cpu,
-  adult:         EyeOff,
-  gambling:      Dices,
-  gaming:        Gamepad2,
-  social:        MessageCircle,
-  tracking:      Eye,
-};
+function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: () => void; disabled?: boolean; label: string }) {
+  return (
+    <button role="switch" aria-checked={on} aria-label={label} onClick={onChange} disabled={disabled}
+      className="relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:opacity-50"
+      style={{ background: on ? "var(--c-accent)" : "var(--c-border2)" }}>
+      <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all shadow" style={{ left: on ? 18 : 2 }} />
+    </button>
+  );
+}
 
 export default function WebFilter() {
   const qc = useQueryClient();
-  const [tab, setTab]           = useState<"categories" | "custom">("categories");
-  const [newDomain, setNewDomain] = useState("");
-  const [newAction, setNewAction] = useState<"block" | "allow">("block");
-  const [newNotes, setNewNotes]   = useState("");
-  const [adding, setAdding]       = useState(false);
+  const [tab, setTab] = useState<"categories" | "custom">("categories");
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ domain: "", action: "block" as "block" | "allow", notes: "" });
+  const [pushed, setPushed] = useState<string | null>(null);
 
   const { data: categories = [] } = useQuery<Category[]>({
     queryKey: ["web-categories"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("web_categories")
-        .select("id, name, description, enabled")
-        .order("name");
-      return data ?? [];
-    },
+    queryFn: async () => (await supabase.from("web_categories").select("id, name, description, enabled").order("name")).data ?? [],
   });
-
   const { data: rules = [], isLoading } = useQuery<WebRule[]>({
     queryKey: ["web-filter-rules"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("web_filter_rules")
-        .select("id, domain, action, category, notes, enabled, created_at")
-        .order("action").order("domain");
-      return data ?? [];
-    },
+    queryFn: async () => (await supabase.from("web_filter_rules")
+      .select("id, domain, action, category, notes, enabled, created_at").order("domain")).data as WebRule[] ?? [],
   });
 
   // Push website-rule changes to every Mac right away (fast web-filter-only sync, no full scan).
   async function pushWebFilter() {
-    const { data: devices } = await supabase
-      .from("devices").select("id").in("os_type", ["mac", "macos", "darwin"]);
-    const { data: queued } = await supabase
-      .from("device_commands").select("device_id")
+    const { data: devices } = await supabase.from("devices").select("id").in("os_type", ["mac", "macos", "darwin"]);
+    const { data: queued } = await supabase.from("device_commands").select("device_id")
       .eq("command_type", "sync_web_filter").eq("status", "pending");
     const busy = new Set((queued ?? []).map((q: { device_id: string }) => q.device_id));
     const targets = (devices ?? []).filter((d: { id: string }) => !busy.has(d.id));
     if (targets.length) {
-      await supabase.from("device_commands").insert(
-        targets.map((d: { id: string }) => ({ device_id: d.id, command_type: "sync_web_filter", payload: {} })),
-      );
+      await supabase.from("device_commands").insert(targets.map((d: { id: string }) => ({ device_id: d.id, command_type: "sync_web_filter", payload: {} })));
     }
+    setPushed(`Change sent to ${devices?.length ?? 0} Mac${devices?.length === 1 ? "" : "s"} — applied within ~10 seconds.`);
+    setTimeout(() => setPushed(null), 6000);
   }
 
   const toggleCategory = useMutation({
     mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const { error } = await supabase
-        .from("web_categories")
-        .update({ enabled, updated_at: new Date().toISOString() })
-        .eq("id", id);
+      const { error } = await supabase.from("web_categories").update({ enabled, updated_at: new Date().toISOString() }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-categories"] }); pushWebFilter(); },
   });
-
   const addRule = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("web_filter_rules").insert({
-        domain:   newDomain.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0],
-        action:   newAction,
-        category: "custom",
-        notes:    newNotes.trim() || null,
-        enabled:  true,
+        domain: form.domain.trim().toLowerCase().replace(/^https?:\/\//, "").split("/")[0],
+        action: form.action, category: "custom", notes: form.notes.trim() || null, enabled: true,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["web-filter-rules"] });
-      setNewDomain(""); setNewNotes(""); setAdding(false);
+      setForm({ domain: "", action: "block", notes: "" }); setAdding(false); setTab("custom");
       pushWebFilter();
     },
   });
-
+  const updateRule = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Partial<WebRule> }) => {
+      const { error } = await supabase.from("web_filter_rules").update(patch).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
+  });
   const deleteRule = useMutation({
     mutationFn: async (id: string) => {
-      await supabase.from("web_filter_rules").delete().eq("id", id);
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
-  });
-
-  const toggleRule = useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      await supabase.from("web_filter_rules").update({ enabled }).eq("id", id);
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
-  });
-
-  // Turning a Block rule off only removes *your* block; a category (e.g. Gaming) may still
-  // list the site. Converting it to Allow overrides categories too.
-  const allowInstead = useMutation({
-    mutationFn: async (id: string) => {
-      await supabase.from("web_filter_rules").update({ action: "allow", enabled: true }).eq("id", id);
+      const { error } = await supabase.from("web_filter_rules").delete().eq("id", id);
+      if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["web-filter-rules"] }); pushWebFilter(); },
   });
 
   const enabledCategories = categories.filter(c => c.enabled).length;
-  const blockedDomains    = rules.filter(r => r.action === "block" && r.enabled).length;
-  const allowedDomains    = rules.filter(r => r.action === "allow" && r.enabled).length;
+  const blockedDomains = rules.filter(r => r.action === "block" && r.enabled).length;
+  const allowedDomains = rules.filter(r => r.action === "allow" && r.enabled).length;
+
+  const columns: Column<WebRule>[] = [
+    { key: "domain", header: "Domain", render: r => <span className="font-mono text-[12.5px]" style={{ color: "var(--c-strong)" }}>{r.domain}</span> },
+    { key: "action", header: "Action", value: r => r.action,
+      render: r => <Badge tone={r.action === "block" ? "critical" : "ok"}>{r.action === "block" ? "Block" : "Allow"}</Badge> },
+    { key: "notes", header: "Notes", hideBelow: "md", value: r => r.notes ?? "",
+      render: r => <span style={{ color: r.notes ? "var(--c-text)" : "var(--c-muted)" }}>{r.notes ?? "—"}</span> },
+    { key: "created_at", header: "Added", hideBelow: "lg", render: r => timeAgo(r.created_at) },
+    { key: "enabled", header: "Enabled", value: r => (r.enabled ? 1 : 0),
+      render: r => <Switch on={r.enabled} label={`Enable ${r.domain}`} onChange={() => updateRule.mutate({ id: r.id, patch: { enabled: !r.enabled } })} /> },
+    { key: "actions", header: "", sortable: false, align: "right", width: "170px", render: r => (
+      <div className="flex items-center justify-end gap-1.5">
+        {r.action === "block" && (
+          <Button size="sm" icon={Unlock} title="Unblock even if a category (e.g. Gaming) lists this site"
+            onClick={() => updateRule.mutate({ id: r.id, patch: { action: "allow", enabled: true } })}>Allow instead</Button>
+        )}
+        <button onClick={() => deleteRule.mutate(r.id)} title="Delete rule" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>) },
+  ];
+  const filters: FilterDef<WebRule>[] = [
+    { key: "action", label: "Action", options: [{ value: "block", label: "Block" }, { value: "allow", label: "Allow" }], get: r => r.action },
+    { key: "enabled", label: "State", options: [{ value: "on", label: "Enabled" }, { value: "off", label: "Disabled" }], get: r => (r.enabled ? "on" : "off") },
+  ];
+
+  const grouped = (["Security", "Content"] as const).map(g => ({
+    group: g, items: categories.filter(c => (CATEGORY_META[c.name]?.group ?? "Content") === g),
+  }));
 
   return (
-    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }}>
-      <TopBar title="Web Filter" />
-      <div className="p-6 space-y-6">
+    <div className="flex flex-col min-h-full">
+      <TopBar title="Web Filtering" />
+      <Page>
+        <PageHeader
+          title="Web Filtering"
+          crumbs={[{ label: "Protection Policies" }, { label: "Web Filtering" }]}
+          description="Block whole categories of websites and manage your own allow / block lists. Every change is pushed to all Macs immediately (up to 250,000 domains per device)."
+          actions={<><ScanNowButton /><Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>Add domain</Button></>}
+        />
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
-              <Globe className="w-5 h-5" style={{ color: "#10b981" }} />
-              Web Filter
-            </h1>
-            <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-              Block websites by category or manage a custom domain whitelist/blacklist
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <ScanNowButton />
-            {tab === "custom" && (
-              <button onClick={() => setAdding(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
-                style={{ background: "#10b981" }}>
-                <Plus className="w-4 h-4" /> Add Domain
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Active Categories", value: enabledCategories, color: "#ef4444" },
-            { label: "Blocked Domains",   value: blockedDomains,    color: "#f97316" },
-            { label: "Allowed Domains",   value: allowedDomains,    color: "#10b981" },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-xl p-4 border" style={{ background: "var(--c-surface)", borderColor: "var(--c-border)" }}>
-              <p className="text-xs mb-1" style={{ color: "var(--c-muted)" }}>{label}</p>
-              <p className="text-2xl font-bold" style={{ color: "var(--c-strong)" }}>{value}</p>
-              <div className="mt-1 h-1 rounded-full" style={{ background: color, width: "30%" }} />
-            </div>
-          ))}
-        </div>
-
-        {/* Info banner */}
-        <div className="flex items-start gap-3 p-3 rounded-lg border" style={{ borderColor: "#fbbf24", background: "#fefce8" }}>
-          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: "#d97706" }} />
-          <p className="text-xs" style={{ color: "#92400e" }}>
-            Category blocklists are downloaded by the agent and applied to <strong>/etc/hosts</strong> (up to 250,000 domains, shared fairly across enabled categories; custom rules always apply). Changes are pushed to every Mac as soon as you save them (usually applied within ~10 seconds; browsers may keep a site open until you reload or reopen the tab). The agent must run as root.
-          </p>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ background: "var(--c-surface)" }}>
-          {(["categories", "custom"] as const).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize"
-              style={{
-                background: tab === t ? "var(--c-bg)" : "transparent",
-                color: tab === t ? "var(--c-strong)" : "var(--c-muted)",
-              }}>
-              {t === "categories" ? "Categories" : "Custom Domains"}
-            </button>
-          ))}
-        </div>
-
-        {/* Categories Grid */}
-        {tab === "categories" && (
-          <div className="grid grid-cols-3 gap-4">
-            {categories.map(cat => {
-              const color = CATEGORY_COLORS[cat.name] ?? "#6b7280";
-              const Icon  = CATEGORY_ICONS[cat.name] ?? Globe;
-              return (
-                <div key={cat.id}
-                  className="rounded-xl p-4 border transition-all"
-                  style={{
-                    background:   "var(--c-surface)",
-                    borderColor:  cat.enabled ? color : "var(--c-border)",
-                    borderWidth:  cat.enabled ? "2px" : "1px",
-                  }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <Icon className="w-5 h-5" style={{ color }} />
-                    <button onClick={() => toggleCategory.mutate({ id: cat.id, enabled: !cat.enabled })}>
-                      {cat.enabled
-                        ? <ToggleRight className="w-6 h-6" style={{ color }} />
-                        : <ToggleLeft  className="w-6 h-6" style={{ color: "var(--c-muted)" }} />}
-                    </button>
-                  </div>
-                  <p className="font-semibold capitalize text-sm" style={{ color: "var(--c-strong)" }}>
-                    {cat.name.replace("_", " ")}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>{cat.description}</p>
-                  <div className="mt-2">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                      style={{
-                        background: cat.enabled ? `${color}22` : "var(--c-bg)",
-                        color:      cat.enabled ? color : "var(--c-muted)",
-                      }}>
-                      {cat.enabled ? "Blocking" : "Disabled"}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+        {pushed && (
+          <div className="mb-4 rounded-md border px-3 py-2 text-[12.5px] flex items-center gap-2"
+            style={{ borderColor: "var(--c-primary-border)", background: "var(--c-primary-bg)", color: "var(--c-strong)" }}>
+            <CheckCircle2 className="w-4 h-4" style={{ color: "var(--ok)" }} /> {pushed}
           </div>
         )}
 
-        {/* Custom Domains */}
-        {tab === "custom" && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <StatTile label="Categories blocked" icon={Layers} tone="accent" value={<>{enabledCategories}<span className="text-[15px] font-medium" style={{ color: "var(--c-muted)" }}> / {categories.length}</span></>}
+            onClick={() => setTab("categories")} active={tab === "categories"} />
+          <StatTile label="Blocked domains" icon={Ban} tone="critical" value={blockedDomains} sub="Custom block list" onClick={() => setTab("custom")} />
+          <StatTile label="Allowed domains" icon={CheckCircle2} tone="ok" value={allowedDomains} sub="Override categories" onClick={() => setTab("custom")} />
+        </div>
+
+        <div className="mb-3">
+          <Tabs value={tab} onChange={setTab} tabs={[
+            { id: "categories", label: "Categories", count: categories.length },
+            { id: "custom", label: "Custom rules", count: rules.length },
+          ]} />
+        </div>
+
+        {tab === "categories" ? (
           <div className="space-y-4">
-            {adding && (
-              <div className="rounded-xl p-4 border space-y-3" style={{ background: "var(--c-surface)", borderColor: "#10b981" }}>
-                <p className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Add Domain Rule</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: "var(--c-muted)" }}>Domain</label>
-                    <input
-                      value={newDomain}
-                      onChange={e => setNewDomain(e.target.value)}
-                      placeholder="e.g. reddit.com or https://reddit.com"
-                      className="w-full px-3 py-2 rounded-lg text-sm border"
-                      style={{ background: "var(--c-bg)", borderColor: "var(--c-border)", color: "var(--c-fg)" }}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs mb-1 block" style={{ color: "var(--c-muted)" }}>Action</label>
-                    <select
-                      value={newAction}
-                      onChange={e => setNewAction(e.target.value as "block" | "allow")}
-                      className="w-full px-3 py-2 rounded-lg text-sm border"
-                      style={{ background: "var(--c-bg)", borderColor: "var(--c-border)", color: "var(--c-fg)" }}>
-                      <option value="block">Block</option>
-                      <option value="allow">Allow (whitelist)</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs mb-1 block" style={{ color: "var(--c-muted)" }}>Notes (optional)</label>
-                  <input
-                    value={newNotes}
-                    onChange={e => setNewNotes(e.target.value)}
-                    placeholder="Reason for this rule"
-                    className="w-full px-3 py-2 rounded-lg text-sm border"
-                    style={{ background: "var(--c-bg)", borderColor: "var(--c-border)", color: "var(--c-fg)" }}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => addRule.mutate()} disabled={!newDomain.trim() || addRule.isPending}
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-white"
-                    style={{ background: "#10b981", opacity: !newDomain.trim() ? 0.5 : 1 }}>
-                    {addRule.isPending ? "Adding…" : "Add Rule"}
-                  </button>
-                  <button onClick={() => setAdding(false)} className="px-4 py-2 rounded-lg text-sm" style={{ color: "var(--c-muted)" }}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--c-border)" }}>
-              {isLoading ? (
-                <div className="p-8 text-center text-sm" style={{ color: "var(--c-muted)" }}>Loading…</div>
-              ) : rules.length === 0 ? (
-                <div className="p-8 text-center text-sm" style={{ color: "var(--c-muted)" }}>
-                  No custom domain rules. Add a domain to block or whitelist it.
-                </div>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead style={{ background: "var(--c-surface)" }}>
-                    <tr>
-                      {["Domain", "Action", "Notes", "Status", ""].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs font-semibold" style={{ color: "var(--c-muted)" }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rules.map(rule => (
-                      <tr key={rule.id} style={{ borderTop: "1px solid var(--c-border)", opacity: rule.enabled ? 1 : 0.5 }}>
-                        <td className="px-4 py-3 font-mono text-xs" style={{ color: "var(--c-strong)" }}>{rule.domain}</td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                            style={{
-                              background: rule.action === "block" ? "#fee2e2" : "#dcfce7",
-                              color:      rule.action === "block" ? "#ef4444" : "#16a34a",
-                            }}>
-                            {rule.action === "block" ? "Block" : "Allow"}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-xs" style={{ color: "var(--c-muted)" }}>{rule.notes ?? "—"}</td>
-                        <td className="px-4 py-3">
-                          <button onClick={() => toggleRule.mutate({ id: rule.id, enabled: !rule.enabled })}>
-                            {rule.enabled
-                              ? <ToggleRight className="w-5 h-5" style={{ color: "#10b981" }} />
-                              : <ToggleLeft  className="w-5 h-5" style={{ color: "var(--c-muted)" }} />}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 justify-end">
-                            {rule.action === "block" && (
-                              <button onClick={() => allowInstead.mutate(rule.id)}
-                                title="Unblock this site even if a category (e.g. Gaming) lists it"
-                                className="text-xs px-2 py-1 rounded whitespace-nowrap"
-                                style={{ color: "#16a34a", background: "var(--c-surface)" }}>
-                                Allow instead
-                              </button>
-                            )}
-                            <button onClick={() => deleteRule.mutate(rule.id)} className="p-1 rounded" style={{ color: "#ef4444" }}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <p className="text-xs mt-2" style={{ color: "var(--c-muted)" }}>
-              Turning a <b>Block</b> rule off removes only your own block — if an enabled category
-              (such as Gaming) also lists the site, it stays blocked. To unblock it everywhere, use
-              <b> Allow instead</b> or add the domain as <b>Allow</b>.
-            </p>
+            {grouped.map(({ group, items }) => items.length > 0 && (
+              <Panel key={group} title={group === "Security" ? "Security threats" : "Content categories"}
+                subtitle={group === "Security" ? "Recommended: keep all of these blocked" : "Block by company policy (applies to all devices)"} noPad>
+                <ul>
+                  {items.map(cat => {
+                    const meta = CATEGORY_META[cat.name] ?? { icon: Globe, label: cat.name, group: "Content" };
+                    return (
+                      <li key={cat.id} className="flex items-center gap-3 px-4 py-3 border-b" style={{ borderColor: "var(--c-divider)" }}>
+                        <span className="w-8 h-8 rounded-md flex items-center justify-center border shrink-0"
+                          style={{ borderColor: "var(--c-border)", background: "var(--c-card2)", color: cat.enabled ? "var(--sev-critical)" : "var(--c-muted)" }}>
+                          <meta.icon className="w-4 h-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[13px] font-medium" style={{ color: "var(--c-strong)" }}>{meta.label}</p>
+                          <p className="text-[12px] truncate" style={{ color: "var(--c-muted)" }}>{cat.description}</p>
+                        </div>
+                        <Badge tone={cat.enabled ? "critical" : "neutral"}>{cat.enabled ? "Blocking" : "Allowed"}</Badge>
+                        <Switch on={cat.enabled} label={`Block ${meta.label}`} disabled={toggleCategory.isPending}
+                          onChange={() => toggleCategory.mutate({ id: cat.id, enabled: !cat.enabled })} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ))}
           </div>
+        ) : (
+          <>
+            <DataTable rows={rules} columns={columns} rowKey={r => r.id} loading={isLoading} filters={filters}
+              searchPlaceholder="Search domains or notes…" exportName="web-rules" initialSort={{ key: "domain", dir: "asc" }}
+              empty="No custom rules — click Add domain to block or allow a site." />
+            <p className="mt-2 text-[12px]" style={{ color: "var(--c-muted)" }}>
+              Turning a <b>Block</b> rule off removes only your own block — if an enabled category (such as Gaming) also lists the site,
+              it stays blocked. Use <b>Allow instead</b> to unblock it everywhere.
+            </p>
+          </>
         )}
-      </div>
+      </Page>
+
+      <Drawer open={adding} onClose={() => setAdding(false)} title="Add domain rule" width={460}
+        footer={<>
+          <Button onClick={() => setAdding(false)}>Cancel</Button>
+          <Button variant="primary" onClick={() => addRule.mutate()} disabled={!form.domain.trim() || addRule.isPending}>
+            {addRule.isPending ? "Adding…" : "Add rule"}
+          </Button>
+        </>}>
+        <div className="space-y-4">
+          <label className="block">
+            <span className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--c-text)" }}>Domain</span>
+            <input autoFocus className={`${inputClass} w-full font-mono`} value={form.domain}
+              onChange={e => setForm(f => ({ ...f, domain: e.target.value }))} placeholder="example.com" />
+            <span className="block text-[11.5px] mt-1" style={{ color: "var(--c-muted)" }}>Paste a URL or domain; www and subdomains are covered.</span>
+          </label>
+          <label className="block">
+            <span className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--c-text)" }}>Action</span>
+            <select className={`${inputClass} w-full`} value={form.action} onChange={e => setForm(f => ({ ...f, action: e.target.value as "block" | "allow" }))}>
+              <option value="block">Block — always block this site</option>
+              <option value="allow">Allow — never block, even if a category lists it</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="block text-[12px] font-medium mb-1.5" style={{ color: "var(--c-text)" }}>Notes (optional)</span>
+            <input className={`${inputClass} w-full`} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="e.g. Approved by IT for marketing" />
+          </label>
+          {addRule.isError && <p className="text-[12.5px]" style={{ color: "var(--sev-critical)" }}>Could not add: {(addRule.error as Error).message}</p>}
+        </div>
+      </Drawer>
     </div>
   );
 }

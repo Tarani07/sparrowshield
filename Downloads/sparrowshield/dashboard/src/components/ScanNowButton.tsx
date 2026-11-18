@@ -33,11 +33,11 @@ export default function ScanNowButton() {
       onClick={send}
       disabled={state === "sending"}
       title="Tell every Mac agent to re-download rules and scan now"
-      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border"
-      style={{ borderColor: "var(--c-border)", color: "var(--c-strong)", background: "var(--c-surface)" }}
+      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[13px] font-medium whitespace-nowrap hover:brightness-110 disabled:opacity-60"
+      style={{ background: "var(--c-accent)", borderColor: "var(--c-accent)", color: "#fff" }}
     >
       {state === "sent"
-        ? <><Check className="w-4 h-4" style={{ color: "#10b981" }} /> Sent to {count} device{count === 1 ? "" : "s"}</>
+        ? <><Check className="w-4 h-4" /> Sent to {count} device{count === 1 ? "" : "s"}</>
         : state === "error"
           ? <>Could not send — retry</>
           : <><RefreshCw className={`w-4 h-4 ${state === "sending" ? "animate-spin" : ""}`} /> Scan &amp; apply now</>}

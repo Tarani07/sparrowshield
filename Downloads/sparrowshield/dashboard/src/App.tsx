@@ -57,24 +57,27 @@ function ProtectedLayout() {
     </div>
   );
 
-  if (!session) return <Navigate to="/login" replace />;
+  // Local design previews only: `import.meta.env.DEV` is false in every production build,
+  // so this can never skip login on the deployed dashboard.
+  const devPreview = import.meta.env.DEV && import.meta.env.VITE_DEV_NO_AUTH === "1";
+  if (!session && !devPreview) return <Navigate to="/login" replace />;
 
   return (
     <div className="flex h-screen overflow-hidden font-sans" style={{ background: "var(--c-bg)" }}>
       <Sidebar />
-      <main className="flex-1 ml-56 flex flex-col overflow-y-auto">
+      <main className="flex-1 lg:ml-60 flex flex-col overflow-y-auto min-w-0">
         <Routes>
           <Route path="/" element={<FleetOverview />} />
           <Route path="/devices" element={<DeviceList />} />
           <Route path="/device/:id" element={<DeviceDetail />} />
 
 
-          <Route path="/mac/devices" element={<MacDevices />} />
+          <Route path="/mac/devices" element={<DeviceList os="mac" />} />
           <Route path="/mac/av" element={<MacAV />} />
           <Route path="/mac/edr" element={<MacEDR />} />
           <Route path="/mac/network" element={<MacNetwork />} />
 
-          <Route path="/windows/devices" element={<WindowsDevices />} />
+          <Route path="/windows/devices" element={<DeviceList os="windows" />} />
           <Route path="/windows/av" element={<WindowsAV />} />
           <Route path="/windows/edr" element={<WindowsEDR />} />
           <Route path="/windows/isolation" element={<HostIsolation />} />

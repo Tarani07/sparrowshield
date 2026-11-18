@@ -47,7 +47,7 @@ export default function DetectionRules() {
           </p>
         </div>
         <div className="text-sm px-3 py-1.5 rounded-lg"
-          style={{ background: "var(--c-primary-bg)", color: "#1B5E37", border: "1px solid rgba(27,94,55,0.2)" }}>
+          style={{ background: "var(--c-primary-bg)", color: "var(--c-primary)", border: "1px solid rgba(27,94,55,0.2)" }}>
           {rules.filter(r => r.enabled).length} / {rules.length} active
         </div>
       </div>
@@ -77,7 +77,7 @@ export default function DetectionRules() {
                         <span className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>{rule.name}</span>
                         {rule.mitre_id && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                            style={{ background: "var(--c-primary-bg)", color: "#1B5E37" }}>
+                            style={{ background: "var(--c-primary-bg)", color: "var(--c-primary)" }}>
                             {rule.mitre_id}
                           </span>
                         )}

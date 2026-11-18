@@ -5,46 +5,95 @@
 @tailwind utilities;
 
 /* ── Color tokens ─────────────────────────────────────────────
-   Dark mode is the default. Light mode overrides are set on
-   [data-theme="light"]. The sidebar always stays dark.
+   Enterprise security-console palette (CrowdStrike / SentinelOne feel).
+   Dark navy is the default; [data-theme="light"] swaps the canvas but the
+   sidebar (--c-sb-*) stays dark in both themes, as security consoles do.
 ─────────────────────────────────────────────────────────────── */
 :root {
-  --c-bg:         #0d0f16;
-  --c-card:       #13141a;
-  --c-card2:      #1a1d28;
-  --c-text:       #c8d0e8;
-  --c-strong:     #ffffff;
-  --c-muted:      #4b5270;
-  --c-faint:      #2d3252;
-  --c-border:     rgba(255,255,255,0.05);
-  --c-border2:    rgba(255,255,255,0.08);
-  --c-divider:    rgba(255,255,255,0.04);
-  --c-primary:    #4ade80;
-  --c-primary-bg: rgba(74,222,128,0.08);
-  --c-primary-border: rgba(74,222,128,0.2);
-  --c-nav-active-bg: rgba(99,102,241,0.15);
-  --c-nav-active:    #a5b4fc;
-  --c-sidebar-bg:    #0d0f16;
+  --c-bg:         #0a0f1a;   /* canvas */
+  --c-card:       #0f1626;   /* panels */
+  --c-card2:      #141d31;   /* raised: table headers, inputs, hovers */
+  /* Aliases used by older pages — they were never defined, leaving those
+     panels transparent and their text in the browser's default colour. */
+  --c-surface:    var(--c-card);
+  --c-fg:         var(--c-strong);
+  --c-text:       #c3cde0;
+  --c-strong:     #eef2fa;
+  --c-muted:      #8b9ab8;   /* ≥5.5:1 on canvas */
+  --c-faint:      #6a7a9c;   /* labels; ≥4:1 on canvas */
+  --c-border:     #1c2740;
+  --c-border2:    #283453;
+  --c-divider:    #161f34;
+  --c-primary:    #34d399;
+  --c-primary-bg: rgba(52,211,153,0.10);
+  --c-primary-border: rgba(52,211,153,0.28);
+  --c-accent:     #5b8cff;   /* links, selection, focus */
+  --c-accent-bg:  rgba(91,140,255,0.12);
+  --c-nav-active-bg: rgba(91,140,255,0.14);
+  --c-nav-active:    #dbe6ff;
+  --c-sidebar-bg:    #070b14;
+  --c-sb-bg:      #070b14;
+  --c-sb-text:    #8c9ab8;
+  --c-sb-strong:  #eef2fa;
+  --c-sb-border:  #141c2e;
+  --c-sb-hover:   #0f1626;
+  --c-sb-active:  rgba(91,140,255,0.16);
+  --c-row-hover:  #121b2e;
+  --c-shadow:     0 1px 0 rgba(255,255,255,0.02) inset, 0 8px 24px rgba(0,0,0,0.25);
+
+  /* Severity scale — used for alerts, detections, health */
+  --sev-critical: #f43f5e;
+  --sev-high:     #fb923c;
+  --sev-medium:   #facc15;
+  --sev-low:      #60a5fa;
+  --sev-info:     #94a3b8;
+  --ok:           #34d399;
+  color-scheme: dark;
 }
 
 [data-theme="light"] {
-  --c-bg:         #f2f5f9;
+  --c-bg:         #f3f5f9;
   --c-card:       #ffffff;
-  --c-card2:      #f8fafc;
-  --c-text:       #475569;
-  --c-strong:     #0f172a;
-  --c-muted:      #94a3b8;
-  --c-faint:      #cbd5e1;
-  --c-border:     rgba(0,0,0,0.08);
-  --c-border2:    rgba(0,0,0,0.12);
-  --c-divider:    rgba(0,0,0,0.06);
-  --c-primary:    #1B5E37;
-  --c-primary-bg: #E8F5EE;
-  --c-primary-border: #B2DFC8;
-  --c-nav-active-bg: #E8F5EE;
-  --c-nav-active:    #1B5E37;
-  --c-sidebar-bg:    #ffffff;
+  --c-card2:      #f7f9fc;
+  --c-text:       #3b475e;
+  --c-strong:     #0b1324;
+  --c-muted:      #5b6984;
+  --c-faint:      #8592ab;
+  --c-border:     #e2e7ef;
+  --c-border2:    #d3dae6;
+  --c-divider:    #edf0f5;
+  --c-primary:    #047857;
+  --c-primary-bg: #e7f6ef;
+  --c-primary-border: #b5e3cd;
+  --c-accent:     #2557d6;
+  --c-accent-bg:  #e9effd;
+  --c-nav-active-bg: rgba(91,140,255,0.16);
+  --c-nav-active:    #dbe6ff;
+  --c-sidebar-bg:    #0b1220;
+  --c-sb-bg:      #0b1220;
+  --c-row-hover:  #f5f8fd;
+  --c-shadow:     0 1px 2px rgba(15,23,42,0.05);
+  --sev-critical: #e11d48;
+  --sev-high:     #ea580c;
+  --sev-medium:   #ca8a04;
+  --sev-low:      #2563eb;
+  --sev-info:     #64748b;
+  --ok:           #059669;
+  color-scheme: light;
 }
+
+/* ── Readability in the dark theme ─────────────────────────────
+   Older pages hard-code Tailwind slate greys meant for a lighter canvas;
+   on the navy console they drop below readable contrast. Map them to tokens. */
+:root:not([data-theme="light"]) .text-slate-500,
+:root:not([data-theme="light"]) .text-slate-600,
+:root:not([data-theme="light"]) .text-slate-700,
+:root:not([data-theme="light"]) .text-gray-500,
+:root:not([data-theme="light"]) .text-gray-600 { color: var(--c-muted) !important; }
+:root:not([data-theme="light"]) .text-slate-400 { color: var(--c-text) !important; }
+:root:not([data-theme="light"]) .placeholder-slate-600::placeholder,
+:root:not([data-theme="light"]) .placeholder-slate-500::placeholder { color: var(--c-muted) !important; }
+input::placeholder, textarea::placeholder { color: var(--c-muted); opacity: 1; }
 
 /* ── Tailwind overrides for light mode ─────────────────────── */
 
@@ -107,10 +156,12 @@
     background: var(--c-bg);
     color: var(--c-text);
     transition: background 0.2s, color 0.2s;
+    font-feature-settings: "cv11", "ss01";
   }
+  .tabular-nums, td, .num { font-variant-numeric: tabular-nums; }
 
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--c-card2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb { background: var(--c-border2); border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
   ::-webkit-scrollbar-thumb:hover { background: var(--c-muted); }
 }

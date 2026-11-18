@@ -135,7 +135,7 @@ export default function Detections({ osFilter }: { osFilter?: "mac" | "windows" 
                     </span>
                     {alert.mitre_technique && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                        style={{ background: "var(--c-primary-bg)", color: "#1B5E37" }}>
+                        style={{ background: "var(--c-primary-bg)", color: "var(--c-primary)" }}>
                         {alert.mitre_technique}
                       </span>
                     )}

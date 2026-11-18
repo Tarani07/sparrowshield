@@ -29,7 +29,7 @@ const FLEET_COLS = [
   "battery_pct", "battery_health",
   "filevault_enabled", "firewall_enabled", "sip_enabled",
   "gatekeeper_enabled", "mdm_enrolled", "antivirus_installed",
-  "pending_update_count",
+  "pending_update_count", "agent_version", "group_id", "active_user",
 ].join(", ");
 
 export function useAllDevices() {

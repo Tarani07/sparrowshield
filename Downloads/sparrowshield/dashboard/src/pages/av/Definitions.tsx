@@ -40,7 +40,7 @@ export default function Definitions() {
       <div className="p-6 space-y-6">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
-            <BookOpen className="w-5 h-5" style={{ color: "#1B5E37" }} />
+            <BookOpen className="w-5 h-5" style={{ color: "var(--c-primary)" }} />
             AV Definitions
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
@@ -75,7 +75,7 @@ export default function Definitions() {
                       </span>
                       {rule.mitre_id && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                          style={{ background: "rgba(27,94,55,0.1)", color: "#1B5E37" }}>
+                          style={{ background: "rgba(27,94,55,0.1)", color: "var(--c-primary)" }}>
                           {rule.mitre_id}
                         </span>
                       )}

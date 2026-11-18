@@ -53,7 +53,7 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Total Ports",    value: allPorts.length,   color: "#1B5E37", bg: "var(--c-primary-bg)" },
+          { label: "Total Ports",    value: allPorts.length,   color: "var(--c-primary)", bg: "var(--c-primary-bg)" },
           { label: "Suspicious",     value: suspiciousCount,   color: "#f87171", bg: "rgba(239,68,68,0.08)"  },
           { label: "Online Devices", value: devices.filter(d => d.status === "online").length, color: "#4ade80", bg: "rgba(34,197,94,0.08)" },
         ].map(s => (
@@ -131,7 +131,7 @@ export default function NetworkActivity({ osFilter }: { osFilter?: "mac" | "wind
                 style={{ background: d.status === "online" ? "#4ade80" : "var(--c-faint)" }} />
               <span className="text-sm flex-1" style={{ color: "var(--c-strong)" }}>{d.hostname}</span>
               <span className="text-xs" style={{ color: "var(--c-muted)" }}>{d.public_ip ?? "—"}</span>
-              <span className="text-sm font-bold tabular-nums" style={{ color: "#1B5E37" }}>
+              <span className="text-sm font-bold tabular-nums" style={{ color: "var(--c-primary)" }}>
                 {d.open_connections_count} conns
               </span>
             </div>

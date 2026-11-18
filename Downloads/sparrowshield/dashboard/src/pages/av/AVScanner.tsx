@@ -33,13 +33,16 @@ export default function AVScanner({ osFilter }: { osFilter?: "mac" | "windows" }
       }
       let q = supabase
         .from("alerts")
-        .select("id, hostname, alert_type, severity, message, created_at, resolved")
-        .in("alert_type", ["crypto_miner_process", "malicious_app_installed", "tunneling_tool_detected", "shell_on_port"])
+        .select("id, alert_type, severity, message, created_at, resolved, devices(hostname)")
+        .in("alert_type", ["malware", "c2_connection", "proc_suspicious_path", "shell_from_app",
+                           "crypto_miner_process", "malicious_app_installed", "tunneling_tool_detected", "shell_on_port"])
         .order("created_at", { ascending: false })
         .limit(50);
       if (deviceIds) q = q.in("device_id", deviceIds);
       const { data } = await q;
-      return data ?? [];
+      return (data ?? []).map((r: Record<string, unknown>) => ({
+        ...r, hostname: (r.devices as { hostname?: string } | null)?.hostname ?? "",
+      })) as ThreatRow[];
     },
     refetchInterval: 30_000,
   });
@@ -47,9 +50,35 @@ export default function AVScanner({ osFilter }: { osFilter?: "mac" | "windows" }
   const active = threats.filter(t => !t.resolved);
   const resolved = threats.filter(t => t.resolved);
 
-  function handleScan() {
-    setScanning(true);
-    setTimeout(() => { setScanning(false); refetch(); }, 2000);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
+
+  // Queue a real scan on every endpoint of this OS (Mac: SparrowShield engine, Windows: Defender).
+  async function handleScan() {
+    setScanning(true); setScanMsg(null);
+    try {
+      const osValues = osFilter === "windows" ? ["windows"] : osFilter === "mac" ? ["mac", "macos", "darwin"] : null;
+      let dq = supabase.from("devices").select("id, os_type");
+      if (osValues) dq = dq.in("os_type", osValues);
+      const { data: devs, error } = await dq;
+      if (error) throw error;
+      const { data: queued } = await supabase.from("device_commands").select("device_id")
+        .in("command_type", ["run_edr_scan", "defender_scan"]).in("status", ["pending", "running"]);
+      const busy = new Set((queued ?? []).map((q: { device_id: string }) => q.device_id));
+      const rows = (devs ?? []).filter((d: { id: string }) => !busy.has(d.id)).map((d: { id: string; os_type: string }) => ({
+        device_id: d.id, command_type: d.os_type === "windows" ? "defender_scan" : "run_edr_scan", payload: {},
+      }));
+      if (rows.length) {
+        const { error: insErr } = await supabase.from("device_commands").insert(rows);
+        if (insErr) throw insErr;
+      }
+      setScanMsg(`Scan started on ${rows.length} device${rows.length === 1 ? "" : "s"}` +
+        (busy.size ? ` (${busy.size} already scanning)` : "") + ". Results appear here as devices report — usually 1–3 minutes.");
+      setTimeout(() => refetch(), 60_000);
+    } catch (e) {
+      setScanMsg(`Could not start scan: ${e instanceof Error ? e.message : "unknown error"}`);
+    } finally {
+      setScanning(false);
+    }
   }
 
   const severityColor: Record<string, string> = {
@@ -81,9 +110,14 @@ export default function AVScanner({ osFilter }: { osFilter?: "mac" | "windows" }
             style={{ background: "rgba(34,197,94,0.12)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.2)" }}
           >
             <RefreshCw className={`w-4 h-4 ${scanning ? "animate-spin" : ""}`} />
-            {scanning ? "Scanning…" : "Scan Now"}
+            {scanning ? "Starting…" : "Scan Now"}
           </button>
         </div>
+        {scanMsg && (
+          <div className="rounded-md border px-3 py-2 text-[13px]" style={{ borderColor: "var(--c-border2)", background: "var(--c-card2)", color: "var(--c-text)" }}>
+            {scanMsg}
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
