@@ -108,6 +108,7 @@ export interface Device {
   serial_number: string;
   os_type: string;
   os_version: string | null;
+  agent_version?: string | null;
   assigned_user: string | null;
   department: string | null;
   enrolled_at: string;

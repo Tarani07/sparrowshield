@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Apple, Monitor, Cpu, MemoryStick, Activity, Zap, CheckCircle2, Clock, AlertCircle, Trash2, RefreshCw, Layers, RotateCcw } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -41,6 +41,12 @@ export default function DeviceDetail() {
   const navigate = useNavigate();
   const { data: reports = [], isLoading } = useDeviceReport(id!);
   const { data: device } = useDevice(id!);
+  // Latest agent published on the portal; Macs self-update to it within an hour.
+  const [latestAgent, setLatestAgent] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`/agents/version.json?t=${Date.now()}`).then(r => r.json())
+      .then(m => setLatestAgent(m.version ?? null)).catch(() => setLatestAgent(null));
+  }, []);
   const { data: metrics = [] } = useMetrics(id!);
   const { data: alerts = [] } = useAlerts(id!, false);
   const { data: resolvedAlerts = [] } = useAlerts(id!, true);
@@ -159,6 +165,16 @@ export default function DeviceDetail() {
                 <p className="text-xs" style={{ color: "var(--c-muted)" }}>
                   {device?.assigned_user ?? "Unassigned"} · {device?.os_type} {device?.os_version}
                 </p>
+                {device?.agent_version && (
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--c-muted)" }}>
+                    Agent {device.agent_version}
+                    {latestAgent && device.agent_version !== "pkg" && (
+                      device.agent_version === latestAgent
+                        ? <span style={{ color: "#16a34a" }}> · up to date</span>
+                        : <span style={{ color: "#d97706" }}> · updating to {latestAgent} (auto, within 1h)</span>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
 

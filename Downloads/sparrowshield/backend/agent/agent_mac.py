@@ -30,6 +30,34 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(BASE_DIR, "agent.log")
+
+# ── Self-update ────────────────────────────────────────────────────────────────
+# The portal publishes agents/version.json (sha256 of each file). Version = hash of
+# all agent files, so the agent and the manifest compute it the same way.
+UPDATE_BASE_URL  = "https://sparrowshield.vercel.app/agents"
+UPDATE_FILES     = ("agent_mac.py", "edr_engine.py")
+UPDATE_INTERVAL  = 3600
+UPDATE_MARKER    = os.path.join(BASE_DIR, ".update_pending")   # boot count after an update
+HEALTHY_AFTER    = 180                                           # seconds up = update is good
+
+
+def _files_version(contents: list) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    for c in contents:
+        h.update(c)
+        h.update(b"\0")
+    return h.hexdigest()[:12]
+
+
+def _local_version() -> str:
+    try:
+        return _files_version([open(os.path.join(BASE_DIR, f), "rb").read() for f in UPDATE_FILES])
+    except OSError:
+        return "unknown"
+
+
+AGENT_VERSION = "pkg" if getattr(sys, "frozen", False) else _local_version()
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 HEARTBEAT_INTERVAL = 300
 INVENTORY_INTERVAL = 3600
@@ -1516,6 +1544,7 @@ def collect_metrics() -> dict:
         "login_item_count": login_items.get("login_item_count"),
         "pending_updates": pending.get("pending_updates"),
         "pending_update_count": pending.get("pending_update_count"),
+        "agent_version": AGENT_VERSION,
         "timemachine_enabled": timemachine.get("timemachine_enabled"),
         "timemachine_last_backup": timemachine.get("timemachine_last_backup"),
         "proxy_configured": get_proxy_configured(),
@@ -1899,7 +1928,104 @@ def inventory_loop(api_url: str, token: str, anon_key: str = "",
             logger.exception("Inventory failed: %s", e)
 
 
+def _check_update_rollback():
+    """If a freshly installed update keeps crashing, put the previous files back."""
+    if not os.path.exists(UPDATE_MARKER):
+        return
+    try:
+        boots = int(open(UPDATE_MARKER).read().strip() or "0") + 1
+    except (OSError, ValueError):
+        boots = 1
+    if boots >= 3:
+        restored = 0
+        for f in UPDATE_FILES:
+            prev = os.path.join(BASE_DIR, f + ".prev")
+            if os.path.exists(prev):
+                os.replace(prev, os.path.join(BASE_DIR, f))
+                restored += 1
+        os.remove(UPDATE_MARKER)
+        logger.error("Update failed to start %d times — rolled back %d file(s); restarting", boots, restored)
+        os._exit(1)            # launchd restarts us on the previous version
+    with open(UPDATE_MARKER, "w") as fh:
+        fh.write(str(boots))
+
+    def _mark_healthy():
+        time.sleep(HEALTHY_AFTER)
+        try:
+            os.remove(UPDATE_MARKER)
+            logger.info("Update %s confirmed healthy", AGENT_VERSION)
+        except OSError:
+            pass
+    threading.Thread(target=_mark_healthy, daemon=True).start()
+
+
+def check_for_update() -> str:
+    """Download, verify and install a newer agent from the portal; restart if installed."""
+    import hashlib
+    import py_compile
+    if getattr(sys, "frozen", False):
+        return "Signed .pkg build — updated via Jamf"
+    m = requests.get(f"{UPDATE_BASE_URL}/version.json", params={"t": int(time.time())}, timeout=20)
+    m.raise_for_status()
+    manifest = m.json()
+    if manifest.get("version") == AGENT_VERSION:
+        return f"Up to date ({AGENT_VERSION})"
+
+    staged = {}
+    for f in UPDATE_FILES:
+        want = (manifest.get("files") or {}).get(f)
+        if not want:
+            return f"Manifest missing {f}; skipped"
+        r = requests.get(f"{UPDATE_BASE_URL}/{f}", params={"v": manifest.get("version")}, timeout=60)
+        r.raise_for_status()
+        if hashlib.sha256(r.content).hexdigest() != want:
+            return f"Checksum mismatch for {f}; update refused"
+        tmp = os.path.join(BASE_DIR, f + ".new")
+        with open(tmp, "wb") as fh:
+            fh.write(r.content)
+        py_compile.compile(tmp, doraise=True)       # never install code that does not parse
+        staged[f] = tmp
+    if _files_version([open(staged[f], "rb").read() for f in UPDATE_FILES]) != manifest.get("version"):
+        return "Version mismatch after download; update refused"
+
+    for f, tmp in staged.items():
+        cur = os.path.join(BASE_DIR, f)
+        if os.path.exists(cur):
+            os.replace(cur, cur + ".prev")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, cur)
+    with open(UPDATE_MARKER, "w") as fh:
+        fh.write("0")
+    logger.warning("Updated agent %s → %s; restarting", AGENT_VERSION, manifest.get("version"))
+
+    def _restart():
+        time.sleep(3)          # let the command result reach the dashboard
+        os._exit(0)            # launchd KeepAlive starts the new version
+    threading.Thread(target=_restart, daemon=True).start()
+    return f"Updated {AGENT_VERSION} → {manifest.get('version')}; restarting"
+
+
+def update_loop():
+    time.sleep(90)
+    while True:
+        try:
+            result = check_for_update()
+            logger.info("Auto-update: %s", result)
+        except Exception as e:
+            logger.warning("Auto-update check failed: %s", e)
+        time.sleep(UPDATE_INTERVAL)
+
+
+def handle_update_agent(payload):
+    try:
+        return check_for_update(), True
+    except Exception as e:
+        return f"update error: {e}", False
+
+
 def main():
+    _check_update_rollback()
+    logger.info("SparrowShield agent version %s", AGENT_VERSION)
     config = load_config()
     api_url = (config.get("api_url") or "").rstrip("/")
     if not api_url:
@@ -1938,6 +2064,8 @@ def main():
 
     t3 = threading.Thread(target=es_sensor_loop, args=(api_url, supabase_rest_url, anon_key, device_id), daemon=True)
     t3.start()
+
+    threading.Thread(target=update_loop, daemon=True).start()
 
     if _EDR_AVAILABLE:
         # Closes blocked apps / Policy Manager matches within ~15s of launch.
@@ -2316,6 +2444,7 @@ def handle_restore_app(payload):
 
 
 COMMAND_HANDLERS = {
+    "update_agent":             handle_update_agent,
     "sync_web_filter":          handle_sync_web_filter,
     "remove_app":               handle_remove_app,
     "restore_app":              handle_restore_app,
