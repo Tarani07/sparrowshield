@@ -50,6 +50,7 @@ import DeviceGroups from "./pages/DeviceGroups";
 import ITNotices from "./pages/ITNotices";
 import UsersAccess from "./pages/UsersAccess";
 import AuditLog from "./pages/AuditLog";
+import JumpCloudInventory from "./pages/JumpCloudInventory";
 
 function NoAccess() {
   const { user, signOut } = useAuth();
@@ -140,6 +141,7 @@ function ProtectedLayout() {
           <Route path="/notices"      element={<ITNotices />} />
           <Route path="/users"        element={<UsersAccess />} />
           <Route path="/audit"        element={<AuditLog />} />
+          <Route path="/jumpcloud"    element={<JumpCloudInventory />} />
 
           <Route path="/settings" element={<Settings />} />
           <Route path="/about" element={<About />} />

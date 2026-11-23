@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { useAuth } from "../lib/AuthContext";
 import TopBar from "../components/layout/TopBar";
+import { Page, PageHeader, StatTile, Badge, Button, Tabs } from "../components/ui";
+import ReportSchedules from "../components/ReportSchedules";
 import { useAllDevices } from "../hooks/useDevices";
 import { useAlerts } from "../hooks/useAlerts";
 import { useFleetReports } from "../hooks/useHealthReports";
@@ -693,6 +695,7 @@ function printSecuritySummary(
 
 /* ─── Component ─── */
 export default function Reports() {
+  const [view, setView] = useState<"library" | "scheduled">("library");
   const [filter, setFilter] = useState("all");
   const [downloading, setDownloading] = useState<string | null>(null);
   const { user } = useAuth();
@@ -747,161 +750,73 @@ export default function Reports() {
   };
 
   return (
-    <div style={{ background: "var(--c-bg)", minHeight: "100vh" }} className="flex flex-col">
+    <div className="flex flex-col min-h-full">
       <TopBar title="Reports" />
+      <Page>
+        <PageHeader
+          title="Reports"
+          crumbs={[{ label: "Operations" }, { label: "Reports" }]}
+          description="Download fleet reports on demand, or schedule them to arrive by email and Slack automatically."
+          actions={<>
+            <Button icon={Download} onClick={async () => { for (const r of REPORTS) { await handleDownload(r.id); await new Promise(res => setTimeout(res, 200)); } }}>
+              Download all ({REPORTS.length})
+            </Button>
+            <Button variant="primary" adminOnly={false} icon={Printer} onClick={() => printSecuritySummary(devices, activeAlerts, reports, user?.email ?? "Admin")}>
+              Security summary PDF
+            </Button>
+          </>}
+        />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-5">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold" style={{ color: "var(--c-strong)" }}>Reports & Downloads</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--c-muted)" }}>
-              Download fleet reports as CSV or PDF. Data refreshes every 30 seconds.
-            </p>
-          </div>
-          <button
-            onClick={() => printSecuritySummary(devices, activeAlerts, reports, user?.email ?? "Admin")}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-            style={{ background: "var(--c-primary)", color: "#fff" }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
-          >
-            <Printer className="w-4 h-4" />
-            Security Summary PDF
-          </button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <StatTile label="Enrolled devices" icon={Laptop} value={stats.devices} />
+          <StatTile label="Active alerts" icon={AlertTriangle} tone={stats.alerts ? "high" : "ok"} value={stats.alerts} />
+          <StatTile label="Health reports" icon={Activity} tone="accent" value={stats.reports} />
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="w-10 h-10 rounded-lg bg-indigo-500/20 flex items-center justify-center">
-              <Laptop className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div>
-              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.devices}</p>
-              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Enrolled Devices</p>
-            </div>
-          </div>
-          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="w-10 h-10 rounded-lg bg-red-500/20 flex items-center justify-center">
-              <AlertTriangle className="w-5 h-5 text-red-400" />
-            </div>
-            <div>
-              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.alerts}</p>
-              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Active Alerts</p>
-            </div>
-          </div>
-          <div className="rounded-xl p-4 flex items-center gap-3" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-              <Activity className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-lg font-bold" style={{ color: "var(--c-strong)" }}>{stats.reports}</p>
-              <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Health Reports</p>
-            </div>
-          </div>
+        <div className="mb-4">
+          <Tabs value={view} onChange={setView} tabs={[
+            { id: "library", label: "Report library", count: REPORTS.length },
+            { id: "scheduled", label: "Scheduled delivery" },
+          ]} />
         </div>
 
-        {/* Category filter */}
-        <div className="flex items-center gap-2">
+        {view === "scheduled" ? <ReportSchedules /> : (<>
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           {CATEGORIES.map((c) => (
-            <button
-              key={c.key}
-              onClick={() => setFilter(c.key)}
-              className="text-xs font-medium transition-all"
+            <button key={c.key} onClick={() => setFilter(c.key)}
+              className="h-7 px-3 rounded-md border text-[12px] font-medium"
               style={filter === c.key
-                ? { background: "#1B5E37", color: "#fff", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 600 }
-                : { color: "var(--c-muted)", borderRadius: 8, padding: "6px 14px", fontSize: 12, background: "var(--c-card2)", border: "1px solid var(--c-border)" }}
-            >
+                ? { background: "var(--c-accent-bg)", borderColor: "var(--c-accent)", color: "var(--c-accent)" }
+                : { background: "var(--c-card2)", borderColor: "var(--c-border2)", color: "var(--c-text)" }}>
               {c.label}
             </button>
           ))}
         </div>
 
-        {/* Report cards grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {filtered.map((report) => {
-            const colors = COLOR_MAP[report.color];
             const Icon = report.icon;
             const isDownloading = downloading === report.id;
-
             return (
-              <div
-                key={report.id}
-                className={cn(
-                  "rounded-xl p-5 transition-all group",
-                  colors.border,
-                  colors.hover
-                )}
-                style={{ background: "var(--c-card)", border: undefined }}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", colors.icon)}>
-                    <Icon className={cn("w-5 h-5", colors.text)} />
-                  </div>
-                  <span className={cn("text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border", colors.bg, colors.border, colors.text)}>
-                    {report.category}
+              <div key={report.id} className="rounded-lg border p-4 flex flex-col"
+                style={{ background: "var(--c-card)", borderColor: "var(--c-border)", boxShadow: "var(--c-shadow)" }}>
+                <div className="flex items-start justify-between mb-2.5">
+                  <span className="w-8 h-8 rounded-md border flex items-center justify-center" style={{ borderColor: "var(--c-border)", background: "var(--c-card2)" }}>
+                    <Icon className="w-4 h-4" style={{ color: "var(--c-accent)" }} />
                   </span>
+                  <Badge tone="neutral">{report.category}</Badge>
                 </div>
-
-                <h3 className="text-sm font-semibold mb-1" style={{ color: "var(--c-strong)" }}>{report.label}</h3>
-                <p className="text-xs leading-relaxed mb-4" style={{ color: "var(--c-muted)" }}>{report.description}</p>
-
-                <button
-                  onClick={() => handleDownload(report.id)}
-                  disabled={isDownloading}
-                  className={cn(
-                    "w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-xs font-semibold transition-all border",
-                    isDownloading
-                      ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
-                      : cn(colors.bg, colors.border, colors.text, "hover:opacity-80")
-                  )}
-                >
-                  {isDownloading ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="w-3.5 h-3.5" />
-                      Download CSV
-                    </>
-                  )}
-                </button>
+                <h3 className="text-[13.5px] font-semibold" style={{ color: "var(--c-strong)" }}>{report.label}</h3>
+                <p className="text-[12px] leading-relaxed mt-1 mb-3 flex-1" style={{ color: "var(--c-muted)" }}>{report.description}</p>
+                <Button icon={isDownloading ? Loader2 : Download} onClick={() => handleDownload(report.id)} disabled={isDownloading}>
+                  {isDownloading ? "Generating…" : "Download CSV"}
+                </Button>
               </div>
             );
           })}
         </div>
-
-        {/* Download All */}
-        <div className="rounded-xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--c-strong)" }}>
-                <FileText className="w-4 h-4" style={{ color: "var(--c-primary)" }} />
-                Download All Reports
-              </h3>
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-muted)" }}>
-                Generate all {REPORTS.length} reports at once as separate CSV files
-              </p>
-            </div>
-            <button
-              onClick={async () => {
-                for (const r of REPORTS) {
-                  await handleDownload(r.id);
-                  await new Promise((res) => setTimeout(res, 200));
-                }
-              }}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-xs font-semibold transition-all"
-              style={{ background: "#1B5E37", color: "#fff", borderRadius: 12, padding: "8px 16px", fontSize: 13, fontWeight: 600 }}
-            >
-              <Download className="w-4 h-4" />
-              Download All ({REPORTS.length} Reports)
-            </button>
-          </div>
-        </div>
-      </div>
+        </>)}
+      </Page>
     </div>
   );
 }

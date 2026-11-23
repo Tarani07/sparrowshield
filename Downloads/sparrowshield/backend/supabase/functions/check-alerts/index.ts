@@ -57,11 +57,19 @@ Deno.serve(async (req) => {
     offline_minutes: 120,
   };
 
-  const slackWebhook: SlackWebhook = (slackRow?.value as SlackWebhook) ?? { url: "" };
+  // Settings stores the webhook as a plain string; older rows used { url }.
+  const slackWebhook: SlackWebhook = typeof slackRow?.value === "string"
+    ? { url: slackRow.value as string }
+    : (slackRow?.value as SlackWebhook) ?? { url: "" };
   const digestTime: DailyDigestTime = (digestRow?.value as DailyDigestTime) ?? { hour: 9 };
 
   interface EmailConfig { enabled: boolean; resend_api_key: string; to: string; from: string; }
   const emailConfig: EmailConfig = (emailRow?.value as EmailConfig) ?? { enabled: false, resend_api_key: "", to: "", from: "" };
+  // The Resend key now lives in internal_secrets (service role only), not in the readable config table.
+  if (!emailConfig.resend_api_key) {
+    const { data: secret } = await supabase.from("internal_secrets").select("value").eq("name", "resend_api_key").maybeSingle();
+    emailConfig.resend_api_key = secret?.value ?? "";
+  }
 
   const { data: devices } = await supabase
     .from("devices")

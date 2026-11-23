@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BellRing, ChevronDown, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
-  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText,
+  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText, Cloud,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ElementType } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -177,6 +177,7 @@ export default function Sidebar() {
       { to: "/mac/devices", label: "macOS", icon: Apple, count: macCount },
       { to: "/windows/devices", label: "Windows", icon: Monitor, count: winCount },
       { to: "/groups", label: "Device Groups", icon: Users },
+      { to: "/jumpcloud", label: "JumpCloud", icon: Cloud },
     ]},
     { id: "detect", label: "Detection & Response", items: [
       { to: "/mac/edr", label: "Detections", icon: Crosshair },

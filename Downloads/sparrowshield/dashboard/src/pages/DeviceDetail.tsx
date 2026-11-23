@@ -3,7 +3,9 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Apple, Monitor, Cpu, MemoryStick, Activity, Zap, CheckCircle2, Clock, AlertCircle, Trash2, RefreshCw, Layers, RotateCcw } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import TopBar from "../components/layout/TopBar";
-import { Badge, Button } from "../components/ui";
+import { Badge, Button, Panel } from "../components/ui";
+import { JumpCloudInsights, type JcSystem } from "../components/device/JumpCloudInsights";
+import { useQuery } from "@tanstack/react-query";
 import HealthGauge from "../components/device/HealthGauge";
 import AIDiagnosisCard from "../components/device/AIDiagnosisCard";
 import MetricBar from "../components/device/MetricBar";
@@ -42,6 +44,10 @@ export default function DeviceDetail() {
   const navigate = useNavigate();
   const { data: reports = [], isLoading } = useDeviceReport(id!);
   const { data: device } = useDevice(id!);
+  const { data: jcSystem } = useQuery<JcSystem | null>({
+    queryKey: ["jumpcloud-device", id],
+    queryFn: async () => (await supabase.from("jumpcloud_systems").select("*").eq("device_id", id!).maybeSingle()).data as JcSystem | null,
+  });
   // Latest agent published on the portal; Macs self-update to it within an hour.
   const [latestAgent, setLatestAgent] = useState<string | null>(null);
   useEffect(() => {
@@ -196,6 +202,13 @@ export default function DeviceDetail() {
             </div>
           </div>
         </div>
+
+        {jcSystem && (
+          <Panel title="JumpCloud System Insights" subtitle="Matched by serial number"
+            actions={<Link to="/jumpcloud" className="text-[12px] font-medium" style={{ color: "var(--c-accent)" }}>JumpCloud inventory</Link>}>
+            <JumpCloudInsights s={jcSystem} />
+          </Panel>
+        )}
 
         {/* Health gauge + AI diagnosis */}
         {latest && (

@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { EmailSettings, IntegrationsPanel } from "../components/settings/IntegrationSettings";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save, Send, Check, Loader2, Slack, Zap, ShieldAlert, Package, Trash2, Plus, X, Shield, Key, Mail } from "lucide-react";
 import TopBar from "../components/layout/TopBar";
+import { Page, PageHeader, Tabs } from "../components/ui";
 import { supabase } from "../lib/supabase";
 import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/utils";
@@ -108,7 +111,9 @@ async function fetchSettings(): Promise<NotificationToggles> {
 
 /* ─── Main Component ─── */
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<string>("slack");
+  const [params, setParams] = useSearchParams();
+  const [activeTab, setActiveTabState] = useState<string>(() => params.get("tab") ?? "slack");
+  const setActiveTab = (t: string) => { setActiveTabState(t); setParams({ tab: t }, { replace: true }); };
 
   const queryClient = useQueryClient();
   const { data: settings, isLoading } = useQuery({
@@ -205,31 +210,16 @@ export default function Settings() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col min-h-full">
       <TopBar title="Settings" />
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {/* Tab selector */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setActiveTab(t.key)}
-                className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border",
-                  activeTab === t.key
-                    ? "bg-indigo-600/20 text-indigo-400 border-indigo-600/30"
-                    : "bg-slate-800/50 text-slate-400 border-slate-700 hover:text-slate-200 hover:bg-slate-800"
-                )}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+      <Page className="space-y-5">
+        <PageHeader
+          title="Settings"
+          crumbs={[{ label: "Administration" }, { label: "Settings" }]}
+          description="Notifications, e-mail delivery, integrations, automatic remediation and software policy."
+        />
+        <Tabs value={activeTab as typeof TABS[number]["key"]} onChange={setActiveTab} tabs={TABS.map(t => ({ id: t.key, label: t.label }))} />
 
         {/* ─── Tab: Slack Notifications ─── */}
         {activeTab === "slack" && (
@@ -374,10 +364,10 @@ export default function Settings() {
         )}
 
         {/* ─── Tab: Email Alerts ─── */}
-        {activeTab === "email" && <EmailAlertsTab />}
+        {activeTab === "email" && <EmailSettings />}
 
         {/* ─── Tab: Integrations ─── */}
-        {activeTab === "integrations" && <IntegrationsTab />}
+        {activeTab === "integrations" && <IntegrationsPanel />}
 
         {/* ─── Tab: Auto-Remediation ─── */}
         {activeTab === "remediation" && <RemediationTab />}
@@ -387,7 +377,7 @@ export default function Settings() {
 
         {/* ─── Tab: Software Catalog ─── */}
         {activeTab === "software-catalog" && <SoftwareCatalogTab />}
-      </div>
+      </Page>
     </div>
   );
 }
@@ -1055,248 +1045,3 @@ function SoftwareCatalogTab() {
 /* ═══════════════════════════════════════════════════════════
    Email Alerts Tab
 ═══════════════════════════════════════════════════════════ */
-interface EmailConfig {
-  enabled: boolean;
-  resend_api_key: string;
-  to: string;
-  from: string;
-}
-
-function EmailAlertsTab() {
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState<EmailConfig>({ enabled: false, resend_api_key: "", to: "", from: "" });
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [testStatus, setTestStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-
-  // React Query v5 dropped useQuery onSuccess — load saved values into the form with an effect,
-  // otherwise Save would overwrite the stored config with an empty form.
-  const { data: savedEmail, isLoading } = useQuery<EmailConfig>({
-    queryKey: ["email-config"],
-    queryFn: async () => {
-      const { data } = await supabase.from("config").select("value").eq("key", "email_config").maybeSingle();
-      return (data?.value ?? {}) as EmailConfig;
-    },
-  });
-  useEffect(() => {
-    if (!savedEmail) return;
-    setForm({ enabled: savedEmail.enabled ?? false, resend_api_key: savedEmail.resend_api_key ?? "", to: savedEmail.to ?? "", from: savedEmail.from ?? "" });
-  }, [savedEmail]);
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.from("config").upsert({ key: "email_config", value: form }, { onConflict: "key" });
-      if (error) throw error;
-    },
-    onMutate: () => setSaveStatus("saving"),
-    onSuccess: () => {
-      setSaveStatus("saved");
-      queryClient.invalidateQueries({ queryKey: ["email-config"] });
-      setTimeout(() => setSaveStatus("idle"), 2000);
-    },
-    onError: () => setSaveStatus("idle"),
-  });
-
-  const testMutation = useMutation({
-    mutationFn: async () => {
-      if (!form.resend_api_key || !form.to) throw new Error("Missing config");
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${form.resend_api_key}` },
-        body: JSON.stringify({
-          from: form.from || "sparrowshield@resend.dev",
-          to: [form.to],
-          subject: "[SparrowShield] Test Email Notification",
-          html: `<div style="font-family:sans-serif;padding:24px;max-width:600px"><h2 style="color:#1a1a1a">SparrowShield Test Alert</h2><p style="color:#555">If you received this, email alerts are configured correctly.</p><p style="color:#555;font-size:12px;margin-top:24px">SparrowShield Security Platform</p></div>`,
-        }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-    },
-    onMutate: () => setTestStatus("sending"),
-    onSuccess: () => { setTestStatus("sent"); setTimeout(() => setTestStatus("idle"), 3000); },
-    onError: () => { setTestStatus("error"); setTimeout(() => setTestStatus("idle"), 3000); },
-  });
-
-  if (isLoading) return <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-slate-500" /></div>;
-
-  return (
-    <>
-      <div>
-        <h1 className="text-lg font-bold text-white">Email Alerts</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Send email notifications for security alerts via{" "}
-          <a href="https://resend.com" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Resend</a>.
-        </p>
-      </div>
-
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600/20 flex items-center justify-center">
-            <Mail className="w-5 h-5 text-blue-400" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-sm font-semibold text-white">Email Notifications</h2>
-            <p className="text-xs text-slate-500 mt-0.5">Receive an email for every new security alert.</p>
-          </div>
-          <button
-            onClick={() => setForm((p) => ({ ...p, enabled: !p.enabled }))}
-            className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0", form.enabled ? "bg-indigo-600" : "bg-slate-700")}
-          >
-            <span className={cn("inline-block h-4 w-4 rounded-full bg-white transition-transform", form.enabled ? "translate-x-6" : "translate-x-1")} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4">
-          <div>
-            <label className="text-[11px] text-slate-500 font-medium mb-1 block">Resend API Key</label>
-            <input
-              type="password"
-              value={form.resend_api_key}
-              onChange={(e) => setForm((p) => ({ ...p, resend_api_key: e.target.value }))}
-              placeholder="re_xxxxxxxxxxxxxxxxxxxx"
-              className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            />
-            <p className="text-[10px] text-slate-600 mt-1">
-              Get a free key at{" "}
-              <a href="https://resend.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">resend.com/api-keys</a>
-              {" "}— 3,000 emails/month free.
-            </p>
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-500 font-medium mb-1 block">Send Alerts To</label>
-            <input
-              type="email"
-              value={form.to}
-              onChange={(e) => setForm((p) => ({ ...p, to: e.target.value }))}
-              placeholder="security-team@yourcompany.com"
-              className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-500 font-medium mb-1 block">From Email (optional)</label>
-            <input
-              type="email"
-              value={form.from}
-              onChange={(e) => setForm((p) => ({ ...p, from: e.target.value }))}
-              placeholder="sparrowshield@resend.dev (default)"
-              className="w-full px-4 py-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-            />
-            <p className="text-[10px] text-slate-600 mt-1">Must be a verified sender in your Resend account.</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex justify-between items-center">
-        <button
-          onClick={() => testMutation.mutate()}
-          disabled={!form.resend_api_key || !form.to || testStatus === "sending"}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs font-medium border transition-all disabled:opacity-40 disabled:cursor-not-allowed",
-            testStatus === "sent" ? "bg-green-500/10 text-green-400 border-green-500/30"
-            : testStatus === "error" ? "bg-red-500/10 text-red-400 border-red-500/30"
-            : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700 hover:text-white"
-          )}
-        >
-          {testStatus === "sending" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : testStatus === "sent" ? <Check className="w-3.5 h-3.5" /> : <Send className="w-3.5 h-3.5" />}
-          {testStatus === "sending" ? "Sending..." : testStatus === "sent" ? "Sent!" : testStatus === "error" ? "Failed" : "Send Test Email"}
-        </button>
-
-        <button
-          onClick={() => saveMutation.mutate()}
-          disabled={saveStatus === "saving"}
-          className={cn(
-            "flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all",
-            saveStatus === "saved" ? "bg-green-600 text-white" : "bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-60"
-          )}
-        >
-          {saveStatus === "saving" ? <Loader2 className="w-4 h-4 animate-spin" /> : saveStatus === "saved" ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-          {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved!" : "Save Settings"}
-        </button>
-      </div>
-    </>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════
-   Integrations Tab — VirusTotal API key + future integrations
-═══════════════════════════════════════════════════════════ */
-function IntegrationsTab() {
-  const [vtKey, setVtKey] = useState<string>(() => localStorage.getItem("vt_api_key") ?? "");
-  const [saved, setSaved] = useState(false);
-
-  function saveVtKey() {
-    if (vtKey.trim()) {
-      localStorage.setItem("vt_api_key", vtKey.trim());
-    } else {
-      localStorage.removeItem("vt_api_key");
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="rounded-2xl p-5" style={{ background: "var(--c-card)", border: "1px solid var(--c-border)" }}>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: "rgba(59,130,246,0.15)" }}>
-            <Key className="w-4 h-4 text-blue-400" />
-          </div>
-          <div>
-            <p className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>VirusTotal</p>
-            <p className="text-xs" style={{ color: "var(--c-muted)" }}>Hash lookups from Process Tree and Live Alerts</p>
-          </div>
-          <a href="https://www.virustotal.com/gui/my-apikey" target="_blank" rel="noopener noreferrer"
-            className="ml-auto text-[11px] font-medium" style={{ color: "var(--c-primary)" }}>
-            Get free API key →
-          </a>
-        </div>
-        <label className="block text-xs font-medium mb-1.5" style={{ color: "var(--c-muted)" }}>API Key</label>
-        <div className="flex gap-2">
-          <input
-            type="password"
-            value={vtKey}
-            onChange={e => setVtKey(e.target.value)}
-            placeholder="Enter your VirusTotal API key…"
-            className="flex-1 rounded-xl px-3 py-2.5 text-sm focus:outline-none transition-all"
-            style={{ background: "var(--c-bg)", border: "1px solid var(--c-border2)", color: "var(--c-text)" }}
-            onFocus={e => (e.currentTarget.style.borderColor = "var(--c-primary)")}
-            onBlur={e => (e.currentTarget.style.borderColor = "var(--c-border2)")}
-          />
-          <button
-            onClick={saveVtKey}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
-            style={{ background: saved ? "rgba(34,197,94,0.15)" : "var(--c-primary)", color: saved ? "#22c55e" : "#fff" }}
-          >
-            {saved ? <><Check className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save</>}
-          </button>
-        </div>
-        <p className="text-[10px] mt-2" style={{ color: "var(--c-muted)" }}>
-          Stored locally in your browser only — never sent to any server. Free tier: 500 lookups/day.
-        </p>
-      </div>
-
-      {[
-        { name: "CrowdStrike", desc: "Import IOC feeds and threat intelligence", color: "#ef4444" },
-        { name: "Shodan", desc: "External attack surface monitoring", color: "#f59e0b" },
-        { name: "Splunk", desc: "Forward EDR events to your SIEM", color: "#8b5cf6" },
-      ].map(item => (
-        <div key={item.name} className="rounded-2xl p-5 flex items-center gap-4"
-          style={{ background: "var(--c-card)", border: "1px solid var(--c-border)", opacity: 0.6 }}>
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: `${item.color}22` }}>
-            <Shield className="w-4 h-4" style={{ color: item.color }} />
-          </div>
-          <div>
-            <p className="text-sm font-bold" style={{ color: "var(--c-strong)" }}>{item.name}</p>
-            <p className="text-xs" style={{ color: "var(--c-muted)" }}>{item.desc}</p>
-          </div>
-          <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{ background: "var(--c-border)", color: "var(--c-muted)" }}>
-            Coming soon
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
