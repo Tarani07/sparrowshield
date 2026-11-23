@@ -2136,6 +2136,10 @@ def main():
     threading.Thread(target=notice_loop, args=(supabase_rest_url, anon_key), daemon=True).start()
 
     if _EDR_AVAILABLE:
+        # Detection analytics (Jamf-Protect-style catalogue from the console).
+        threading.Thread(target=edr_engine.analytics_loop,
+                         args=(supabase_rest_url, anon_key, device_id, get_computer_name()),
+                         daemon=True).start()
         # Closes blocked apps / Policy Manager matches within ~15s of launch.
         threading.Thread(target=edr_engine.app_enforcement_loop,
                          args=(supabase_rest_url, anon_key, device_id, get_computer_name()),

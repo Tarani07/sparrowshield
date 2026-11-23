@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BellRing, ChevronDown, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
-  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText, Cloud,
+  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText, Cloud, Radar,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ElementType } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -181,6 +181,7 @@ export default function Sidebar() {
     ]},
     { id: "detect", label: "Detection & Response", items: [
       { to: "/mac/edr", label: "Detections", icon: Crosshair },
+      { to: "/analytics", label: "Analytics", icon: Radar },
       { to: "/mac/av", label: "Malware Scanner", icon: ScanLine },
       { to: "/threat-hunt", label: "Threat Hunting", icon: Target },
       { to: "/process-tree", label: "Process Tree", icon: GitBranch },

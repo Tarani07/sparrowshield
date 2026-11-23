@@ -5,6 +5,7 @@ Features: malware detection, web filter, app filter, suspicious behavior, device
 """
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -310,6 +311,10 @@ def scan_for_malware(rest_url: str, anon_key: str, device_id: str, hostname: str
                                        "engine": "VirusTotal"})
 
     for d in detections:
+        try:
+            analytics_on_malware(rest_url, anon_key, device_id, hostname, d)
+        except Exception as e:
+            logger.debug("analytics malware mapping failed: %s", e)
         name = os.path.basename(d["path"])
         pid = exe_pids.get(d["path"])
         d["pid"] = pid
@@ -977,3 +982,419 @@ def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
     report(100, "Scan complete")
     logger.info("[EDR] Scan complete for %s: %s", hostname, summary)
     return summary
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DETECTION ANALYTICS (catalogue in the `analytics` table; modelled on Jamf Protect)
+#   process rules every 30s · persistence/file/config/log/malware-IOC every 5 min
+# ══════════════════════════════════════════════════════════════════════════════
+
+import plistlib
+import stat as _stat
+from glob import glob as _glob
+
+ANALYTICS_STATE = os.path.join(DATA_DIR, "analytics_state.json")
+ANALYTICS_REFRESH_SEC = 600
+_SHELL_NAMES = {"sh", "bash", "zsh", "ksh", "csh", "tcsh", "dash", "fish"}
+_analytics: list = []
+_analytics_loaded_at = 0.0
+_analytics_seen: dict = {}          # dedupe key -> first seen ts (process hits)
+_regex_cache: dict = {}
+
+
+def _rx(pattern: str):
+    r = _regex_cache.get(pattern)
+    if r is None:
+        try:
+            r = re.compile(pattern)
+        except re.error:
+            r = re.compile(r"(?!x)x")        # never matches; a bad pattern must not break the engine
+        _regex_cache[pattern] = r
+    return r
+
+
+def _load_state() -> dict:
+    try:
+        with open(ANALYTICS_STATE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_state(state: dict):
+    try:
+        _ensure_dirs()
+        tmp = ANALYTICS_STATE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(state, f)
+        os.replace(tmp, ANALYTICS_STATE)
+    except OSError as e:
+        logger.debug("analytics state save failed: %s", e)
+
+
+def sync_analytics(rest_url: str, anon_key: str, force: bool = False):
+    """Enabled analytics the agent can run (anon policy hides disabled and ES-only ones)."""
+    global _analytics, _analytics_loaded_at
+    if not force and time.time() - _analytics_loaded_at < ANALYTICS_REFRESH_SEC and _analytics:
+        return
+    rows = _get(rest_url, anon_key, "analytics?select=id,name,category,method,definition,severity,mitre&limit=1000")
+    if rows or not _analytics:
+        _analytics = rows
+        _analytics_loaded_at = time.time()
+        logger.info("[ANALYTICS] %d analytics active", len(rows))
+
+
+def _expand(paths: list) -> list:
+    out = []
+    for p in paths:
+        if p.startswith("~/"):
+            out += _glob(os.path.join("/Users/*", p[2:]))
+        else:
+            out += _glob(p)
+    return [p for p in out if not p.startswith("/Users/Shared/Relocated")]
+
+
+def _hit(rest_url, anon_key, device_id, hostname, rule: dict, detail: str, extra: dict = None):
+    sev = rule.get("severity") or "high"
+    logger.warning("[ANALYTICS] %s — %s", rule["name"], detail)
+    _post_security_event(rest_url, anon_key, device_id, hostname,
+        event_type="analytic", severity="high" if sev in ("critical", "high") else "warning",
+        description=f"{rule['name']}: {detail}",
+        details={"rule_id": rule["id"], "category": rule.get("category"), **(extra or {})},
+        mitre=rule.get("mitre"))
+    _raise_alert(rest_url, anon_key, device_id, hostname,
+        rule_id=f"analytic:{rule['id']}"[:120], severity=sev if sev != "info" else "low",
+        message=f"{rule['name']} — {detail} on {hostname}", mitre=rule.get("mitre"))
+
+
+def _once(key: str, ttl: int = 3600) -> bool:
+    """True the first time a key is seen within ttl seconds."""
+    now = time.time()
+    if now - _analytics_seen.get(key, 0) < ttl:
+        return False
+    _analytics_seen[key] = now
+    if len(_analytics_seen) > 5000:
+        for k in sorted(_analytics_seen, key=_analytics_seen.get)[:2500]:
+            _analytics_seen.pop(k, None)
+    return True
+
+
+# ── process-based rules ──────────────────────────────────────────────────────
+def run_process_analytics(rest_url, anon_key, device_id, hostname):
+    rules = [r for r in _analytics if r.get("method") in ("cmdline", "parent_child", "process", "listen")]
+    if not rules:
+        return
+    me = os.getpid()
+    procs = {}
+    for p in psutil.process_iter(["pid", "ppid", "name", "exe", "cmdline", "create_time"]):
+        procs[p.info["pid"]] = p.info
+    for info in procs.values():
+        pid = info["pid"]
+        if pid in (0, 1, me) or info.get("ppid") == me:          # never flag the agent's own helpers
+            continue
+        name = info.get("name") or ""
+        exe = info.get("exe") or ""
+        cmd = " ".join(info.get("cmdline") or [])[:4000]
+        parent = procs.get(info.get("ppid") or -1) or {}
+        pname = parent.get("name") or ""
+        for r in rules:
+            d = r.get("definition") or {}
+            m = r["method"]
+            matched = None
+            if m == "cmdline" and cmd:
+                for pat in d.get("patterns", []):
+                    if _rx(pat).search(cmd):
+                        matched = f"{name} (PID {pid}): {cmd[:300]}"
+                        break
+            elif m == "parent_child" and pname:
+                if _rx(d.get("parents", "(?!x)x")).search(pname) and _rx(d.get("children", "(?!x)x")).search(name):
+                    matched = f"{pname} started {name} (PID {pid}): {cmd[:250]}"
+            elif m == "process":
+                if d.get("check") == "exe_deleted":
+                    if exe and not exe.startswith(("/System/", "/Applications/", "/usr/", "/Library/Apple/")) \
+                            and time.time() - (info.get("create_time") or 0) > 30:
+                        try:
+                            os.stat(exe)
+                        except FileNotFoundError:          # truly gone — not merely unreadable
+                            matched = f"{name} (PID {pid}) is running but its binary {exe} was deleted"
+                        except OSError:
+                            pass
+                else:
+                    ok = True
+                    if d.get("name") and not _rx(d["name"]).search(name):
+                        ok = False
+                    if ok and d.get("exe") and not _rx(d["exe"]).search(exe):
+                        ok = False
+                    if ok and d.get("exe_not") and (not exe or _rx(d["exe_not"]).search(exe)):
+                        ok = False
+                    if ok and (d.get("name") or d.get("exe")):
+                        matched = f"{name} (PID {pid}) {exe}"
+            if matched and _once(f"{r['id']}:{pid}:{info.get('create_time')}"):
+                _hit(rest_url, anon_key, device_id, hostname, r, matched,
+                     {"pid": pid, "process": name, "path": exe, "cmdline": cmd[:1000], "parent": pname})
+
+    for r in [r for r in rules if r["method"] == "listen"]:
+        d = r.get("definition") or {}
+        try:
+            for c in psutil.net_connections(kind="inet"):
+                if c.status != psutil.CONN_LISTEN or not c.pid or not c.laddr:
+                    continue
+                pname = (procs.get(c.pid) or {}).get("name") or ""
+                if _rx(d.get("process", "(?!x)x")).search(pname) and c.laddr.port not in d.get("allowed_ports", []):
+                    if _once(f"{r['id']}:{c.laddr.port}", 86400):
+                        _hit(rest_url, anon_key, device_id, hostname, r, f"{pname} listening on port {c.laddr.port}", {"port": c.laddr.port})
+        except (psutil.AccessDenied, OSError):
+            pass
+
+
+# ── persistence / file / config / log rules ──────────────────────────────────
+def _plist_program(path: str) -> str:
+    try:
+        with open(path, "rb") as f:
+            pl = plistlib.load(f)
+        prog = pl.get("Program") or (pl.get("ProgramArguments") or [""])[0]
+        return str(prog or "")
+    except Exception:
+        return ""
+
+
+def _plist_dyld(path: str, key: str = "EnvironmentVariables") -> bool:
+    try:
+        with open(path, "rb") as f:
+            pl = plistlib.load(f)
+        return "DYLD_INSERT_LIBRARIES" in (pl.get(key) or {})
+    except Exception:
+        return False
+
+
+def _file_sig(path: str) -> str:
+    try:
+        st = os.stat(path)
+        return f"{int(st.st_mtime)}:{st.st_size}"
+    except OSError:
+        return ""
+
+
+def _recent(path: str, minutes: int) -> bool:
+    try:
+        return time.time() - os.stat(path).st_mtime < minutes * 60
+    except OSError:
+        return False
+
+
+def _app_info(app: str) -> dict:
+    try:
+        with open(os.path.join(app, "Contents", "Info.plist"), "rb") as f:
+            return plistlib.load(f)
+    except Exception:
+        return {}
+
+
+def _walk_limited(root: str, depth: int, cap: int = 3000):
+    base = root.rstrip("/").count("/")
+    n = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        if dirpath.count("/") - base >= depth:
+            dirnames[:] = []
+        for fn in filenames:
+            n += 1
+            if n > cap:
+                return
+            yield os.path.join(dirpath, fn)
+
+
+def run_periodic_analytics(rest_url, anon_key, device_id, hostname, state: dict):
+    baselines = state.setdefault("baselines", {})
+    alerted = state.setdefault("alerted", {})
+
+    def once_path(rule_id, key) -> bool:
+        k = f"{rule_id}|{key}"
+        if k in alerted:
+            return False
+        alerted[k] = int(time.time())
+        return True
+
+    for r in _analytics:
+        m, d, rid = r.get("method"), r.get("definition") or {}, r["id"]
+        try:
+            if m == "persistence":
+                items = {}
+                for root in _expand(d.get("paths", [])):
+                    for p in _glob(os.path.join(root, d.get("glob", "*"))):
+                        items[p] = _file_sig(p)
+                chk = d.get("check")
+                if chk in ("new", "changed"):
+                    prev = baselines.get(rid)
+                    if prev is None:
+                        baselines[rid] = items                      # first run: learn what's already there
+                        continue
+                    for p, sig in items.items():
+                        if p not in prev or (chk == "changed" and prev.get(p) != sig):
+                            if once_path(rid, f"{p}:{sig}"):
+                                prog = _plist_program(p) if p.endswith(".plist") else ""
+                                _hit(rest_url, anon_key, device_id, hostname, r,
+                                     f"{'new' if p not in prev else 'modified'} {p}" + (f" → {prog}" if prog else ""), {"path": p, "program": prog})
+                    baselines[rid] = items
+                elif chk == "disguised":
+                    exp = d.get("expected", [])
+                    for p in items:
+                        prog = _plist_program(p)
+                        if prog and not any(_rx(e).search(prog) for e in exp) and once_path(rid, p):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"{p} runs {prog}", {"path": p, "program": prog})
+                elif chk == "hidden_target":
+                    for p in items:
+                        prog = _plist_program(p)
+                        if "/." in prog and once_path(rid, p):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"{p} runs hidden binary {prog}", {"path": p, "program": prog})
+                elif chk == "dyld_insert":
+                    for p in items:
+                        if _plist_dyld(p) and once_path(rid, p):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"{p} sets DYLD_INSERT_LIBRARIES", {"path": p})
+
+            elif m == "file_scan":
+                chk = d.get("check")
+                age = d.get("max_age_minutes")
+                for root in _expand(d.get("paths", [])):
+                    if not os.path.isdir(root):
+                        continue
+                    if chk == "setuid_shell":
+                        for p in _walk_limited(root, 2, 2000):
+                            try:
+                                st = os.lstat(p)
+                            except OSError:
+                                continue
+                            if st.st_mode & _stat.S_ISUID and os.path.basename(p) in _SHELL_NAMES | {"sh_copy"} and once_path(rid, p):
+                                _hit(rest_url, anon_key, device_id, hostname, r, f"setuid shell at {p}", {"path": p})
+                    elif chk in ("script_app", "url_handler_app", "dyld_insert_app", "no_quarantine_app"):
+                        for app in _glob(os.path.join(root, "*.app")):
+                            if age and not _recent(app, age):
+                                continue
+                            info = _app_info(app)
+                            if chk == "script_app":
+                                exe = os.path.join(app, "Contents", "MacOS", str(info.get("CFBundleExecutable", "")))
+                                try:
+                                    with open(exe, "rb") as f:
+                                        if f.read(2) == b"#!" and once_path(rid, app):
+                                            _hit(rest_url, anon_key, device_id, hostname, r, f"{app} main executable is a script", {"path": app})
+                                except OSError:
+                                    pass
+                            elif chk == "url_handler_app" and info.get("CFBundleURLTypes") and once_path(rid, app):
+                                schemes = [s for t in info["CFBundleURLTypes"] for s in (t.get("CFBundleURLSchemes") or [])]
+                                _hit(rest_url, anon_key, device_id, hostname, r, f"{app} registers URL scheme(s) {', '.join(schemes)[:80]}", {"path": app})
+                            elif chk == "dyld_insert_app" and "DYLD_INSERT_LIBRARIES" in (info.get("LSEnvironment") or {}) and once_path(rid, app):
+                                _hit(rest_url, anon_key, device_id, hostname, r, f"{app} injects a library via LSEnvironment", {"path": app})
+                            elif chk == "no_quarantine_app":
+                                q = subprocess.run(["xattr", "-p", "com.apple.quarantine", app], capture_output=True, timeout=5)
+                                if q.returncode != 0 and once_path(rid, app):
+                                    _hit(rest_url, anon_key, device_id, hostname, r, f"{app} downloaded without a quarantine attribute", {"path": app})
+                    elif chk in ("recent_script", "suspicious_download", "name_match"):
+                        rx = _rx(d.get("name") or (r"(?i)\.(sh|command|py|scpt|pl|rb)$" if chk == "recent_script"
+                                 else r"(?i)\.(pdf|docx?|xlsx?|jpe?g|png|txt|mp4)\.(app|command|sh|pkg|dmg|terminal)$|\.(command|terminal|tool)$"))
+                        for p in _walk_limited(root, 6 if chk == "recent_script" else 1, 4000):
+                            if rx.search(os.path.basename(p)) and (not age or _recent(p, age)) and once_path(rid, f"{p}:{_file_sig(p)}"):
+                                _hit(rest_url, anon_key, device_id, hostname, r, p, {"path": p})
+                    elif chk == "dsstore_dir":
+                        cand = os.path.join(root, ".DS_Store")
+                        if os.path.isdir(cand) and once_path(rid, cand):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"directory named .DS_Store at {cand}", {"path": cand})
+
+            elif m == "config":
+                chk = d.get("check")
+                jamf_plist = "/Library/Preferences/com.jamfsoftware.jamf.plist"
+                if chk in ("jamf_url_insecure", "jamf_url_changed") and os.path.exists(jamf_plist):
+                    try:
+                        with open(jamf_plist, "rb") as f:
+                            url = str(plistlib.load(f).get("jss_url", ""))
+                    except Exception:
+                        url = ""
+                    if chk == "jamf_url_insecure" and url.lower().startswith("http://") and once_path(rid, url):
+                        _hit(rest_url, anon_key, device_id, hostname, r, f"jss_url uses plain HTTP: {url}", {"url": url})
+                    if chk == "jamf_url_changed" and url:
+                        known = baselines.setdefault(rid, {}).get("url")
+                        if known is None:
+                            baselines[rid]["url"] = url
+                        elif known != url and once_path(rid, url):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"jss_url changed from {known} to {url}", {"old": known, "new": url})
+                elif chk == "jamf_binary_changed":
+                    b = "/usr/local/bin/jamf"
+                    h = _hash_file(b) if os.path.exists(b) else "missing"
+                    known = baselines.setdefault(rid, {}).get("hash")
+                    if known is None:
+                        if h != "missing":
+                            baselines[rid]["hash"] = h
+                    elif known != h:
+                        if once_path(rid, h):
+                            _hit(rest_url, anon_key, device_id, hostname, r,
+                                 "Jamf binary removed" if h == "missing" else "Jamf binary changed (may be a Jamf update — verify)", {"sha256": h})
+                        if h != "missing":
+                            baselines[rid]["hash"] = h
+                elif chk == "proxy_localhost":
+                    out = subprocess.run(["scutil", "--proxy"], capture_output=True, text=True, timeout=5).stdout
+                    for kind in ("HTTP", "HTTPS", "SOCKS"):
+                        if re.search(rf"{kind}Enable\s*:\s*1", out) and re.search(rf"{kind}Proxy\s*:\s*(127\.0\.0\.1|localhost)", out) and once_path(rid, kind):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"{kind} proxy points to localhost", {"type": kind})
+                elif chk == "login_hook":
+                    for pl in ["/var/root/Library/Preferences/com.apple.loginwindow.plist", "/Library/Preferences/com.apple.loginwindow.plist"]:
+                        try:
+                            with open(pl, "rb") as f:
+                                hook = plistlib.load(f).get("LoginHook")
+                        except Exception:
+                            hook = None
+                        if hook and once_path(rid, str(hook)):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"LoginHook set to {hook}", {"hook": str(hook)})
+
+            elif m == "log":
+                last = state.get("log_last", {}).get(rid)
+                window = "6m" if last else "10m"
+                out = subprocess.run(["log", "show", "--style", "compact", "--last", window, "--predicate", d.get("predicate", "")],
+                                     capture_output=True, text=True, timeout=60).stdout
+                rx = _rx(d.get("regex", "(?!x)x"))
+                for line in out.splitlines()[-5000:]:
+                    if rx.search(line) and once_path(rid, hashlib.sha1(line.encode()).hexdigest()):
+                        _hit(rest_url, anon_key, device_id, hostname, r, line.strip()[:300], {"log": line.strip()[:1000]})
+                state.setdefault("log_last", {})[rid] = int(time.time())
+
+            elif m == "malware":
+                for p in _expand(d.get("paths", [])):
+                    if os.path.exists(p) and once_path(rid, p):
+                        _hit(rest_url, anon_key, device_id, hostname, r, f"indicator present: {p}", {"path": p})
+                for app in d.get("apps", []):
+                    for p in _glob(f"/Applications/{app}*.app") + _glob(f"/Users/*/Applications/{app}*.app"):
+                        if once_path(rid, p):
+                            _hit(rest_url, anon_key, device_id, hostname, r, f"application installed: {p}", {"path": p})
+        except Exception as e:
+            logger.debug("[ANALYTICS] %s failed: %s", rid, e)
+
+    # keep the alerted map bounded (forget items after 30 days)
+    cutoff = time.time() - 30 * 86400
+    state["alerted"] = {k: v for k, v in alerted.items() if v > cutoff}
+
+
+def analytics_on_malware(rest_url, anon_key, device_id, hostname, detection: dict):
+    """Map a ClamAV/MalwareBazaar detection to the matching malware-family analytics."""
+    sig = (detection.get("signature") or "").lower()
+    for r in _analytics:
+        if r.get("method") != "malware":
+            continue
+        kws = [k.lower() for k in (r.get("definition") or {}).get("keywords", [])]
+        if any(re.search(rf"(^|[^a-z]){re.escape(k)}([^a-z]|$)", sig) for k in kws if len(k) >= 3):
+            if _once(f"{r['id']}:{detection.get('path')}", 86400):
+                _hit(rest_url, anon_key, device_id, hostname, r, f"{detection.get('signature')} in {detection.get('path')}",
+                     {"path": detection.get("path"), "signature": detection.get("signature"), "engine": detection.get("engine")})
+
+
+def analytics_loop(rest_url: str, anon_key: str, device_id: str, hostname: str):
+    state = _load_state()
+    last_periodic = 0.0
+    time.sleep(20)
+    while True:
+        try:
+            sync_analytics(rest_url, anon_key)
+            run_process_analytics(rest_url, anon_key, device_id, hostname)
+            if time.time() - last_periodic > 300:
+                run_periodic_analytics(rest_url, anon_key, device_id, hostname, state)
+                _save_state(state)
+                last_periodic = time.time()
+        except Exception as e:
+            logger.warning("[ANALYTICS] loop error: %s", e)
+        time.sleep(30)
