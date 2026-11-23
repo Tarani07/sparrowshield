@@ -4,6 +4,7 @@ import { useEffect, type ElementType, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, X, Inbox } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useAuth } from "../../lib/AuthContext";
 
 export { default as DataTable } from "./DataTable";
 export type { Column, FilterDef } from "./DataTable";
@@ -173,12 +174,16 @@ export function StatusBadge({ online, label }: { online: boolean; label?: string
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 export function Button({
-  children, variant = "secondary", size = "md", icon: Icon, className, ...rest
+  children, variant = "secondary", size = "md", icon: Icon, className, adminOnly, ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
   size?: "sm" | "md";
   icon?: ElementType;
+  /** Disable for read-only users. Defaults to true for primary/danger buttons (they change things). */
+  adminOnly?: boolean;
 }) {
+  const { isAdmin } = useAuth();
+  const locked = (adminOnly ?? (variant === "primary" || variant === "danger")) && !isAdmin;
   const styles: Record<string, React.CSSProperties> = {
     primary:   { background: "var(--c-accent)", color: "#fff", borderColor: "var(--c-accent)" },
     secondary: { background: "var(--c-card2)", color: "var(--c-strong)", borderColor: "var(--c-border2)" },
@@ -188,6 +193,8 @@ export function Button({
   return (
     <button
       {...rest}
+      disabled={rest.disabled || locked}
+      title={locked ? "Read-only access — ask an admin" : rest.title}
       className={cn(
         "inline-flex items-center justify-center gap-1.5 rounded-md border font-medium whitespace-nowrap transition-[filter,background] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--c-accent)]",
         size === "sm" ? "h-7 px-2.5 text-[12px]" : "h-8 px-3 text-[13px]",

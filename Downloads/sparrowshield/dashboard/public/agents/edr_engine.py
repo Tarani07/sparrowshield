@@ -915,20 +915,26 @@ def run_full_edr(rest_url: str, anon_key: str, device_id: str, hostname: str,
                  virustotal_api_key: str = "",
                  auto_quarantine: bool = False,
                  auto_kill_blocked: bool = False,
-                 abuse_ch_key: str = "") -> dict:
+                 abuse_ch_key: str = "",
+                 progress=None) -> dict:
+    """progress(pct, message) is called as each stage starts (used for live command progress)."""
+    report = progress or (lambda pct, msg: None)
+    if _scan_lock.locked():
+        report(2, "Waiting for the scan already in progress…")
     with _scan_lock:
         return _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
-                             virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key)
+                             virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key, report)
 
 
 _scan_lock = threading.Lock()
 
 
 def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
-                  virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key) -> dict:
+                  virustotal_api_key, auto_quarantine, auto_kill_blocked, abuse_ch_key, report) -> dict:
     logger.info("[EDR] Starting scan for %s", hostname)
     summary = {"group": None, "errors": []}
     group_id = None
+    report(5, "Updating threat intelligence")
     try:
         refresh_ioc_feeds(abuse_ch_key=abuse_ch_key)
         summary["threat_intel"] = {k: len(v) for k, v in _ioc_cache.items() if isinstance(v, set)}
@@ -941,6 +947,13 @@ def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
     except Exception as e:
         logger.warning("[EDR] group lookup: %s", e)
 
+    stages = {
+        "app filter sync": (20, "Syncing application rules"),
+        "web filter":      (30, "Applying web filtering"),
+        "malware scan":    (45, "Scanning files and running processes for malware"),
+        "behavior":        (85, "Checking for suspicious behaviour"),
+        "app enforcement": (93, "Checking installed applications against policy"),
+    }
     for label, fn in [
         ("app filter sync", lambda: sync_app_filter(rest_url, anon_key, group_id)),
         ("web filter",      lambda: sync_web_filter(rest_url, anon_key, group_id)),
@@ -951,6 +964,7 @@ def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
         ("app enforcement", lambda: enforce_app_filter(rest_url, anon_key, device_id, hostname,
                                                        installed_apps or [], auto_kill=auto_kill_blocked)),
     ]:
+        report(*stages[label])
         try:
             result = fn()
             if result is not None:
@@ -960,5 +974,6 @@ def _run_full_edr(rest_url, anon_key, device_id, hostname, installed_apps,
             summary["errors"].append(f"{label}: {e}")
 
     summary["app_blocklist"] = len(_app_filter.get("blocklist", ()))
+    report(100, "Scan complete")
     logger.info("[EDR] Scan complete for %s: %s", hostname, summary)
     return summary

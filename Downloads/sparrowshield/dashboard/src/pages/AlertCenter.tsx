@@ -119,8 +119,8 @@ export default function AlertCenter() {
     { key: "actions", header: "", sortable: false, align: "right", width: "110px", render: a => (
       <div onClick={e => e.stopPropagation()}>
         {a.resolved
-          ? <Button size="sm" variant="ghost" icon={RotateCcw} onClick={() => setResolved.mutate({ id: a.id, resolved: false })}>Reopen</Button>
-          : <Button size="sm" icon={Check} onClick={() => setResolved.mutate({ id: a.id, resolved: true })}>Resolve</Button>}
+          ? <Button adminOnly size="sm" variant="ghost" icon={RotateCcw} onClick={() => setResolved.mutate({ id: a.id, resolved: false })}>Reopen</Button>
+          : <Button adminOnly size="sm" icon={Check} onClick={() => setResolved.mutate({ id: a.id, resolved: true })}>Resolve</Button>}
       </div>) },
   ];
 
@@ -168,7 +168,7 @@ export default function AlertCenter() {
                   </span>
                   <span className="text-[12px]" style={{ color: "var(--c-muted)" }}>{timeAgo(c.created_at)}</span>
                   <Button size="sm" variant="primary" icon={Check} disabled={decide.isPending} onClick={() => decide.mutate({ id: c.id, action: "approve" })}>Approve</Button>
-                  <Button size="sm" icon={X} disabled={decide.isPending} onClick={() => decide.mutate({ id: c.id, action: "dismiss" })}>Dismiss</Button>
+                  <Button adminOnly size="sm" icon={X} disabled={decide.isPending} onClick={() => decide.mutate({ id: c.id, action: "dismiss" })}>Dismiss</Button>
                 </li>
               ))}
             </ul>
@@ -214,7 +214,7 @@ export default function AlertCenter() {
         footer={selected && <>
           <Button icon={Laptop} onClick={() => navigate(`/device/${selected.device_id}`)}>Open device</Button>
           {selected.resolved
-            ? <Button icon={RotateCcw} onClick={() => setResolved.mutate({ id: selected.id, resolved: false })}>Reopen</Button>
+            ? <Button adminOnly icon={RotateCcw} onClick={() => setResolved.mutate({ id: selected.id, resolved: false })}>Reopen</Button>
             : <Button variant="primary" icon={Check} onClick={() => setResolved.mutate({ id: selected.id, resolved: true })}>Resolve</Button>}
         </>}
       >

@@ -1,110 +1,243 @@
-import { useQuery } from "@tanstack/react-query";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import { Shield, Printer, AlertTriangle, Monitor, CheckCircle, XCircle, Activity } from "lucide-react";
+import { useMemo } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+} from "recharts";
+import {
+  Shield, Printer, AlertTriangle, Monitor, CheckCircle, Activity, Bug, RefreshCw, ArrowRight, ShieldCheck, Laptop,
+} from "lucide-react";
 import TopBar from "../components/layout/TopBar";
 import { supabase } from "../lib/supabase";
+import { timeAgo } from "../lib/utils";
+import { Page, PageHeader, Panel, StatTile, SeverityBadge, Badge, Button, EmptyState, SEVERITY_ORDER } from "../components/ui";
 
-function timeAgo(iso: string) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+type Dev = {
+  id: string; hostname: string; status: string | null; last_seen: string | null; cis_score_pct: number | null; os_type: string;
+  vulnerability_count: number | null; filevault_enabled: boolean | null; firewall_enabled: boolean | null;
+};
+type OpenAlert = { id: string; severity: string; alert_type: string; message: string; created_at: string; device_id: string; devices: { hostname: string } | null };
+type TrendAlert = { created_at: string; resolved: boolean; resolved_at: string | null; severity: string };
+type VulnRow = { device_id: string; severity: string };
+
+const DAY = 86400_000;
+const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+const normSev = (s: string) => (s === "warning" ? "medium" : s);
+
+function grade(score: number) {
+  if (score >= 90) return { letter: "A", tone: "ok" as const, label: "Strong" };
+  if (score >= 80) return { letter: "B", tone: "ok" as const, label: "Good" };
+  if (score >= 70) return { letter: "C", tone: "medium" as const, label: "Fair" };
+  if (score >= 60) return { letter: "D", tone: "high" as const, label: "Weak" };
+  return { letter: "F", tone: "critical" as const, label: "At risk" };
 }
+const TONE_VAR = { ok: "var(--ok)", medium: "var(--sev-medium)", high: "var(--sev-high)", critical: "var(--sev-critical)" };
+const scoreColor = (s: number) => TONE_VAR[grade(s).tone];
 
-function KpiTile({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string | number; sub?: string;
-  icon: React.ElementType; color: string;
-}) {
+/** Circular score gauge. */
+function ScoreRing({ score }: { score: number }) {
+  const r = 52, c = 2 * Math.PI * r;
+  const color = scoreColor(score);
   return (
-    <div className="rounded-2xl p-6 flex flex-col gap-3" style={{ background: "var(--c-card-bg, var(--c-bg))", border: "1px solid var(--c-border)" }}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium" style={{ color: "var(--c-muted)" }}>{label}</span>
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: color + "20" }}>
-          <Icon className="w-4 h-4" style={{ color }} />
-        </div>
-      </div>
-      <div>
-        <p className="text-4xl font-bold tracking-tight" style={{ color: "var(--c-strong)" }}>{value}</p>
-        {sub && <p className="text-xs mt-1" style={{ color: "var(--c-muted)" }}>{sub}</p>}
-      </div>
-    </div>
+    <svg viewBox="0 0 128 128" className="w-[132px] h-[132px] shrink-0" role="img" aria-label={`Posture score ${score} of 100`}>
+      <circle cx="64" cy="64" r={r} fill="none" stroke="var(--c-card2)" strokeWidth="12" />
+      <circle cx="64" cy="64" r={r} fill="none" stroke={color} strokeWidth="12" strokeLinecap="round"
+        strokeDasharray={`${(score / 100) * c} ${c}`} transform="rotate(-90 64 64)" />
+      <text x="64" y="62" textAnchor="middle" fontSize="32" fontWeight="600" fill="var(--c-strong)">{score}</text>
+      <text x="64" y="82" textAnchor="middle" fontSize="11" fill="var(--c-muted)">of 100</text>
+    </svg>
   );
 }
 
-const SEVERITY_COLOR: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  warning: "#f59e0b",
-  medium: "#f59e0b",
-  low: "#22c55e",
-  info: "#60a5fa",
+function Meter({ label, value, sub, to }: { label: string; value: number | null; sub?: string; to?: string }) {
+  const body = (
+    <div className="py-2">
+      <div className="flex items-center justify-between text-[12.5px] mb-1.5 gap-2">
+        <span className="font-medium truncate" style={{ color: "var(--c-text)" }}>{label}</span>
+        <span className="tabular-nums font-semibold shrink-0" style={{ color: "var(--c-strong)" }}>{value == null ? "n/a" : `${value}%`}</span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--c-card2)" }}>
+        <div className="h-full rounded-full" style={{ width: `${value ?? 0}%`, background: value == null ? "var(--c-border2)" : scoreColor(value) }} />
+      </div>
+      {sub && <p className="mt-1 text-[11px]" style={{ color: "var(--c-muted)" }}>{sub}</p>}
+    </div>
+  );
+  return to ? <Link to={to} className="block rounded hover:bg-[var(--c-row-hover)] -mx-2 px-2">{body}</Link> : body;
+}
+
+const chartTooltip = {
+  contentStyle: { background: "var(--c-card)", border: "1px solid var(--c-border2)", borderRadius: 6, fontSize: 12 },
+  labelStyle: { color: "var(--c-strong)", fontWeight: 600 },
 };
 
 export default function ExecutiveSummary() {
-  const { data: devices = [] } = useQuery({
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const since30 = useMemo(() => new Date(Date.now() - 30 * DAY).toISOString(), []);
+  const since7 = useMemo(() => new Date(Date.now() - 7 * DAY).toISOString(), []);
+
+  const { data: devices = [], error: devError } = useQuery<Dev[]>({
     queryKey: ["exec-devices"],
     queryFn: async () => {
-      const { data } = await supabase.from("devices").select("id, status, cis_score_pct, os_type");
-      return data ?? [];
+      const { data, error } = await supabase.from("devices")
+        .select("id, hostname, status, last_seen, cis_score_pct, os_type, vulnerability_count, filevault_enabled, firewall_enabled");
+      if (error) throw error;
+      return (data ?? []) as Dev[];
     },
   });
 
-  const { data: alerts = [] } = useQuery({
+  const { data: alerts = [] } = useQuery<OpenAlert[]>({
     queryKey: ["exec-alerts"],
     queryFn: async () => {
       const { data } = await supabase
         .from("alerts")
-        .select("id, severity, alert_type, message, created_at, device_id")
+        .select("id, severity, alert_type, message, created_at, device_id, devices(hostname)")
         .eq("resolved", false)
         .order("created_at", { ascending: false });
-      return data ?? [];
+      return (data ?? []) as unknown as OpenAlert[];
     },
+  });
+
+  const { data: trendAlerts = [] } = useQuery<TrendAlert[]>({
+    queryKey: ["exec-alert-trend"],
+    queryFn: async () => (await supabase.from("alerts")
+      .select("created_at, resolved, resolved_at, severity")
+      .gte("created_at", since30).limit(5000)).data as TrendAlert[] ?? [],
   });
 
   const { data: threatCount = 0 } = useQuery({
     queryKey: ["exec-threats"],
     queryFn: async () => {
-      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { count } = await supabase
         .from("edr_events")
         .select("*", { count: "exact", head: true })
-        .gte("created_at", since);
+        .gte("created_at", since7);
       return count ?? 0;
     },
   });
 
+  const { data: edrTrend = [] } = useQuery<{ created_at: string }[]>({
+    queryKey: ["exec-edr-trend"],
+    queryFn: async () => (await supabase.from("edr_events")
+      .select("created_at").gte("created_at", since30).limit(10000)).data ?? [],
+  });
+
+  const { data: openVulns = [] } = useQuery<VulnRow[]>({
+    queryKey: ["exec-vulns"],
+    queryFn: async () => (await supabase.from("vulnerabilities")
+      .select("device_id, severity").eq("patched", false).limit(5000)).data as VulnRow[] ?? [],
+  });
+
+  const { data: policy } = useQuery({
+    queryKey: ["exec-policy"],
+    queryFn: async () => {
+      const [cats, web, apps] = await Promise.all([
+        supabase.from("web_categories").select("enabled"),
+        supabase.from("web_filter_rules").select("*", { count: "exact", head: true }).eq("enabled", true),
+        supabase.from("software_lists").select("*", { count: "exact", head: true }).eq("list_type", "blocklist"),
+      ]);
+      const c = (cats.data ?? []) as { enabled: boolean }[];
+      return { catsOn: c.filter(x => x.enabled).length, catsTotal: c.length, webRules: web.count ?? 0, blockedApps: apps.count ?? 0 };
+    },
+  });
+
+  /* ── Derived metrics ─────────────────────────────────────────────────── */
   const total = devices.length;
-  const online = devices.filter((d: any) => d.status === "online").length;
-  const offline = total - online;
-  const onlinePct = total > 0 ? Math.round((online / total) * 100) : 0;
+  const seenWithin = (d: Dev, ms: number) => !!d.last_seen && Date.now() - new Date(d.last_seen).getTime() < ms;
+  const online = devices.filter(d => (d.last_seen ? seenWithin(d, 15 * 60_000) : d.status === "online")).length;
+  const reporting24h = devices.filter(d => seenWithin(d, DAY)).length;
 
-  const cisScores = devices.map((d: any) => d.cis_score_pct).filter((v: any) => v != null) as number[];
-  const avgCis = cisScores.length > 0 ? Math.round(cisScores.reduce((a, b) => a + b, 0) / cisScores.length) : 0;
-  const compliantCount = devices.filter((d: any) => (d.cis_score_pct ?? 0) >= 80).length;
-  const atRiskCount = total - compliantCount;
+  const cisScores = devices.map(d => d.cis_score_pct).filter((v): v is number => v != null);
+  const avgCis = cisScores.length ? Math.round(cisScores.reduce((a, b) => a + b, 0) / cisScores.length) : null;
+  const compliantCount = devices.filter(d => (d.cis_score_pct ?? 0) >= 80).length;
 
-  const compliancePie = [
-    { name: "Compliant", value: compliantCount, color: "#22c55e" },
-    { name: "At Risk", value: atRiskCount, color: "#ef4444" },
+  const enc = devices.filter(d => d.filevault_enabled != null);
+  const fw = devices.filter(d => d.firewall_enabled != null);
+  const encPct = enc.length ? pct(enc.filter(d => d.filevault_enabled).length, enc.length) : null;
+  const fwPct = fw.length ? pct(fw.filter(d => d.firewall_enabled).length, fw.length) : null;
+
+  const sevCount = (s: string) => alerts.filter(a => normSev(a.severity) === s).length;
+  const crit = sevCount("critical"), high = sevCount("high"), med = sevCount("medium");
+
+  const vulnDevices = new Set(openVulns.map(v => v.device_id));
+  const vulnFreePct = total ? pct(total - devices.filter(d => vulnDevices.has(d.id) || (d.vulnerability_count ?? 0) > 0).length, total) : null;
+
+  const components = [
+    { label: "Configuration compliance (avg CIS)", value: avgCis, to: "/compliance",
+      sub: avgCis == null ? "No CIS results yet" : `${compliantCount} of ${total} devices at 80% or higher` },
+    { label: "Threat exposure", value: Math.max(0, 100 - (crit * 20 + high * 8 + med * 2)), to: "/alerts",
+      sub: `${crit} critical · ${high} high · ${med} medium open alerts` },
+    { label: "Vulnerability exposure", value: vulnFreePct, to: "/vulnerabilities",
+      sub: `${openVulns.length} open findings on ${vulnDevices.size} devices` },
+    { label: "Endpoint hardening", value: encPct == null && fwPct == null ? null : Math.round(((encPct ?? fwPct!) + (fwPct ?? encPct!)) / 2), to: "/devices",
+      sub: `Disk encryption ${encPct ?? "n/a"}% · Firewall ${fwPct ?? "n/a"}%` },
+    { label: "Visibility (reported in 24h)", value: total ? pct(reporting24h, total) : null, to: "/devices",
+      sub: `${reporting24h} of ${total} endpoints checked in` },
   ];
+  const scored = components.filter(c => c.value != null) as { value: number }[];
+  const posture = scored.length ? Math.round(scored.reduce((a, c) => a + c.value, 0) / scored.length) : 0;
+  const g = grade(posture);
 
-  // Risk tiers by cis_score_pct
-  const lowRisk = devices.filter((d: any) => (d.cis_score_pct ?? 100) >= 80).length;
-  const medRisk = devices.filter((d: any) => { const s = d.cis_score_pct ?? 100; return s >= 50 && s < 80; }).length;
-  const highRisk = devices.filter((d: any) => (d.cis_score_pct ?? 100) < 50).length;
+  // 30-day detections raised vs resolved
+  const trend = useMemo(() => {
+    const days: Record<string, { day: string; raised: number; resolved: number; threats: number }> = {};
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(Date.now() - i * DAY);
+      days[d.toISOString().slice(0, 10)] = { day: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }), raised: 0, resolved: 0, threats: 0 };
+    }
+    for (const a of trendAlerts) {
+      const k = a.created_at.slice(0, 10);
+      if (days[k]) days[k].raised++;
+      const r = a.resolved_at?.slice(0, 10);
+      if (a.resolved && r && days[r]) days[r].resolved++;
+    }
+    for (const e of edrTrend) { const k = e.created_at.slice(0, 10); if (days[k]) days[k].threats++; }
+    return Object.values(days);
+  }, [trendAlerts, edrTrend]);
+  const raised30 = trendAlerts.length;
+  const resolved30 = trendAlerts.filter(a => a.resolved).length;
+  const edr30 = edrTrend.length;
 
-  const criticalAlerts = alerts.filter((a: any) => a.severity === "critical").slice(0, 5);
+  // Top risk endpoints
+  const riskiest = useMemo(() => {
+    const byDev = new Map<string, { crit: number; high: number }>();
+    for (const a of alerts) {
+      const s = normSev(a.severity);
+      const e = byDev.get(a.device_id) ?? { crit: 0, high: 0 };
+      if (s === "critical") e.crit++; else if (s === "high") e.high++;
+      byDev.set(a.device_id, e);
+    }
+    const vulnsBy = new Map<string, number>();
+    for (const v of openVulns) vulnsBy.set(v.device_id, (vulnsBy.get(v.device_id) ?? 0) + 1);
+    return devices.map(d => {
+      const al = byDev.get(d.id) ?? { crit: 0, high: 0 };
+      const vulns = vulnsBy.get(d.id) ?? d.vulnerability_count ?? 0;
+      const cis = d.cis_score_pct;
+      const score = al.crit * 10 + al.high * 4 + vulns * 2 + (cis == null ? 0 : cis < 50 ? 10 : cis < 80 ? 4 : 0);
+      const reasons: string[] = [];
+      if (al.crit) reasons.push(`${al.crit} critical alert${al.crit > 1 ? "s" : ""}`);
+      if (al.high) reasons.push(`${al.high} high alert${al.high > 1 ? "s" : ""}`);
+      if (vulns) reasons.push(`${vulns} vulnerabilit${vulns > 1 ? "ies" : "y"}`);
+      if (cis != null && cis < 80) reasons.push(`CIS ${cis}%`);
+      return { d, score, reasons };
+    }).filter(r => r.score > 0).sort((a, b) => b.score - a.score).slice(0, 6);
+  }, [devices, alerts, openVulns]);
+
+  const topAlerts = [...alerts]
+    .filter(a => ["critical", "high"].includes(normSev(a.severity)))
+    .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || b.created_at.localeCompare(a.created_at))
+    .slice(0, 6);
 
   const generatedAt = new Date().toLocaleString();
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ background: "var(--c-bg)" }}>
+    <div className="flex flex-col min-h-full exec-report">
       <style>{`
         @media print {
-          .no-print { display: none !important; }
-          body { background: white !important; color: black !important; }
+          .no-print, aside { display: none !important; }
+          main { margin-left: 0 !important; overflow: visible !important; }
+          .h-screen { height: auto !important; overflow: visible !important; }
+          .exec-report section { break-inside: avoid; }
         }
       `}</style>
 
@@ -112,160 +245,155 @@ export default function ExecutiveSummary() {
         <TopBar title="Executive Summary" />
       </div>
 
-      <div className="flex-1 p-6 space-y-6 max-w-6xl mx-auto w-full">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1B5E37, #2E7D52)" }}>
-                <Shield className="w-5 h-5 text-white" />
-              </div>
+      <Page className="max-w-[1200px]">
+        <PageHeader
+          title="Executive Summary"
+          icon={Shield}
+          crumbs={[{ label: "Operations" }, { label: "Executive Summary" }]}
+          description={<>Security posture report for leadership · generated {generatedAt}</>}
+          actions={<div className="no-print flex flex-wrap gap-2">
+            <Button icon={RefreshCw} onClick={() => qc.invalidateQueries({ predicate: q => String(q.queryKey[0]).startsWith("exec-") })}>Refresh</Button>
+            <Button variant="primary" icon={Printer} onClick={() => window.print()}>Print / save PDF</Button>
+          </div>}
+        />
+
+        {devError && <p className="mb-3 text-[12.5px]" style={{ color: "var(--sev-critical)" }}>Could not load devices: {(devError as Error).message}</p>}
+
+        {/* Headline: posture score + components */}
+        <Panel title="Overall security posture" subtitle="Equal-weighted average of the measured areas below" className="mb-3">
+          <div className="flex flex-col md:flex-row gap-6 md:items-center">
+            <div className="flex items-center gap-5">
+              <ScoreRing score={posture} />
               <div>
-                <h1 className="text-2xl font-bold" style={{ color: "var(--c-strong)" }}>Executive Summary</h1>
-                <p className="text-sm" style={{ color: "var(--c-muted)" }}>Security posture overview for leadership</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: "var(--c-muted)" }}>Grade</p>
+                <p className="text-[44px] leading-[48px] font-semibold" style={{ color: scoreColor(posture) }}>{g.letter}</p>
+                <Badge tone={g.tone}>{g.label}</Badge>
               </div>
             </div>
-            <p className="text-xs mt-2" style={{ color: "var(--c-faint, var(--c-muted))" }}>Generated: {generatedAt}</p>
+            <div className="flex-1 min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-x-6">
+              {components.map(c => <Meter key={c.label} label={c.label} value={c.value} sub={c.sub} to={c.to} />)}
+            </div>
           </div>
-          <button
-            onClick={() => window.print()}
-            className="no-print flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: "var(--c-primary, #1B5E37)", color: "#fff" }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = "1")}
-          >
-            <Printer className="w-4 h-4" />
-            Export PDF
-          </button>
+        </Panel>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">
+          <StatTile label="Endpoints" icon={Monitor} tone="accent" value={total}
+            sub={`${online} online now · ${pct(online, total)}%`} onClick={() => navigate("/devices")} />
+          <StatTile label="Compliance" icon={CheckCircle} tone={avgCis == null ? "neutral" : avgCis >= 80 ? "ok" : avgCis >= 60 ? "medium" : "high"}
+            value={avgCis == null ? "—" : `${avgCis}%`} sub={`${compliantCount} of ${total} compliant`} onClick={() => navigate("/compliance")} />
+          <StatTile label="Open alerts" icon={AlertTriangle} tone={crit ? "critical" : high ? "high" : alerts.length ? "medium" : "ok"}
+            value={alerts.length} sub={`${crit} critical · ${high} high`} onClick={() => navigate("/alerts")} />
+          <StatTile label="Threat events (7d)" icon={Activity} tone={threatCount ? "high" : "ok"} value={threatCount}
+            sub="EDR detections" onClick={() => navigate("/edr/detections")} />
         </div>
 
-        {/* KPI tiles */}
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <KpiTile label="Total Devices" value={total} sub="enrolled" icon={Monitor} color="#60a5fa" />
-          <KpiTile label="Compliance Score" value={`${avgCis}%`} sub={`${compliantCount} of ${total} compliant`} icon={CheckCircle} color="#22c55e" />
-          <KpiTile label="Open Alerts" value={alerts.length} sub={`${criticalAlerts.length} critical`} icon={AlertTriangle} color="#f59e0b" />
-          <KpiTile label="Threat Events (7d)" value={threatCount} sub="EDR detections" icon={Activity} color="#a78bfa" />
+        {/* Trends */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+          <Panel title="Alerts raised vs resolved — 30 days" subtitle={`${raised30} raised · ${resolved30} resolved`}
+            actions={<div className="hidden sm:flex items-center gap-3 text-[11px]" style={{ color: "var(--c-muted)" }}>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: "var(--sev-high)" }} />Raised</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-sm" style={{ background: "var(--ok)" }} />Resolved</span>
+            </div>}>
+            <div className="h-[200px] -ml-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--c-border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fill: "var(--c-muted)", fontSize: 11 }} axisLine={false} tickLine={false} interval={6} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--c-muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
+                  <Tooltip {...chartTooltip} />
+                  <Area type="monotone" dataKey="raised" name="Raised" stroke="var(--sev-high)" fill="var(--sev-high)" fillOpacity={0.2} strokeWidth={1.5} />
+                  <Area type="monotone" dataKey="resolved" name="Resolved" stroke="var(--ok)" fill="var(--ok)" fillOpacity={0.15} strokeWidth={1.5} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Panel>
+
+          <Panel title="EDR threat events — 30 days" subtitle={`${edr30} events detected and handled by endpoint agents`}>
+            <div className="h-[200px] -ml-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trend} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--c-border)" strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fill: "var(--c-muted)", fontSize: 11 }} axisLine={false} tickLine={false} interval={6} />
+                  <YAxis allowDecimals={false} tick={{ fill: "var(--c-muted)", fontSize: 11 }} axisLine={false} tickLine={false} width={32} />
+                  <Tooltip {...chartTooltip} cursor={{ fill: "var(--c-row-hover)" }} />
+                  <Bar dataKey="threats" name="Threat events" fill="var(--c-accent)" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Panel>
         </div>
 
-        {/* Middle row: Compliance donut + Risk breakdown */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          {/* Compliance donut */}
-          <div className="rounded-2xl p-6" style={{ background: "var(--c-card-bg, var(--c-bg))", border: "1px solid var(--c-border)" }}>
-            <h2 className="text-sm font-semibold mb-4" style={{ color: "var(--c-strong)" }}>Compliance Breakdown</h2>
-            {total === 0 ? (
-              <div className="flex items-center justify-center h-40 text-sm" style={{ color: "var(--c-muted)" }}>No devices enrolled</div>
+        {/* Top risks */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
+          <Panel title="Highest-risk endpoints" subtitle="Ranked by open alerts, vulnerabilities and compliance" noPad
+            actions={<Link to="/devices" className="no-print text-[12px] font-medium flex items-center gap-1" style={{ color: "var(--c-accent)" }}>All devices <ArrowRight className="w-3.5 h-3.5" /></Link>}>
+            {riskiest.length === 0 ? (
+              <EmptyState icon={ShieldCheck} title="No endpoints at elevated risk" hint="No open critical/high alerts, vulnerabilities or failing compliance." />
             ) : (
-              <div className="flex items-center gap-6">
-                <ResponsiveContainer width={160} height={160}>
-                  <PieChart>
-                    <Pie data={compliancePie} cx={75} cy={75} innerRadius={45} outerRadius={70} dataKey="value" strokeWidth={0}>
-                      {compliancePie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: any) => [`${v} devices`]} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-3">
-                  <div className="text-center">
-                    <p className="text-3xl font-bold" style={{ color: "var(--c-strong)" }}>{avgCis}%</p>
-                    <p className="text-xs" style={{ color: "var(--c-muted)" }}>avg CIS score</p>
-                  </div>
-                  {compliancePie.map(e => (
-                    <div key={e.name} className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: e.color }} />
-                      <span className="text-sm" style={{ color: "var(--c-muted)" }}>{e.name}: <strong style={{ color: "var(--c-strong)" }}>{e.value}</strong></span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <ol>
+                {riskiest.map((r, i) => (
+                  <li key={r.d.id}>
+                    <button onClick={() => navigate(`/device/${r.d.id}`)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left border-b hover:bg-[var(--c-row-hover)]" style={{ borderColor: "var(--c-divider)" }}>
+                      <span className="w-5 text-[12px] tabular-nums font-semibold" style={{ color: "var(--c-muted)" }}>{i + 1}</span>
+                      <Laptop className="w-4 h-4 shrink-0" style={{ color: "var(--c-muted)" }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-medium truncate" style={{ color: "var(--c-strong)" }}>{r.d.hostname}</p>
+                        <p className="text-[11.5px] truncate" style={{ color: "var(--c-muted)" }}>{r.reasons.join(" · ")}</p>
+                      </div>
+                      <Badge tone={r.score >= 20 ? "critical" : r.score >= 8 ? "high" : "medium"}>Risk {r.score}</Badge>
+                    </button>
+                  </li>
+                ))}
+              </ol>
             )}
-          </div>
+          </Panel>
 
-          {/* Risk breakdown */}
-          <div className="rounded-2xl p-6" style={{ background: "var(--c-card-bg, var(--c-bg))", border: "1px solid var(--c-border)" }}>
-            <h2 className="text-sm font-semibold mb-4" style={{ color: "var(--c-strong)" }}>Risk Breakdown</h2>
-            <div className="space-y-3">
-              {[
-                { label: "Low Risk", value: lowRisk, color: "#22c55e", bg: "#22c55e15", desc: "CIS ≥ 80%" },
-                { label: "Medium Risk", value: medRisk, color: "#f59e0b", bg: "#f59e0b15", desc: "CIS 50–79%" },
-                { label: "High Risk", value: highRisk, color: "#ef4444", bg: "#ef444415", desc: "CIS < 50%" },
-              ].map(r => (
-                <div key={r.label} className="flex items-center justify-between p-3 rounded-xl" style={{ background: r.bg }}>
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: r.color }}>{r.label}</p>
-                    <p className="text-xs" style={{ color: "var(--c-muted)" }}>{r.desc}</p>
-                  </div>
-                  <span className="text-2xl font-bold" style={{ color: r.color }}>{r.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Panel title="Top open threats" subtitle="Critical and high alerts awaiting action" noPad
+            actions={<Link to="/alerts" className="no-print text-[12px] font-medium flex items-center gap-1" style={{ color: "var(--c-accent)" }}>Alert queue <ArrowRight className="w-3.5 h-3.5" /></Link>}>
+            {topAlerts.length === 0 ? (
+              <EmptyState icon={ShieldCheck} title="No critical or high alerts open" hint="The fleet has no outstanding high-severity detections." />
+            ) : (
+              <ul>
+                {topAlerts.map(a => (
+                  <li key={a.id}>
+                    <button onClick={() => navigate(`/alerts?id=${a.id}`)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left border-b hover:bg-[var(--c-row-hover)]" style={{ borderColor: "var(--c-divider)" }}>
+                      <SeverityBadge severity={a.severity} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] truncate" style={{ color: "var(--c-strong)" }}>{a.message}</p>
+                        <p className="text-[11.5px] truncate" style={{ color: "var(--c-muted)" }}>{a.devices?.hostname ?? "—"} · {a.alert_type.replace(/_/g, " ")}</p>
+                      </div>
+                      <span className="text-[11.5px] whitespace-nowrap" style={{ color: "var(--c-muted)" }}>{timeAgo(a.created_at)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
         </div>
 
-        {/* Fleet health bar */}
-        <div className="rounded-2xl p-6" style={{ background: "var(--c-card-bg, var(--c-bg))", border: "1px solid var(--c-border)" }}>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold" style={{ color: "var(--c-strong)" }}>Fleet Health</h2>
-            <span className="text-sm" style={{ color: "var(--c-muted)" }}>
-              {online} online · {offline} offline · {total} total
-            </span>
+        {/* Coverage */}
+        <Panel title="Protection coverage" subtitle="How much of the fleet each control reaches" className="mb-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+            <Meter label="Agents reporting (24h)" value={total ? pct(reporting24h, total) : null} sub={`${reporting24h} of ${total} endpoints`} to="/devices" />
+            <Meter label="Disk encryption enabled" value={encPct} sub={enc.length ? `${enc.filter(d => d.filevault_enabled).length} of ${enc.length} reporting` : "Not reported yet"} />
+            <Meter label="Host firewall enabled" value={fwPct} sub={fw.length ? `${fw.filter(d => d.firewall_enabled).length} of ${fw.length} reporting` : "Not reported yet"} />
+            <Meter label="CIS compliant (80% or higher)" value={total ? pct(compliantCount, total) : null} sub={`${compliantCount} of ${total} endpoints`} to="/compliance" />
+            <Meter label="Web categories blocked" value={policy && policy.catsTotal ? pct(policy.catsOn, policy.catsTotal) : null}
+              sub={policy ? `${policy.catsOn} of ${policy.catsTotal} categories · ${policy.webRules} custom rules` : "…"} to="/web-filter" />
+            <Meter label="Free of known vulnerabilities" value={vulnFreePct} sub={`${openVulns.length} open findings`} to="/vulnerabilities" />
           </div>
-          <div className="w-full h-4 rounded-full overflow-hidden" style={{ background: "var(--c-border2, #374151)" }}>
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${onlinePct}%`, background: "linear-gradient(90deg, #22c55e, #16a34a)" }}
-            />
+          <div className="mt-3 pt-3 border-t flex flex-wrap gap-2 text-[12px]" style={{ borderColor: "var(--c-border)", color: "var(--c-muted)" }}>
+            <Badge tone="accent"><Bug className="w-3 h-3" /> {openVulns.length} open vulnerabilities</Badge>
+            <Badge tone="accent">{policy?.blockedApps ?? 0} blocked applications</Badge>
+            <Badge tone="accent">{devices.filter(d => d.os_type === "windows").length} Windows · {devices.filter(d => d.os_type !== "windows").length} macOS</Badge>
           </div>
-          <div className="flex items-center gap-4 mt-2">
-            <span className="flex items-center gap-1.5 text-xs" style={{ color: "#22c55e" }}>
-              <span className="w-2 h-2 rounded-full bg-green-500" /> Online ({onlinePct}%)
-            </span>
-            <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--c-muted)" }}>
-              <span className="w-2 h-2 rounded-full" style={{ background: "var(--c-border2, #374151)" }} /> Offline ({100 - onlinePct}%)
-            </span>
-          </div>
-        </div>
+        </Panel>
 
-        {/* Critical alerts table */}
-        <div className="rounded-2xl p-6" style={{ background: "var(--c-card-bg, var(--c-bg))", border: "1px solid var(--c-border)" }}>
-          <h2 className="text-sm font-semibold mb-4" style={{ color: "var(--c-strong)" }}>Recent Critical Alerts</h2>
-          {criticalAlerts.length === 0 ? (
-            <div className="flex items-center gap-2 py-6 justify-center text-sm" style={{ color: "var(--c-muted)" }}>
-              <CheckCircle className="w-4 h-4 text-green-500" /> No critical alerts — fleet is healthy
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--c-border)" }}>
-                    {["Severity", "Type", "Message", "When"].map(h => (
-                      <th key={h} className="text-left pb-2 pr-4 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-muted)" }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {criticalAlerts.map((a: any) => (
-                    <tr key={a.id} style={{ borderBottom: "1px solid var(--c-border)" }}>
-                      <td className="py-3 pr-4">
-                        <span className="px-2 py-0.5 rounded text-xs font-bold uppercase" style={{ background: (SEVERITY_COLOR[a.severity] ?? "#6b7280") + "20", color: SEVERITY_COLOR[a.severity] ?? "#6b7280" }}>
-                          {a.severity}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-4" style={{ color: "var(--c-strong)" }}>{a.alert_type?.replace(/_/g, " ")}</td>
-                      <td className="py-3 pr-4 max-w-xs truncate" style={{ color: "var(--c-muted)" }}>{a.message}</td>
-                      <td className="py-3 text-xs whitespace-nowrap" style={{ color: "var(--c-muted)" }}>{a.created_at ? timeAgo(a.created_at) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="text-center pb-6">
-          <p className="text-xs" style={{ color: "var(--c-muted)" }}>SparrowShield Security Platform · {generatedAt}</p>
-        </div>
-      </div>
+        <p className="text-center text-[11px] py-4" style={{ color: "var(--c-muted)" }}>SparrowShield Security Platform · Report generated {generatedAt}</p>
+      </Page>
     </div>
   );
 }

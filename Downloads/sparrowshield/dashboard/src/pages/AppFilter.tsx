@@ -4,6 +4,7 @@ import { AppWindow, Plus, Trash2, Ban, CheckCircle2, PackageX, Loader2, RotateCc
 import { supabase } from "../lib/supabase";
 import { timeAgo } from "../lib/utils";
 import TopBar from "../components/layout/TopBar";
+import { useAuth } from "../lib/AuthContext";
 import ScanNowButton from "../components/ScanNowButton";
 import { Page, PageHeader, StatTile, DataTable, Badge, Button, Drawer, Tabs, inputClass, type Column, type FilterDef } from "../components/ui";
 
@@ -13,6 +14,7 @@ interface AppCommand { device_id: string; command_type: "remove_app" | "restore_
 
 export default function AppFilter() {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
   const [tab, setTab] = useState<"rules" | "violations">("rules");
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ app: "", type: "blocklist" as "blocklist" | "allowlist", reason: "", group: "" });
@@ -102,7 +104,7 @@ export default function AppFilter() {
       render: r => <span style={{ color: r.reason ? "var(--c-text)" : "var(--c-muted)" }}>{r.reason ?? "—"}</span> },
     { key: "created_at", header: "Added", hideBelow: "lg", render: r => timeAgo(r.created_at) },
     { key: "actions", header: "", sortable: false, align: "right", width: "60px", render: r => (
-      <button onClick={() => deleteRule.mutate(r.id)} disabled={deleteRule.isPending} title="Delete rule"
+      isAdmin && <button onClick={() => deleteRule.mutate(r.id)} disabled={deleteRule.isPending} title="Delete rule"
         className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
         <Trash2 className="w-4 h-4" />
       </button>) },
@@ -129,13 +131,13 @@ export default function AppFilter() {
       return (
         <div className="flex items-center justify-end gap-1.5" onClick={e => e.stopPropagation()}>
           {removed && !busy && (
-            <Button size="sm" icon={RotateCcw} onClick={() => appAction.mutate({ device_id: v.device_id, app_name: v.app_name, command: "restore_app" })}>Restore</Button>
+            <Button adminOnly size="sm" icon={RotateCcw} onClick={() => appAction.mutate({ device_id: v.device_id, app_name: v.app_name, command: "restore_app" })}>Restore</Button>
           )}
           {!v.resolved && !busy && !removed && (
             <Button size="sm" variant="danger" icon={PackageX} onClick={() => appAction.mutate({ device_id: v.device_id, app_name: v.app_name, command: "remove_app" })}>Remove app</Button>
           )}
           {!v.resolved && (
-            <Button size="sm" icon={Check} onClick={() => resolveViolation.mutate(v.id)}>Resolve</Button>
+            <Button adminOnly size="sm" icon={Check} onClick={() => resolveViolation.mutate(v.id)}>Resolve</Button>
           )}
         </div>
       );

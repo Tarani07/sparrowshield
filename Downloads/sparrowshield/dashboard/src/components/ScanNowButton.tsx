@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { RefreshCw, Check } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../lib/AuthContext";
 
 export default function ScanNowButton() {
+  const { isAdmin } = useAuth();
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [count, setCount] = useState(0);
 
@@ -31,7 +33,7 @@ export default function ScanNowButton() {
   return (
     <button
       onClick={send}
-      disabled={state === "sending"}
+      disabled={state === "sending" || !isAdmin}
       title="Tell every Mac agent to re-download rules and scan now"
       className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-[13px] font-medium whitespace-nowrap hover:brightness-110 disabled:opacity-60"
       style={{ background: "var(--c-accent)", borderColor: "var(--c-accent)", color: "#fff" }}

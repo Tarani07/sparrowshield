@@ -2,6 +2,7 @@ import { useState, type ElementType } from "react";
 import { ScanLine, Wifi, WifiOff, CheckCircle2, Loader2, RotateCcw, RefreshCw, Globe, Bug, AlertTriangle, XCircle, Terminal } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { Panel, Badge, Button } from "../ui";
+import { CommandProgress } from "../layout/CommandActivity";
 
 interface Props {
   deviceId: string;
@@ -10,7 +11,7 @@ interface Props {
 }
 
 type Action = { key: string; label: string; desc: string; icon: ElementType; command: string; confirm?: string; danger?: boolean };
-type RunState = { status: "queued" | "running" | "done" | "failed"; result?: string };
+type RunState = { status: "queued" | "running" | "done" | "failed"; result?: string; progress?: number | null; message?: string | null };
 
 // Only commands the agent for that OS actually implements (agent_mac.py / agent_windows.py).
 const MAC_ACTIONS: Action[] = [
@@ -46,7 +47,7 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
     // Follow the command until the agent reports back (agents poll every ~5–10s).
     const started = Date.now();
     const poll = async () => {
-      const { data: row } = await supabase.from("device_commands").select("status, result").eq("id", data.id).single();
+      const { data: row } = await supabase.from("device_commands").select("status, result, progress, progress_message").eq("id", data.id).single();
       const status = row?.status as RunState["status"] | undefined;
       if (status === "done" || status === "failed") {
         setRuns(r => ({ ...r, [a.key]: { status, result: row?.result ?? "" } }));
@@ -56,8 +57,8 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
         setRuns(r => ({ ...r, [a.key]: { status: "queued", result: "Still waiting — the device may be asleep or offline. It will run when it reconnects." } }));
         return;
       }
-      setRuns(r => ({ ...r, [a.key]: { status: status === "running" ? "running" : "queued" } }));
-      setTimeout(poll, 3000);
+      setRuns(r => ({ ...r, [a.key]: { status: status === "running" ? "running" : "queued", progress: row?.progress, message: row?.progress_message } }));
+      setTimeout(poll, 1500);
     };
     setTimeout(poll, 2000);
   }
@@ -81,12 +82,18 @@ export default function RemoteActionsCard({ deviceId, deviceOs, isIsolated }: Pr
                     <Loader2 className="w-3.5 h-3.5 animate-spin" /> {st.status === "running" ? "Running…" : "Queued…"}
                   </span>
                 ) : (
-                  <Button size="sm" variant={a.danger ? "danger" : "secondary"}
+                  <Button adminOnly size="sm" variant={a.danger ? "danger" : "secondary"}
                     onClick={() => (a.confirm ? setConfirmKey(a.key) : run(a))}>
                     Run
                   </Button>
                 )}
               </div>
+
+              {busy && (
+                <div className="px-3 pb-2.5">
+                  <CommandProgress c={{ status: st.status === "queued" ? "pending" : "running", progress: st.progress ?? null, progress_message: st.message ?? null }} />
+                </div>
+              )}
 
               {confirmKey === a.key && (
                 <div className="flex items-center gap-2 px-3 py-2 border-t" style={{ borderColor: "var(--c-border)" }}>

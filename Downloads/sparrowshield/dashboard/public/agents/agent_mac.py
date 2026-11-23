@@ -2468,6 +2468,7 @@ def handle_run_edr_scan(payload):
             abuse_ch_key       = config.get("abuse_ch_auth_key", ""),
             auto_quarantine    = config.get("auto_quarantine", False),
             auto_kill_blocked  = config.get("auto_kill_blocked_apps", False),
+            progress           = (payload or {}).get("_progress"),
             **_EDR_CTX,
         )
         summary["full_disk_access"] = has_full_disk_access()
@@ -2546,18 +2547,35 @@ _scan_running = threading.Event()
 
 def _run_command(cmd, headers, supabase_rest_url):
     cmd_id, cmd_type = cmd["id"], cmd.get("command_type")
+    url = f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}"
+    last_sent = [0.0]
+
+    def report(pct: int, message: str):
+        """Live progress for the console; throttled to one update per second (always send 100%)."""
+        now = time.time()
+        if pct < 100 and now - last_sent[0] < 1.0:
+            return
+        last_sent[0] = now
+        try:
+            requests.patch(url, headers=headers, json={"progress": max(0, min(100, int(pct))), "progress_message": message[:200]}, timeout=8)
+        except Exception:
+            pass
+
+    payload = dict(cmd.get("payload") or {})
+    payload["_progress"] = report
     handler = COMMAND_HANDLERS.get(cmd_type)
     try:
-        result, success = handler(cmd.get("payload") or {}) if handler else (f"Unknown command: {cmd_type}", False)
+        result, success = handler(payload) if handler else (f"Unknown command: {cmd_type}", False)
     except Exception as e:
         result, success = f"{cmd_type} error: {e}", False
     finally:
         if cmd_type == "run_edr_scan":
             _scan_running.clear()
     requests.patch(
-        f"{supabase_rest_url}/device_commands?id=eq.{cmd_id}",
+        url,
         headers=headers,
-        json={"status": "done" if success else "failed", "result": result,
+        json={"status": "done" if success else "failed", "result": result, "progress": 100,
+              "progress_message": "Completed" if success else "Failed",
               "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
         timeout=10,
     )
@@ -2601,7 +2619,9 @@ def command_loop(device_id, anon_key, supabase_rest_url):
                         continue
                     if cmd.get("command_type") == "run_edr_scan":
                         _scan_running.set()
-                    requests.patch(url, headers=headers, json={"status": "running"}, timeout=10)
+                    requests.patch(url, headers=headers, timeout=10, json={
+                        "status": "running", "progress": 0, "progress_message": "Started",
+                        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
                     # Each command runs on its own thread so a long scan never delays
                     # quick actions such as remove_app or kill_process.
                     threading.Thread(target=_run_command, args=(cmd, headers, supabase_rest_url),

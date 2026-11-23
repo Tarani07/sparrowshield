@@ -188,7 +188,7 @@ export default function DeviceDetail() {
                   <Button size="sm" variant="danger" onClick={queueRestart}>Restart</Button>
                 </>
               ) : (
-                <Button icon={RotateCcw} onClick={() => setRestartState("confirm")} disabled={restartState === "sending"}>
+                <Button adminOnly icon={RotateCcw} onClick={() => setRestartState("confirm")} disabled={restartState === "sending"}>
                   {restartState === "sending" ? "Sending…" : restartState === "sent" ? "Restart queued ✓" : restartState === "error" ? "Failed — retry" : "Restart"}
                 </Button>
               )}

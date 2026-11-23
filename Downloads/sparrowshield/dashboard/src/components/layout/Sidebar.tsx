@@ -2,12 +2,13 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BellRing, ChevronDown, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
-  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket,
+  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ElementType } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/supabase";
 import { useTheme } from "../../lib/ThemeContext";
+import { useAuth } from "../../lib/AuthContext";
 
 type NavItem = { to: string; label: string; icon: ElementType; count?: number; tone?: string };
 type Section = { id: string; label?: string; items: NavItem[]; collapsible?: boolean; defaultOpen?: boolean };
@@ -147,6 +148,7 @@ function DeployMenu() {
 
 export default function Sidebar() {
   const { theme, toggle } = useTheme();
+  const { isAdmin } = useAuth();
   const location = useLocation();
   // Below the lg breakpoint the sidebar is an overlay opened from the top bar's menu button.
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -199,6 +201,11 @@ export default function Sidebar() {
       { to: "/reports", label: "Reports", icon: FileText },
       { to: "/executive", label: "Executive Summary", icon: BarChart2 },
     ]},
+    { id: "admin", label: "Administration", items: [
+      { to: "/users", label: "Users & Roles", icon: UserCog },
+      ...(isAdmin ? [{ to: "/audit", label: "Audit Log", icon: ScrollText }] : []),
+      { to: "/settings", label: "Settings", icon: Settings },
+    ]},
     { id: "win", label: "Windows Console", defaultOpen: false, items: [
       { to: "/windows/av", label: "Windows Antivirus", icon: ScanLine },
       { to: "/windows/edr", label: "Windows Detections", icon: Crosshair },
@@ -228,7 +235,6 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="shrink-0 border-t px-2 py-2 space-y-px" style={{ borderColor: "var(--c-sb-border)" }}>
-        <NavRow item={{ to: "/settings", label: "Settings", icon: Settings }} />
         <NavRow item={{ to: "/about", label: "About & Docs", icon: Info }} />
         <button onClick={toggle}
           className="w-full flex items-center gap-2.5 h-8 pl-3 pr-2 rounded-md text-[13px] font-medium hover:text-[var(--c-sb-strong)]"

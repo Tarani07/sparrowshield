@@ -4,6 +4,7 @@ import { Globe, Plus, Trash2, Bug, Fish, Lock, Cpu, EyeOff, Dices, Gamepad2, Mes
 import { supabase } from "../lib/supabase";
 import { timeAgo } from "../lib/utils";
 import TopBar from "../components/layout/TopBar";
+import { useAuth } from "../lib/AuthContext";
 import ScanNowButton from "../components/ScanNowButton";
 import { Page, PageHeader, Panel, StatTile, DataTable, Badge, Button, Drawer, Tabs, inputClass, type Column, type FilterDef } from "../components/ui";
 
@@ -23,6 +24,8 @@ const CATEGORY_META: Record<string, { icon: ElementType; label: string; group: "
 };
 
 function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: () => void; disabled?: boolean; label: string }) {
+  const { isAdmin } = useAuth();
+  disabled = disabled || !isAdmin;
   return (
     <button role="switch" aria-checked={on} aria-label={label} onClick={onChange} disabled={disabled}
       className="relative w-9 h-5 rounded-full transition-colors shrink-0 disabled:opacity-50"
@@ -34,6 +37,7 @@ function Switch({ on, onChange, disabled, label }: { on: boolean; onChange: () =
 
 export default function WebFilter() {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
   const [tab, setTab] = useState<"categories" | "custom">("categories");
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ domain: "", action: "block" as "block" | "allow", notes: "" });
@@ -115,12 +119,12 @@ export default function WebFilter() {
     { key: "actions", header: "", sortable: false, align: "right", width: "170px", render: r => (
       <div className="flex items-center justify-end gap-1.5">
         {r.action === "block" && (
-          <Button size="sm" icon={Unlock} title="Unblock even if a category (e.g. Gaming) lists this site"
+          <Button adminOnly size="sm" icon={Unlock} title="Unblock even if a category (e.g. Gaming) lists this site"
             onClick={() => updateRule.mutate({ id: r.id, patch: { action: "allow", enabled: true } })}>Allow instead</Button>
         )}
-        <button onClick={() => deleteRule.mutate(r.id)} title="Delete rule" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
+        {isAdmin && <button onClick={() => deleteRule.mutate(r.id)} title="Delete rule" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
           <Trash2 className="w-4 h-4" />
-        </button>
+        </button>}
       </div>) },
   ];
   const filters: FilterDef<WebRule>[] = [

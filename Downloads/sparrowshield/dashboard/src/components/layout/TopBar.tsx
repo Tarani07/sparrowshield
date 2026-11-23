@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, Bell, LogOut, ChevronDown, Settings, Apple, Monitor, Menu } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/AuthContext";
+import { useLive } from "../../lib/realtime";
+import CommandActivity from "./CommandActivity";
 
 type DeviceHit = { id: string; hostname: string; serial_number: string | null; os_type: string; status: string | null; assigned_user: string | null };
 
@@ -15,7 +17,8 @@ export default function TopBar({ title }: { title: string }) {
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, signOut, role } = useAuth();
+  const live = useLive();
 
   const { data: openCount = 0 } = useQuery<number>({
     queryKey: ["open-alert-count"],
@@ -118,6 +121,14 @@ export default function TopBar({ title }: { title: string }) {
       </div>
 
       <div className="flex items-center gap-2">
+        <span title={live.status === "live" ? "Live — updates appear instantly" : live.status === "connecting" ? "Connecting to live updates…" : "Live updates unavailable — refreshing every 30s"}
+          className="hidden sm:inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[11px] font-semibold border"
+          style={{ borderColor: "var(--c-border)", color: live.status === "live" ? "var(--ok)" : "var(--c-muted)" }}>
+          <span className={`w-1.5 h-1.5 rounded-full ${live.status === "live" ? "animate-pulse" : ""}`}
+            style={{ background: live.status === "live" ? "var(--ok)" : live.status === "connecting" ? "var(--sev-medium)" : "var(--c-faint)" }} />
+          {live.status === "live" ? "LIVE" : live.status === "connecting" ? "CONNECTING" : "POLLING"}
+        </span>
+        <CommandActivity />
         <button onClick={() => navigate("/alerts")} aria-label="Open alerts"
           className="relative w-9 h-9 rounded-md flex items-center justify-center border hover:bg-[var(--c-card2)]"
           style={{ borderColor: "var(--c-border)", color: "var(--c-text)" }}>
@@ -136,7 +147,7 @@ export default function TopBar({ title }: { title: string }) {
               style={{ background: "linear-gradient(135deg,#3b6cf6,#1d4ed8)" }}>{initials}</div>
             <div className="hidden md:block text-left leading-tight">
               <p className="text-[12px] font-semibold truncate max-w-[140px]" style={{ color: "var(--c-strong)" }}>{email.split("@")[0]}</p>
-              <p className="text-[10.5px]" style={{ color: "var(--c-muted)" }}>Security Admin</p>
+              <p className="text-[10.5px]" style={{ color: "var(--c-muted)" }}>{role === "viewer" ? "Read-only" : "Security Admin"}</p>
             </div>
             <ChevronDown className="w-3.5 h-3.5 hidden md:block" style={{ color: "var(--c-muted)" }} />
           </button>
@@ -145,7 +156,7 @@ export default function TopBar({ title }: { title: string }) {
               style={{ background: "var(--c-card)", borderColor: "var(--c-border2)" }}>
               <div className="px-3.5 py-3 border-b" style={{ borderColor: "var(--c-border)" }}>
                 <p className="text-[12.5px] font-semibold truncate" style={{ color: "var(--c-strong)" }}>{email}</p>
-                <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>Security Admin</p>
+                <p className="text-[11px]" style={{ color: "var(--c-muted)" }}>{role === "viewer" ? "Read-only access" : "Security Admin"}</p>
               </div>
               <button onClick={() => { setUserMenuOpen(false); navigate("/settings"); }}
                 className="w-full flex items-center gap-2.5 px-3.5 h-9 text-[13px] hover:bg-[var(--c-card2)]" style={{ color: "var(--c-text)" }}>

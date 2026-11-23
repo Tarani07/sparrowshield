@@ -7,6 +7,7 @@ import { useAllDevices } from "../hooks/useDevices";
 import type { Device } from "../lib/types";
 import { timeAgo } from "../lib/utils";
 import TopBar from "../components/layout/TopBar";
+import { useAuth } from "../lib/AuthContext";
 import { Page, PageHeader, StatTile, DataTable, Badge, Button, Drawer, type Column, type FilterDef } from "../components/ui";
 
 const ONLINE_MS = 15 * 60_000;
@@ -52,6 +53,7 @@ function PostureIcons({ d }: { d: Row }) {
 
 export default function DeviceList({ os }: { os?: "mac" | "windows" } = {}) {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const qc = useQueryClient();
   const { data: all = [], isLoading, refetch, isFetching } = useAllDevices();
   const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
@@ -145,9 +147,9 @@ export default function DeviceList({ os }: { os?: "mac" | "windows" } = {}) {
         <button onClick={() => navigate(`/device/${d.id}`)} title="Open device" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
           <ExternalLink className="w-4 h-4" />
         </button>
-        <button onClick={() => { setDeleteError(null); setDeleteTarget(d); }} title="Remove from console" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
+        {isAdmin && <button onClick={() => { setDeleteError(null); setDeleteTarget(d); }} title="Remove from console" className="p-1.5 rounded hover:bg-[var(--c-card2)]" style={{ color: "var(--c-muted)" }}>
           <Trash2 className="w-4 h-4" />
-        </button>
+        </button>}
       </div>
     ) },
   ];
