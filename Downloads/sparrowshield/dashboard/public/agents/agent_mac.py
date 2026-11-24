@@ -718,16 +718,19 @@ def get_failed_logins(since_seconds: int = 600) -> list:
                 "--last", f"{max(60, since_seconds)}s",
                 "--style", "compact",
                 "--predicate",
-                'eventMessage contains[c] "authentication failure" '
+                '(eventMessage contains[c] "authentication failure" '
                 'or eventMessage contains[c] "failed to authenticate" '
                 'or eventMessage contains[c] "incorrect password" '
-                'or (process == "sudo" and eventMessage contains[c] "denied")',
+                'or (process == "sudo" and eventMessage contains[c] "denied")) '
+                'and process != "log"',          # `log` logs its own args — don't match our own query
             ],
             capture_output=True, text=True, timeout=15,
         )
         for line in r.stdout.splitlines():
             line = line.strip()
             if not line or line.startswith("Filtering") or line.startswith("Timestamp"):
+                continue
+            if "log run noninteractively" in line:
                 continue
             parts = line.split(None, 3)
             events.append({

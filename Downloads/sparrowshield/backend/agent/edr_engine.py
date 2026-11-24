@@ -1221,6 +1221,9 @@ def _walk_limited(root: str, depth: int, cap: int = 3000):
             yield os.path.join(dirpath, fn)
 
 
+_NEW_BUNDLE_CHECKS = ("url_handler_app", "no_quarantine_app")
+
+
 def run_periodic_analytics(rest_url, anon_key, device_id, hostname, state: dict):
     baselines = state.setdefault("baselines", {})
     alerted = state.setdefault("alerted", {})
@@ -1284,8 +1287,19 @@ def run_periodic_analytics(rest_url, anon_key, device_id, hostname, state: dict)
                             if st.st_mode & _stat.S_ISUID and os.path.basename(p) in _SHELL_NAMES | {"sh_copy"} and once_path(rid, p):
                                 _hit(rest_url, anon_key, device_id, hostname, r, f"setuid shell at {p}", {"path": p})
                     elif chk in ("script_app", "url_handler_app", "dyld_insert_app", "no_quarantine_app"):
-                        for app in _glob(os.path.join(root, "*.app")):
-                            if age and not _recent(app, age):
+                        # URL-handler / no-quarantine are normal for installed apps, so only judge bundles
+                        # that appeared since the last scan (an auto-update touching mtime is not "new").
+                        new_only = chk in _NEW_BUNDLE_CHECKS
+                        bkey = f"{rid}:apps:{root}"
+                        known = set(baselines.get(bkey) or []) if new_only else set()
+                        first = new_only and bkey not in baselines
+                        apps = _glob(os.path.join(root, "*.app"))
+                        if new_only:
+                            baselines[bkey] = sorted(apps)
+                        for app in apps:
+                            if new_only and (first or app in known):
+                                continue
+                            if not new_only and age and not _recent(app, age):
                                 continue
                             info = _app_info(app)
                             if chk == "script_app":
@@ -1364,7 +1378,9 @@ def run_periodic_analytics(rest_url, anon_key, device_id, hostname, state: dict)
             elif m == "log":
                 last = state.get("log_last", {}).get(rid)
                 window = "6m" if last else "10m"
-                out = subprocess.run(["log", "show", "--style", "compact", "--last", window, "--predicate", d.get("predicate", "")],
+                # `log` records its own invocation (args included) — exclude it or we match our own predicate.
+                pred = f'({d.get("predicate") or "TRUEPREDICATE"}) AND process != "log"'
+                out = subprocess.run(["log", "show", "--style", "compact", "--last", window, "--predicate", pred],
                                      capture_output=True, text=True, timeout=60).stdout
                 rx = _rx(d.get("regex", "(?!x)x"))
                 for line in out.splitlines()[-5000:]:
