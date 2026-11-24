@@ -527,6 +527,24 @@ def _policy_hit(name: str, exe: str) -> Optional[dict]:
     return None
 
 
+def _spawned_by_agent(pid: int, ppid_of, me: int) -> bool:
+    """True if `me` (the agent) is an ancestor of `pid` — e.g. agent → sudo → osascript for IT notices."""
+    seen = 0
+    while pid and pid > 1 and seen < 8:
+        pid = ppid_of(pid)
+        if pid == me:
+            return True
+        seen += 1
+    return False
+
+
+def _ppid_live(pid: int) -> int:
+    try:
+        return psutil.Process(pid).ppid()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return 0
+
+
 def enforce_running_apps(rest_url: str, anon_key: str, device_id: str, hostname: str):
     """Close blocked apps and Policy-Manager-blocked processes; alert on 'alert' rules."""
     blocklist = {p for p in _app_filter.get("blocklist", set()) if len(p) >= _MIN_PATTERN}
@@ -562,7 +580,7 @@ def enforce_running_apps(rest_url: str, anon_key: str, device_id: str, hostname:
 
             # Policy Manager rules.
             rule = _policy_hit(name, exe)
-            if not rule:
+            if not rule or _spawned_by_agent(pid, _ppid_live, me):
                 continue
             key = (rule["id"], pid)
             if rule.get("action") == "block":
@@ -1090,8 +1108,8 @@ def run_process_analytics(rest_url, anon_key, device_id, hostname):
         procs[p.info["pid"]] = p.info
     for info in procs.values():
         pid = info["pid"]
-        if pid in (0, 1, me) or info.get("ppid") == me:          # never flag the agent's own helpers
-            continue
+        if pid in (0, 1, me) or _spawned_by_agent(pid, lambda x: (procs.get(x) or {}).get("ppid") or 0, me):
+            continue                                              # never flag the agent's own helpers
         name = info.get("name") or ""
         exe = info.get("exe") or ""
         cmd = " ".join(info.get("cmdline") or [])[:4000]
