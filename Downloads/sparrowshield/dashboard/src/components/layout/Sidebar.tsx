@@ -2,7 +2,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BellRing, ChevronDown, Apple, Monitor, Laptop, Settings, FileText, ShieldCheck,
   Info, Package, Shield, Download, ScanLine, Network, WifiOff, Bug, Sun, Moon, GitBranch, Radio,
-  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText, Cloud, Radar,
+  Target, BarChart2, Crosshair, Globe, Users, AppWindow, Megaphone, Copy, Check, Rocket, UserCog, ScrollText, Cloud, Radar, Cpu,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ElementType } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -166,6 +166,9 @@ export default function Sidebar() {
   const alertCount = useCount("open-alert-count", () =>
     supabase.from("alerts").select("*", { count: "exact", head: true }).eq("resolved", false));
 
+  const sensorIssues = useCount("sensor-issue-count", () =>
+    supabase.from("device_sensors").select("*", { count: "exact", head: true }).in("status", ["error", "warning"]));
+
   const sections: Section[] = [
     { id: "home", items: [
       { to: "/", label: "Overview", icon: LayoutDashboard },
@@ -177,6 +180,7 @@ export default function Sidebar() {
       { to: "/mac/devices", label: "macOS", icon: Apple, count: macCount },
       { to: "/windows/devices", label: "Windows", icon: Monitor, count: winCount },
       { to: "/groups", label: "Device Groups", icon: Users },
+      { to: "/sensors", label: "Sensor Health", icon: Cpu, count: sensorIssues || undefined, tone: sensorIssues ? "#e11d48" : undefined },
       { to: "/jumpcloud", label: "JumpCloud", icon: Cloud },
     ]},
     { id: "detect", label: "Detection & Response", items: [

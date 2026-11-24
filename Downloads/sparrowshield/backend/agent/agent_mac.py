@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import platform
+import re
 import subprocess
 import sys
 import threading
@@ -2086,6 +2087,308 @@ def notice_loop(rest_url: str, anon_key: str):
         time.sleep(NOTICE_POLL_SEC)
 
 
+# ──────────────────────────────────────────────
+# SENSOR HEALTH — hardware sensor checks reported via rpc/report_sensors.
+# The server keeps the baseline: a sensor that worked before and is now missing/failing
+# becomes an alert + Slack message, and auto-resolves when it recovers.
+# ──────────────────────────────────────────────
+SENSOR_INTERVAL = 600
+_SENSOR_CTX: dict = {}
+
+
+def _run(cmd, timeout=20) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def _ioreg_products(cls: str) -> set:
+    return set(re.findall(r'"Product" = "([^"]+)"', _run(["ioreg", "-r", "-c", cls, "-d", "1"])))
+
+
+def _read_lid_angle():
+    """Live hinge angle (degrees) from the lid-angle HID sensor on recent MacBooks; None if unreadable."""
+    import ctypes
+    import ctypes.util
+    from ctypes import c_void_p, c_int, c_long, c_uint8, POINTER, byref
+    iokit = ctypes.cdll.LoadLibrary(ctypes.util.find_library("IOKit"))
+    cf = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreFoundation"))
+    cf.CFDictionaryCreateMutable.restype = c_void_p
+    cf.CFDictionaryCreateMutable.argtypes = [c_void_p, c_long, c_void_p, c_void_p]
+    cf.CFNumberCreate.restype = c_void_p
+    cf.CFNumberCreate.argtypes = [c_void_p, c_int, c_void_p]
+    cf.CFStringCreateWithCString.restype = c_void_p
+    cf.CFStringCreateWithCString.argtypes = [c_void_p, ctypes.c_char_p, c_int]
+    cf.CFDictionarySetValue.argtypes = [c_void_p, c_void_p, c_void_p]
+    cf.CFSetGetCount.restype = c_long
+    cf.CFSetGetCount.argtypes = [c_void_p]
+    cf.CFSetGetValues.argtypes = [c_void_p, POINTER(c_void_p)]
+    cf.CFRelease.argtypes = [c_void_p]
+    iokit.IOHIDManagerCreate.restype = c_void_p
+    iokit.IOHIDManagerCreate.argtypes = [c_void_p, c_int]
+    iokit.IOHIDManagerSetDeviceMatching.argtypes = [c_void_p, c_void_p]
+    iokit.IOHIDManagerOpen.argtypes = [c_void_p, c_int]
+    iokit.IOHIDManagerClose.argtypes = [c_void_p, c_int]
+    iokit.IOHIDManagerCopyDevices.restype = c_void_p
+    iokit.IOHIDManagerCopyDevices.argtypes = [c_void_p]
+    iokit.IOHIDDeviceGetReport.argtypes = [c_void_p, c_int, c_long, POINTER(c_uint8), POINTER(c_long)]
+
+    owned = []
+
+    def num(v):
+        x = c_int(v)
+        o = cf.CFNumberCreate(None, 9, byref(x))      # kCFNumberIntType
+        owned.append(o)
+        return o
+
+    def cfstr(t):
+        o = cf.CFStringCreateWithCString(None, t.encode(), 0x08000100)   # UTF-8
+        owned.append(o)
+        return o
+
+    mgr = iokit.IOHIDManagerCreate(None, 0)
+    match = cf.CFDictionaryCreateMutable(None, 0,
+                                         ctypes.addressof(c_void_p.in_dll(cf, "kCFTypeDictionaryKeyCallBacks")),
+                                         ctypes.addressof(c_void_p.in_dll(cf, "kCFTypeDictionaryValueCallBacks")))
+    devs = None
+    try:
+        # Apple SPU lid-angle sensor: usage page 0x20 (sensor), usage 0x8A (orientation/hinge).
+        for k, v in (("VendorID", 0x05AC), ("PrimaryUsagePage", 0x20), ("PrimaryUsage", 0x8A)):
+            cf.CFDictionarySetValue(match, cfstr(k), num(v))
+        iokit.IOHIDManagerSetDeviceMatching(mgr, match)
+        if iokit.IOHIDManagerOpen(mgr, 0) != 0:
+            return None
+        devs = iokit.IOHIDManagerCopyDevices(mgr)
+        count = cf.CFSetGetCount(devs) if devs else 0
+        if not count:
+            return None
+        arr = (c_void_p * count)()
+        cf.CFSetGetValues(devs, arr)
+        for dev in arr:
+            buf = (c_uint8 * 8)()
+            ln = c_long(8)
+            if iokit.IOHIDDeviceGetReport(dev, 2, 1, buf, byref(ln)) == 0 and ln.value >= 3:  # feature report 1
+                angle = buf[2] << 8 | buf[1]
+                if 0 <= angle <= 360:
+                    return angle
+        return None
+    finally:
+        if devs:
+            cf.CFRelease(devs)
+        iokit.IOHIDManagerClose(mgr, 0)
+        cf.CFRelease(match)
+        cf.CFRelease(mgr)
+        for o in owned:
+            cf.CFRelease(o)
+
+
+def collect_sensors() -> list:
+    """One entry per sensor: {sensor, name, category, status, detail, value}."""
+    out = []
+
+    def add(sensor, name, category, status, detail=None, **value):
+        out.append({"sensor": sensor, "name": name, "category": category, "status": status,
+                    "detail": detail, "value": value})
+
+    # Sensor names differ between Mac generations (M3: SPU "accel"/"gyro"/"als"/"las"), so search the
+    # whole registry for both Product names and driver class names, and keep what we saw for diagnosis.
+    reg = _run(["ioreg", "-l", "-w0"], timeout=40)
+    products = set(re.findall(r'"Product" = "([^"]+)"', reg))
+    classes = set(re.findall(r"<class (\w+),", reg))
+    spu = set()
+    for p in products | classes:
+        pl = p.lower()
+        if pl in ("accel", "accelerometer") or "accelerometer" in pl or pl.startswith("applespuaccel"):
+            spu.add("accel")
+        if pl in ("gyro", "gyroscope") or "gyro" in pl:
+            spu.add("gyro")
+        if pl in ("als", "ambient light sensor") or "ambientlight" in pl or pl.startswith("appleals") or "alssensor" in pl:
+            spu.add("als")
+        if pl in ("las", "lid angle sensor") or "lidangle" in pl:
+            spu.add("las")
+    if re.search(r'"ALSSensorType"|"ALSSSupported" = Yes', reg):
+        spu.add("als")
+    probe = sorted(p for p in products | classes
+                   if re.search(r"accel|gyro|als|lid|motion|ambient|spu|light|hinge|imu", p, re.I))[:40]
+    lmu = "AppleLMUController" in classes      # Intel ALS
+    try:
+        sp = json.loads(_run(["system_profiler", "SPCameraDataType", "SPAudioDataType",
+                              "SPBluetoothDataType", "SPPowerDataType", "-json"], timeout=60) or "{}")
+    except ValueError:
+        sp = {}
+
+    # Biometrics — Touch ID
+    if "AppleBiometricSensor" in classes or "AppleMesaSEPDriver" in classes:
+        cfg = _run(["bioutil", "-r", "-s"])
+        unlock = re.search(r"Biometrics for unlock:\s*(\d)", cfg)
+        counts = re.findall(r"(\d+)\s+biometric template", _run(["bioutil", "-c", "-s"]))   # needs root
+        enrolled = sum(int(n) for n in counts) if counts else None
+        detail = ("Enabled for unlock" if unlock and unlock.group(1) == "1" else "Present, not used for unlock")
+        if enrolled is not None:
+            detail += f" · {enrolled} fingerprint(s) enrolled"
+        add("touch_id", "Touch ID", "biometrics", "ok", detail,
+            enrolled=enrolled, unlock=bool(unlock and unlock.group(1) == "1"))
+    else:
+        add("touch_id", "Touch ID", "biometrics", "not_present", "No Touch ID sensor on this Mac")
+
+    add("presence", "Presence detection", "presence", "not_present", "Macs have no walk-away presence sensor")
+
+    # Motion & tilt
+    add("accelerometer", "Accelerometer", "motion", "ok" if "accel" in spu else "not_present",
+        "Hidden IMU in the sensor processor" if "accel" in spu else None,
+        **({} if "accel" in spu else {"probe": probe}))     # diagnostic: what this model does expose
+    add("gyroscope", "Gyroscope", "motion", "ok" if "gyro" in spu else "not_present",
+        "Hidden IMU in the sensor processor" if "gyro" in spu else None)
+
+    # Lid / hinge
+    clam = re.search(r'"AppleClamshellState" = (Yes|No)', reg)
+    lid_closed = clam.group(1) == "Yes" if clam else None
+    if "las" in spu:
+        try:
+            angle = _read_lid_angle()
+        except Exception as e:
+            logger.debug("lid angle read failed: %s", e)
+            angle = None
+        if angle is None:
+            add("lid_angle", "Lid angle sensor", "lid", "warning", "Sensor present but not responding", lid_closed=lid_closed)
+        else:
+            add("lid_angle", "Lid angle sensor", "lid", "ok",
+                f"Lid {'closed' if lid_closed else 'open'} at {angle}°", angle=angle, lid_closed=lid_closed)
+    else:
+        add("lid_angle", "Lid angle sensor", "lid", "not_present",
+            None if clam is None else f"Lid switch only — lid {'closed' if lid_closed else 'open'}", lid_closed=lid_closed)
+
+    # Display light
+    if "als" in spu or lmu:
+        add("ambient_light", "Ambient light sensor", "display", "ok", "Auto-brightness / True Tone input")
+    else:
+        add("ambient_light", "Ambient light sensor", "display", "not_present")
+
+    # Location (Wi-Fi based on Macs)
+    wifi_port = re.search(r"Hardware Port: Wi-Fi\nDevice: (\w+)", _run(["networksetup", "-listallhardwareports"]))
+    loc_on = None
+    import glob as _g
+    import plistlib as _pl
+    for f in _g.glob("/var/db/locationd/Library/Preferences/ByHost/com.apple.locationd*.plist"):  # root only
+        try:
+            with open(f, "rb") as fh:
+                v = _pl.load(fh).get("LocationServicesEnabled")
+            if v is not None:
+                loc_on = bool(v)
+                break
+        except Exception:
+            continue
+    if wifi_port:
+        add("location", "Location (Wi-Fi)", "location", "ok",
+            "Wi-Fi positioning available" + ("" if loc_on is None else f" · Location Services {'on' if loc_on else 'off'}"),
+            enabled=loc_on)
+        st = re.search(r"status: (\w+)", _run(["ifconfig", wifi_port.group(1)]))
+        add("wifi", "Wi-Fi radio", "wireless", "ok", f"{wifi_port.group(1)} {st.group(1) if st else ''}".strip(),
+            interface=wifi_port.group(1), active=bool(st and st.group(1) == "active"))
+    else:
+        add("location", "Location (Wi-Fi)", "location", "not_present", "No Wi-Fi hardware")
+        add("wifi", "Wi-Fi radio", "wireless", "not_present")
+
+    # Bluetooth
+    bt = ((sp.get("SPBluetoothDataType") or [{}])[0] or {}).get("controller_properties") or {}
+    if bt:
+        on = bt.get("controller_state") == "attrib_on"
+        add("bluetooth", "Bluetooth", "wireless", "ok", f"{bt.get('controller_chipset', '')} · {'on' if on else 'off'}".strip(" ·"),
+            on=on, chipset=bt.get("controller_chipset"))
+    else:
+        add("bluetooth", "Bluetooth", "wireless", "not_present", "No Bluetooth controller reported")
+
+    # Camera
+    cams = [c.get("_name", "") for c in (sp.get("SPCameraDataType") or [])]
+    builtin = [c for c in cams if re.search(r"FaceTime|MacBook|Built-in|iMac", c, re.I)]
+    add("camera", "Built-in camera", "camera", "ok" if builtin else "not_present",
+        builtin[0] if builtin else ("External only: " + ", ".join(cams) if cams else None), cameras=cams)
+
+    # Microphone
+    mics = []
+    for grp in sp.get("SPAudioDataType") or []:
+        for it in grp.get("_items") or []:
+            if it.get("coreaudio_device_input") and it.get("coreaudio_device_transport") == "coreaudio_device_type_builtin":
+                mics.append(it.get("_name", ""))
+    add("microphone", "Built-in microphone", "audio", "ok" if mics else "not_present", mics[0] if mics else None)
+
+    # Keyboard / trackpad
+    internal = sorted(p for p in products if p.startswith("Apple Internal"))
+    add("keyboard_trackpad", "Keyboard & trackpad", "input", "ok" if internal else "not_present",
+        internal[0] if internal else None)
+
+    # Battery
+    pw = (sp.get("SPPowerDataType") or [{}])
+    bat = next((p for p in pw if "sppower_battery_health_info" in p), None)
+    if bat:
+        h = bat["sppower_battery_health_info"]
+        health = str(h.get("sppower_battery_health", ""))
+        cap = h.get("sppower_battery_health_maximum_capacity")
+        cap_n = int(re.sub(r"\D", "", str(cap)) or 0) if cap else None
+        cycles = h.get("sppower_battery_cycle_count")
+        pf = re.search(r'"PermanentFailureStatus" = (\d+)', reg)
+        if pf and pf.group(1) != "0":
+            status, why = "error", "Battery reports a permanent failure"
+        elif re.search(r"replace now|poor|check battery", health, re.I):
+            status, why = "error", f"macOS says: {health}"
+        elif re.search(r"service|replace soon|fair", health, re.I) or (cap_n is not None and cap_n < 80):
+            status, why = "warning", f"macOS says: {health or 'degraded'}"
+        else:
+            status, why = "ok", None
+        add("battery", "Battery", "power", status,
+            why or f"{health or 'Normal'} · {cap or '—'} capacity · {cycles if cycles is not None else '—'} cycles",
+            health=health, max_capacity=cap_n, cycles=cycles)
+    else:
+        add("battery", "Battery", "power", "not_present", "Desktop Mac — no battery")
+
+    # Thermal
+    th = _run(["pmset", "-g", "therm"])
+    limit = re.search(r"CPU_Speed_Limit\s*=\s*(\d+)", th)
+    level = re.search(r"thermal warning level.*?(\d+)", th, re.I)
+    if (limit and int(limit.group(1)) < 100) or (level and int(level.group(1)) > 0):
+        add("thermal", "Thermal sensors", "thermal", "warning",
+            f"CPU throttled to {limit.group(1)}%" if limit and int(limit.group(1)) < 100 else "Thermal warning raised",
+            speed_limit=int(limit.group(1)) if limit else None)
+    else:
+        add("thermal", "Thermal sensors", "thermal", "ok", "No thermal throttling",
+            speed_limit=int(limit.group(1)) if limit else 100)
+    return out
+
+
+def report_sensors(rest_url: str, anon_key: str, device_id: str) -> dict:
+    sensors = collect_sensors()
+    r = requests.post(f"{rest_url}/rpc/report_sensors",
+                      headers={"apikey": anon_key, "Authorization": f"Bearer {anon_key}",
+                               "Content-Type": "application/json"},
+                      json={"p_device_id": device_id, "p_sensors": sensors}, timeout=30)
+    r.raise_for_status()
+    res = r.json() if r.content else {}
+    issues = [s["name"] for s in sensors if s["status"] in ("warning", "error")]
+    return {"checked": len(sensors), "issues": issues, **(res if isinstance(res, dict) else {})}
+
+
+def sensor_loop(rest_url: str, anon_key: str, device_id: str):
+    _SENSOR_CTX.update(rest_url=rest_url, anon_key=anon_key, device_id=device_id)
+    time.sleep(45)
+    while True:
+        try:
+            logger.info("Sensor check: %s", report_sensors(rest_url, anon_key, device_id))
+        except Exception as e:
+            logger.warning("Sensor check failed: %s", e)
+        time.sleep(SENSOR_INTERVAL)
+
+
+def handle_check_sensors(payload):
+    if not _SENSOR_CTX:
+        return "sensor monitor not started yet", False
+    try:
+        return json.dumps(report_sensors(_SENSOR_CTX["rest_url"], _SENSOR_CTX["anon_key"], _SENSOR_CTX["device_id"])), True
+    except Exception as e:
+        return f"sensor check error: {e}", False
+
+
 def handle_update_agent(payload):
     try:
         return check_for_update(), True
@@ -2137,6 +2440,7 @@ def main():
 
     threading.Thread(target=update_loop, daemon=True).start()
     threading.Thread(target=notice_loop, args=(supabase_rest_url, anon_key), daemon=True).start()
+    threading.Thread(target=sensor_loop, args=(supabase_rest_url, anon_key, device_id), daemon=True).start()
 
     if _EDR_AVAILABLE:
         # Detection analytics (Jamf-Protect-style catalogue from the console).
@@ -2533,6 +2837,7 @@ def handle_restore_app(payload):
 
 COMMAND_HANDLERS = {
     "update_agent":             handle_update_agent,
+    "check_sensors":            handle_check_sensors,
     "sync_web_filter":          handle_sync_web_filter,
     "remove_app":               handle_remove_app,
     "uninstall_software":       handle_uninstall_software,

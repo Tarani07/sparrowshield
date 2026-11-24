@@ -51,6 +51,7 @@ import ITNotices from "./pages/ITNotices";
 import UsersAccess from "./pages/UsersAccess";
 import AuditLog from "./pages/AuditLog";
 import JumpCloudInventory from "./pages/JumpCloudInventory";
+import SensorHealth from "./pages/SensorHealth";
 import Analytics from "./pages/Analytics";
 
 function NoAccess() {
@@ -143,6 +144,7 @@ function ProtectedLayout() {
           <Route path="/users"        element={<UsersAccess />} />
           <Route path="/audit"        element={<AuditLog />} />
           <Route path="/jumpcloud"    element={<JumpCloudInventory />} />
+          <Route path="/sensors"      element={<SensorHealth />} />
           <Route path="/analytics"    element={<Analytics />} />
 
           <Route path="/settings" element={<Settings />} />

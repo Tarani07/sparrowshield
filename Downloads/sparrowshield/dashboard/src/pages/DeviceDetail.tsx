@@ -15,6 +15,7 @@ import BatteryCard from "../components/device/BatteryCard";
 import NetworkCard from "../components/device/NetworkCard";
 import SecurityStatusCard from "../components/device/SecurityStatusCard";
 import SecurityLogCard from "../components/device/SecurityLogCard";
+import SensorHealthPanel from "../components/device/SensorHealthPanel";
 import ComplianceCard from "../components/device/ComplianceCard";
 import CrashCard from "../components/device/CrashCard";
 import InstalledAppsCard from "../components/device/InstalledAppsCard";
@@ -237,6 +238,8 @@ export default function DeviceDetail() {
             <NetworkCard device={device} />
           </div>
         )}
+
+        {device && <SensorHealthPanel deviceId={device.id} online={isOnline} />}
 
         {/* Security Status + Security Log */}
         {device && (

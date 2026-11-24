@@ -1,8 +1,8 @@
 {
-  "version": "625dd30cecc6",
+  "version": "0f4f0f6d3c62",
   "files": {
-    "agent_mac.py": "26b3884d890c8454a763d19526063fddf89ec1da5988c65e0123d365351ccdd9",
+    "agent_mac.py": "9cdf5973d1416b9cc531fb983c0dca4e7669d4afbf6f47bb0f7ea446c9d066c5",
     "edr_engine.py": "ce6fac0c0adb56efab726b7daa65ae701beb341991281d5521c251cdff76e642"
   },
-  "built_at": "2026-11-24T07:33:42.036Z"
+  "built_at": "2026-11-24T10:38:36.704Z"
 }

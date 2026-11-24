@@ -1114,8 +1114,112 @@ def get_persistence_report(payload: dict) -> tuple[str, bool]:
     return json.dumps(result), True
 
 # ── Command loop ──────────────────────────────────────────────
+# ── Sensor health ─────────────────────────────────────────────
+# Device Manager (PnP) status per sensor class → rpc/report_sensors. The server raises an alert
+# and Slack message when a sensor that used to work errors out or disappears.
+SENSOR_SEC = 600
+
+_SENSOR_PS = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+$d = Get-PnpDevice -PresentOnly | Where-Object { $_.Class -in 'Biometric','Camera','Image','Sensor','Bluetooth','AudioEndpoint','Keyboard','Mouse','Net' } |
+     Select-Object Class, FriendlyName, Status, InstanceId, @{n='Problem';e={[int]$_.Problem}}
+$b = Get-CimInstance Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining, BatteryStatus
+$full = (Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity | Select-Object -First 1).FullChargedCapacity
+$design = (Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData | Select-Object -First 1).DesignedCapacity
+$loc = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location').Value
+[pscustomobject]@{ devices = @($d); battery = $b; full = $full; design = $design; location = $loc } | ConvertTo-Json -Depth 4 -Compress
+"""
+
+# key, display name, category, PnP classes, name regex, exclude regex
+_WIN_SENSORS = [
+    ("fingerprint",   "Fingerprint reader",       "biometrics", ("Biometric",),              r"finger|touch|biometric|validity|synaptics|goodix|elan", r"face|ir camera"),
+    ("face_ir",       "Windows Hello face (IR)",  "biometrics", ("Biometric", "Camera", "Image"), r"\bIR\b|infrared|face|hello", None),
+    ("presence",      "Presence detection",       "presence",   ("Sensor",),                 r"presence|\bHPD\b|proximity|time.of.flight|radar", None),
+    ("accelerometer", "Accelerometer",            "motion",     ("Sensor",),                 r"acceleromet", None),
+    ("gyroscope",     "Gyroscope",                "motion",     ("Sensor",),                 r"gyro", None),
+    ("compass",       "Compass",                  "motion",     ("Sensor",),                 r"compass|magnetomet", None),
+    ("lid_angle",     "Hinge / lid sensor",       "lid",        ("Sensor",),                 r"hinge|lid|hall|inclinomet|orientation", None),
+    ("ambient_light", "Ambient light sensor",     "display",    ("Sensor",),                 r"light|\bALS\b|colou?r sensor", None),
+    ("location",      "GPS / location",           "location",   ("Sensor",),                 r"gps|gnss|location", None),
+    ("camera",        "Built-in camera",          "camera",     ("Camera", "Image"),         r"camera|webcam|video", r"\bIR\b|infrared"),
+    ("microphone",    "Built-in microphone",      "audio",      ("AudioEndpoint",),          r"microphone|mic array", None),
+    ("wifi",          "Wi-Fi radio",              "wireless",   ("Net",),                    r"wi-?fi|wireless|802\.11|wlan", r"virtual|direct"),
+    ("bluetooth",     "Bluetooth",                "wireless",   ("Bluetooth",),              r"bluetooth|wireless", r"enumerator|LE generic|device \(|service"),
+    ("keyboard_trackpad", "Keyboard & touchpad",  "input",      ("Keyboard", "Mouse"),       r"touch ?pad|precision|keyboard|i2c hid", None),
+]
+
+
+def collect_sensors_win() -> list:
+    try:
+        data = json.loads(ps(_SENSOR_PS, timeout=60) or "{}")
+    except ValueError:
+        data = {}
+    devs = data.get("devices") or []
+    if isinstance(devs, dict):
+        devs = [devs]
+    out = []
+    for key, name, cat, classes, rx, ex in _WIN_SENSORS:
+        hits = [d for d in devs
+                if d.get("Class") in classes and re.search(rx, d.get("FriendlyName") or "", re.I)
+                and not (ex and re.search(ex, d.get("FriendlyName") or "", re.I))]
+        if key == "bluetooth":   # the radio itself, not paired peripherals
+            hits = [d for d in hits if re.match(r"(USB|PCI)\\", d.get("InstanceId") or "", re.I)] or hits[:0]
+        if not hits:
+            out.append({"sensor": key, "name": name, "category": cat, "status": "not_present", "detail": None, "value": {}})
+            continue
+        bad = [d for d in hits if (d.get("Status") or "").lower() == "error" or (d.get("Problem") or 0) not in (0, None)]
+        degraded = [d for d in hits if (d.get("Status") or "").lower() == "degraded"]
+        names = [d.get("FriendlyName") for d in hits]
+        if bad:
+            d0 = bad[0]
+            status, detail = "error", f"{d0.get('FriendlyName')}: Device Manager problem code {d0.get('Problem')}"
+        elif degraded:
+            status, detail = "warning", f"{degraded[0].get('FriendlyName')} is degraded"
+        else:
+            status, detail = "ok", names[0]
+        if key == "location" and data.get("location"):
+            detail += f" · Location access {data['location']}"
+        out.append({"sensor": key, "name": name, "category": cat, "status": status, "detail": detail,
+                    "value": {"devices": names[:5]}})
+
+    bat = data.get("battery")
+    if bat:
+        full, design = data.get("full"), data.get("design")
+        health = round(full * 100 / design) if full and design else None
+        status = "ok" if health is None or health >= 80 else ("warning" if health >= 50 else "error")
+        out.append({"sensor": "battery", "name": "Battery", "category": "power", "status": status,
+                    "detail": (f"{health}% of design capacity" if health is not None else "Battery present")
+                              + f" · {bat.get('EstimatedChargeRemaining', '—')}% charged",
+                    "value": {"max_capacity": health, "charge": bat.get("EstimatedChargeRemaining")}})
+    else:
+        out.append({"sensor": "battery", "name": "Battery", "category": "power", "status": "not_present",
+                    "detail": "Desktop — no battery", "value": {}})
+    return out
+
+
+def report_sensors_win(device_id: str) -> dict:
+    sensors = collect_sensors_win()
+    r = requests.post(f"{REST}/rpc/report_sensors", headers=_H,
+                      json={"p_device_id": device_id, "p_sensors": sensors}, timeout=30)
+    r.raise_for_status()
+    res = r.json() if r.content else {}
+    return {"checked": len(sensors), "issues": [s["name"] for s in sensors if s["status"] in ("warning", "error")],
+            **(res if isinstance(res, dict) else {})}
+
+
+def sensor_loop(device_id: str):
+    time.sleep(60)
+    while True:
+        try:
+            log.info("Sensor check: %s", report_sensors_win(device_id))
+        except Exception as e:
+            log.warning("Sensor check failed: %s", e)
+        time.sleep(SENSOR_SEC)
+
+
 def command_loop(device_id: str):
     handlers = {
+        "check_sensors":          lambda p: (json.dumps(report_sensors_win(device_id)), True),
         "isolate":                lambda p: isolate_host(device_id),
         "unisolate":              lambda p: unisolate_host(device_id),
         "apply_dns_blocklist":    lambda p: apply_dns_blocklist(p.get("domains")),
@@ -1501,6 +1605,7 @@ def main():
     threading.Thread(target=detection_loop,  args=(device_id,), daemon=True).start()
     threading.Thread(target=compliance_loop, args=(device_id,), daemon=True).start()
     threading.Thread(target=vuln_loop,       args=(device_id,), daemon=True).start()
+    threading.Thread(target=sensor_loop,     args=(device_id,), daemon=True).start()
     threading.Thread(target=driver_comm_loop,
                      args=(SUPABASE_URL, ANON_KEY, device_id), daemon=True).start()
 

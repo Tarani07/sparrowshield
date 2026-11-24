@@ -131,13 +131,15 @@ def db_upsert(table: str, data: dict) -> dict | None:
         log.error("db_upsert: %s", e)
         return None
 
-def db_patch(table: str, params: dict, data: dict):
+def db_patch(table: str, params: dict, data: dict) -> int:
     try:
         r = requests.patch(f"{REST}/{table}", headers=_H, params=params, json=data, timeout=10)
         if not r.ok:
             log.error("PATCH %s %s: %s", table, r.status_code, r.text[:200])
+        return r.status_code
     except Exception as e:
         log.debug("db_patch: %s", e)
+        return 0
 
 def db_insert(table: str, data: dict) -> dict | None:
     try:
@@ -1112,8 +1114,112 @@ def get_persistence_report(payload: dict) -> tuple[str, bool]:
     return json.dumps(result), True
 
 # ── Command loop ──────────────────────────────────────────────
+# ── Sensor health ─────────────────────────────────────────────
+# Device Manager (PnP) status per sensor class → rpc/report_sensors. The server raises an alert
+# and Slack message when a sensor that used to work errors out or disappears.
+SENSOR_SEC = 600
+
+_SENSOR_PS = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+$d = Get-PnpDevice -PresentOnly | Where-Object { $_.Class -in 'Biometric','Camera','Image','Sensor','Bluetooth','AudioEndpoint','Keyboard','Mouse','Net' } |
+     Select-Object Class, FriendlyName, Status, InstanceId, @{n='Problem';e={[int]$_.Problem}}
+$b = Get-CimInstance Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining, BatteryStatus
+$full = (Get-CimInstance -Namespace root\wmi -ClassName BatteryFullChargedCapacity | Select-Object -First 1).FullChargedCapacity
+$design = (Get-CimInstance -Namespace root\wmi -ClassName BatteryStaticData | Select-Object -First 1).DesignedCapacity
+$loc = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\location').Value
+[pscustomobject]@{ devices = @($d); battery = $b; full = $full; design = $design; location = $loc } | ConvertTo-Json -Depth 4 -Compress
+"""
+
+# key, display name, category, PnP classes, name regex, exclude regex
+_WIN_SENSORS = [
+    ("fingerprint",   "Fingerprint reader",       "biometrics", ("Biometric",),              r"finger|touch|biometric|validity|synaptics|goodix|elan", r"face|ir camera"),
+    ("face_ir",       "Windows Hello face (IR)",  "biometrics", ("Biometric", "Camera", "Image"), r"\bIR\b|infrared|face|hello", None),
+    ("presence",      "Presence detection",       "presence",   ("Sensor",),                 r"presence|\bHPD\b|proximity|time.of.flight|radar", None),
+    ("accelerometer", "Accelerometer",            "motion",     ("Sensor",),                 r"acceleromet", None),
+    ("gyroscope",     "Gyroscope",                "motion",     ("Sensor",),                 r"gyro", None),
+    ("compass",       "Compass",                  "motion",     ("Sensor",),                 r"compass|magnetomet", None),
+    ("lid_angle",     "Hinge / lid sensor",       "lid",        ("Sensor",),                 r"hinge|lid|hall|inclinomet|orientation", None),
+    ("ambient_light", "Ambient light sensor",     "display",    ("Sensor",),                 r"light|\bALS\b|colou?r sensor", None),
+    ("location",      "GPS / location",           "location",   ("Sensor",),                 r"gps|gnss|location", None),
+    ("camera",        "Built-in camera",          "camera",     ("Camera", "Image"),         r"camera|webcam|video", r"\bIR\b|infrared"),
+    ("microphone",    "Built-in microphone",      "audio",      ("AudioEndpoint",),          r"microphone|mic array", None),
+    ("wifi",          "Wi-Fi radio",              "wireless",   ("Net",),                    r"wi-?fi|wireless|802\.11|wlan", r"virtual|direct"),
+    ("bluetooth",     "Bluetooth",                "wireless",   ("Bluetooth",),              r"bluetooth|wireless", r"enumerator|LE generic|device \(|service"),
+    ("keyboard_trackpad", "Keyboard & touchpad",  "input",      ("Keyboard", "Mouse"),       r"touch ?pad|precision|keyboard|i2c hid", None),
+]
+
+
+def collect_sensors_win() -> list:
+    try:
+        data = json.loads(ps(_SENSOR_PS, timeout=60) or "{}")
+    except ValueError:
+        data = {}
+    devs = data.get("devices") or []
+    if isinstance(devs, dict):
+        devs = [devs]
+    out = []
+    for key, name, cat, classes, rx, ex in _WIN_SENSORS:
+        hits = [d for d in devs
+                if d.get("Class") in classes and re.search(rx, d.get("FriendlyName") or "", re.I)
+                and not (ex and re.search(ex, d.get("FriendlyName") or "", re.I))]
+        if key == "bluetooth":   # the radio itself, not paired peripherals
+            hits = [d for d in hits if re.match(r"(USB|PCI)\\", d.get("InstanceId") or "", re.I)] or hits[:0]
+        if not hits:
+            out.append({"sensor": key, "name": name, "category": cat, "status": "not_present", "detail": None, "value": {}})
+            continue
+        bad = [d for d in hits if (d.get("Status") or "").lower() == "error" or (d.get("Problem") or 0) not in (0, None)]
+        degraded = [d for d in hits if (d.get("Status") or "").lower() == "degraded"]
+        names = [d.get("FriendlyName") for d in hits]
+        if bad:
+            d0 = bad[0]
+            status, detail = "error", f"{d0.get('FriendlyName')}: Device Manager problem code {d0.get('Problem')}"
+        elif degraded:
+            status, detail = "warning", f"{degraded[0].get('FriendlyName')} is degraded"
+        else:
+            status, detail = "ok", names[0]
+        if key == "location" and data.get("location"):
+            detail += f" · Location access {data['location']}"
+        out.append({"sensor": key, "name": name, "category": cat, "status": status, "detail": detail,
+                    "value": {"devices": names[:5]}})
+
+    bat = data.get("battery")
+    if bat:
+        full, design = data.get("full"), data.get("design")
+        health = round(full * 100 / design) if full and design else None
+        status = "ok" if health is None or health >= 80 else ("warning" if health >= 50 else "error")
+        out.append({"sensor": "battery", "name": "Battery", "category": "power", "status": status,
+                    "detail": (f"{health}% of design capacity" if health is not None else "Battery present")
+                              + f" · {bat.get('EstimatedChargeRemaining', '—')}% charged",
+                    "value": {"max_capacity": health, "charge": bat.get("EstimatedChargeRemaining")}})
+    else:
+        out.append({"sensor": "battery", "name": "Battery", "category": "power", "status": "not_present",
+                    "detail": "Desktop — no battery", "value": {}})
+    return out
+
+
+def report_sensors_win(device_id: str) -> dict:
+    sensors = collect_sensors_win()
+    r = requests.post(f"{REST}/rpc/report_sensors", headers=_H,
+                      json={"p_device_id": device_id, "p_sensors": sensors}, timeout=30)
+    r.raise_for_status()
+    res = r.json() if r.content else {}
+    return {"checked": len(sensors), "issues": [s["name"] for s in sensors if s["status"] in ("warning", "error")],
+            **(res if isinstance(res, dict) else {})}
+
+
+def sensor_loop(device_id: str):
+    time.sleep(60)
+    while True:
+        try:
+            log.info("Sensor check: %s", report_sensors_win(device_id))
+        except Exception as e:
+            log.warning("Sensor check failed: %s", e)
+        time.sleep(SENSOR_SEC)
+
+
 def command_loop(device_id: str):
     handlers = {
+        "check_sensors":          lambda p: (json.dumps(report_sensors_win(device_id)), True),
         "isolate":                lambda p: isolate_host(device_id),
         "unisolate":              lambda p: unisolate_host(device_id),
         "apply_dns_blocklist":    lambda p: apply_dns_blocklist(p.get("domains")),
@@ -1241,9 +1347,22 @@ def heartbeat_loop(device_id: str):
     while True:
         try:
             metrics = collect_metrics()
-            db_patch("devices", {"id": f"eq.{device_id}"}, metrics)
-            log.info("Heartbeat — CPU %.1f%% RAM %.1f%% Disk %.1f%%",
-                     metrics["cpu_pct"], metrics["ram_used_pct"], metrics["disk_used_pct"])
+            status = db_patch("devices", {"id": f"eq.{device_id}"}, metrics)
+            if status == 401:
+                log.error("Token rejected (401) — clearing state and re-enrolling...")
+                state = load_state()
+                state.pop("device_id", None)
+                state.pop("device_token", None)
+                save_state(state)
+                new_id = enroll()
+                if new_id:
+                    device_id = new_id
+                    log.info("Re-enrolled successfully as device_id=%s", device_id)
+                else:
+                    log.error("Re-enrollment failed — will retry on next heartbeat")
+            else:
+                log.info("Heartbeat — CPU %.1f%% RAM %.1f%% Disk %.1f%%",
+                         metrics["cpu_pct"], metrics["ram_used_pct"], metrics["disk_used_pct"])
         except requests.exceptions.ConnectionError:
             log.warning("Network unreachable — retrying next heartbeat")
         except Exception as e:
@@ -1267,6 +1386,205 @@ def uninstall_service():
     shell(f'schtasks /delete /tn "{TASK_NAME}" /f')
     print(f"[OK] Task '{TASK_NAME}' removed.")
 
+# ══════════════════════════════════════════════════════════════
+# MINIFILTER DRIVER INTEGRATION
+# Communicates with SparrowFilter.sys via FltLib communication port.
+# Requires the kernel driver to be installed and loaded first.
+# See: backend/agent/minifilter/INSTALL.md
+# ══════════════════════════════════════════════════════════════
+
+# Wire constants (must match SparrowFilter.h)
+_SPARROW_OP_GET_EVENT      = 0x01
+_SPARROW_OP_SET_BLOCK_RULE = 0x02
+_SPARROW_OP_CLEAR_RULES    = 0x03
+_SPARROW_PORT_NAME         = "\\\\.\\SparrowFilterPort"
+
+# SPARROW_EVENT struct layout (packed, matches kernel struct)
+# ULONG EventType, ULONG Pid, ULONG Action, FLOAT ThreatScore,
+# WCHAR FilePath[512], WCHAR ProcessName[256], WCHAR MitreId[32],
+# LARGE_INTEGER Timestamp
+import struct as _struct
+_EVENT_FMT    = "<3If512s256s32sQ"
+_EVENT_SIZE   = _struct.calcsize(_EVENT_FMT)
+
+# SPARROW_MSG_IN: ULONG Opcode + WCHAR Pattern[512]
+_MSG_IN_FMT   = "<I1024s"   # opcode + 512 wchars (2 bytes each)
+_MSG_IN_SIZE  = _struct.calcsize(_MSG_IN_FMT)
+
+# SPARROW_MSG_OUT: LONG Status + BOOLEAN HasEvent + SPARROW_EVENT
+_MSG_OUT_SIZE = 4 + 1 + _EVENT_SIZE + 3  # +3 for alignment padding
+
+
+def _decode_wchar(raw: bytes) -> str:
+    """Decode a null-terminated UTF-16-LE byte string."""
+    try:
+        s = raw.decode("utf-16-le")
+        return s.split("\x00", 1)[0]
+    except Exception:
+        return ""
+
+
+def post_edr_event_win(supabase_url: str, anon_key: str, device_id: str, event: dict):
+    """POST a minifilter EDR event to Supabase edr_events table."""
+    try:
+        rest_url = supabase_url.replace("/functions/v1", "/rest/v1")
+        payload = {
+            "device_id":    device_id,
+            "event_type":   event.get("event_type", "UNKNOWN"),
+            "pid":          event.get("pid"),
+            "process_name": event.get("process_name", ""),
+            "file_path":    event.get("file_path", ""),
+            "threat_score": event.get("threat_score", 0.0),
+            "mitre_id":     event.get("mitre_id", ""),
+            "action":       event.get("action", "notify"),
+            "timestamp":    event.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            "source":       "minifilter",
+        }
+        requests.post(
+            f"{rest_url}/edr_events",
+            json=payload,
+            headers={
+                "apikey": anon_key,
+                "Authorization": f"Bearer {anon_key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+            timeout=10,
+        )
+    except Exception as e:
+        log.debug("post_edr_event_win error: %s", e)
+
+
+def fetch_block_rules_win(supabase_url: str, anon_key: str, device_id: str) -> list:
+    """Fetch block rule patterns from Supabase for this device."""
+    try:
+        rest_url = supabase_url.replace("/functions/v1", "/rest/v1")
+        resp = requests.get(
+            f"{rest_url}/block_rules",
+            params={"select": "pattern", "or": f"(device_id.eq.{device_id},device_id.is.null)"},
+            headers={
+                "apikey": anon_key,
+                "Authorization": f"Bearer {anon_key}",
+            },
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            rows = resp.json()
+            return [r["pattern"] for r in rows if r.get("pattern")]
+    except Exception as e:
+        log.debug("fetch_block_rules_win error: %s", e)
+    return []
+
+
+def driver_comm_loop(supabase_url: str, anon_key: str, device_id: str):
+    """
+    Background thread: connects to SparrowFilter.sys communication port,
+    polls for EDR events and pushes block rules.
+    """
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+        kernel32 = ctypes.windll.kernel32
+        fltlib   = ctypes.windll.FltLib  # FilterLib (fltlib.dll)
+    except (ImportError, OSError, AttributeError):
+        log.debug("Minifilter: ctypes/FltLib not available — skipping driver comm loop")
+        return
+
+    # Try to open the driver communication port
+    port_handle = ctypes.c_void_p(0)
+    try:
+        hr = fltlib.FilterConnectCommunicationPort(
+            _SPARROW_PORT_NAME,
+            0,
+            None,
+            0,
+            None,
+            ctypes.byref(port_handle),
+        )
+        if hr != 0:  # S_OK == 0
+            log.warning("Minifilter: SparrowFilter port not found (hr=0x%08X). "
+                        "Is the driver loaded? Run: fltMC load SparrowFilter", hr)
+            return
+    except Exception as e:
+        log.warning("Minifilter: cannot connect to SparrowFilter port: %s", e)
+        return
+
+    log.info("Minifilter: connected to SparrowFilter driver port")
+
+    # Map event type ints to strings
+    evt_type_map = {1: "CREATE", 2: "WRITE", 3: "RENAME", 4: "DELETE", 5: "EXEC"}
+    action_map   = {0: "notify", 1: "blocked", 2: "allowed"}
+
+    last_rule_sync = 0.0
+    RULE_SYNC_INTERVAL = 300.0
+
+    try:
+        while True:
+            # ── Sync block rules periodically ──
+            now = time.time()
+            if now - last_rule_sync >= RULE_SYNC_INTERVAL:
+                rules = fetch_block_rules_win(supabase_url, anon_key, device_id)
+                # Clear existing rules
+                msg_in_clear = _struct.pack(_MSG_IN_FMT, _SPARROW_OP_CLEAR_RULES, b"\x00" * 1024)
+                buf_in  = (ctypes.c_char * _MSG_IN_SIZE)(*msg_in_clear)
+                buf_out = (ctypes.c_char * _MSG_OUT_SIZE)()
+                bytes_returned = ctypes.c_ulong(0)
+                fltlib.FilterSendMessage(port_handle, buf_in, _MSG_IN_SIZE,
+                                         buf_out, _MSG_OUT_SIZE, ctypes.byref(bytes_returned))
+                # Set each rule
+                for pattern in rules:
+                    pat_encoded = (pattern[:511].encode("utf-16-le") + b"\x00\x00").ljust(1024, b"\x00")
+                    msg_in = _struct.pack(_MSG_IN_FMT, _SPARROW_OP_SET_BLOCK_RULE, pat_encoded[:1024])
+                    buf_in = (ctypes.c_char * _MSG_IN_SIZE)(*msg_in)
+                    fltlib.FilterSendMessage(port_handle, buf_in, _MSG_IN_SIZE,
+                                             buf_out, _MSG_OUT_SIZE, ctypes.byref(bytes_returned))
+                log.info("Minifilter: pushed %d block rules to driver", len(rules))
+                last_rule_sync = now
+
+            # ── Poll for events ──
+            msg_in = _struct.pack(_MSG_IN_FMT, _SPARROW_OP_GET_EVENT, b"\x00" * 1024)
+            buf_in  = (ctypes.c_char * _MSG_IN_SIZE)(*msg_in)
+            buf_out = (ctypes.c_char * (_MSG_OUT_SIZE + 8))()
+            bytes_returned = ctypes.c_ulong(0)
+            hr = fltlib.FilterSendMessage(
+                port_handle, buf_in, _MSG_IN_SIZE,
+                buf_out, ctypes.sizeof(buf_out), ctypes.byref(bytes_returned)
+            )
+            if hr == 0 and bytes_returned.value >= 5:
+                raw = bytes(buf_out)
+                status   = _struct.unpack_from("<i", raw, 0)[0]
+                has_evt  = raw[4]
+                if has_evt and bytes_returned.value >= 5 + _EVENT_SIZE:
+                    evt_raw = raw[5:5 + _EVENT_SIZE]
+                    try:
+                        (etype, pid, action, score,
+                         fp_raw, pn_raw, mid_raw, ts) = _struct.unpack(_EVENT_FMT, evt_raw)
+                        event = {
+                            "event_type":   evt_type_map.get(etype, f"TYPE_{etype}"),
+                            "pid":          pid,
+                            "action":       action_map.get(action, "notify"),
+                            "threat_score": round(score, 3),
+                            "file_path":    _decode_wchar(fp_raw),
+                            "process_name": _decode_wchar(pn_raw),
+                            "mitre_id":     _decode_wchar(mid_raw),
+                            "timestamp":    datetime.now(timezone.utc).isoformat(),
+                        }
+                        post_edr_event_win(supabase_url, anon_key, device_id, event)
+                    except Exception as e:
+                        log.debug("Minifilter: event decode error: %s", e)
+
+            time.sleep(0.5)
+
+    except Exception as e:
+        log.error("Minifilter comm loop crashed: %s", e)
+    finally:
+        try:
+            kernel32.CloseHandle(port_handle)
+        except Exception:
+            pass
+        log.info("Minifilter: driver comm loop exited")
+
+
 # ── Main ──────────────────────────────────────────────────────
 def main():
     log.info("SparrowShield Windows Agent v2.0 starting — %s", socket.gethostname())
@@ -1283,10 +1601,13 @@ def main():
         log.debug("DNS blocklist skipped (may need admin rights)")
 
     # Start background threads
-    threading.Thread(target=command_loop,   args=(device_id,), daemon=True).start()
-    threading.Thread(target=detection_loop, args=(device_id,), daemon=True).start()
-    threading.Thread(target=compliance_loop,args=(device_id,), daemon=True).start()
-    threading.Thread(target=vuln_loop,      args=(device_id,), daemon=True).start()
+    threading.Thread(target=command_loop,    args=(device_id,), daemon=True).start()
+    threading.Thread(target=detection_loop,  args=(device_id,), daemon=True).start()
+    threading.Thread(target=compliance_loop, args=(device_id,), daemon=True).start()
+    threading.Thread(target=vuln_loop,       args=(device_id,), daemon=True).start()
+    threading.Thread(target=sensor_loop,     args=(device_id,), daemon=True).start()
+    threading.Thread(target=driver_comm_loop,
+                     args=(SUPABASE_URL, ANON_KEY, device_id), daemon=True).start()
 
     # Heartbeat runs in main thread
     heartbeat_loop(device_id)

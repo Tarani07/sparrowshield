@@ -12,7 +12,7 @@ type Cmd = {
 };
 
 const LABEL: Record<string, string> = {
-  run_edr_scan: "Full security scan", sync_web_filter: "Apply web filter", update_agent: "Update agent",
+  run_edr_scan: "Full security scan", sync_web_filter: "Apply web filter", update_agent: "Update agent", check_sensors: "Check sensors",
   remove_app: "Remove application", restore_app: "Restore application", uninstall_software: "Uninstall application",
   restart_device: "Restart device", kill_process: "Kill process", patch_app: "Update application",
   patch_all_apps: "Update all applications", patch_all: "Update all applications", defender_scan: "Defender scan",
