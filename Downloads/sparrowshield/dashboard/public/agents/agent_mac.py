@@ -2282,7 +2282,8 @@ def collect_sensors() -> list:
             continue
     if wifi_port:
         add("location", "Location (Wi-Fi)", "location", "ok",
-            "Location Services " + ("on" if loc_on else "off" if loc_on is False else "unknown"), enabled=loc_on)
+            "Wi-Fi positioning available" + ("" if loc_on is None else f" · Location Services {'on' if loc_on else 'off'}"),
+            enabled=loc_on)
         st = re.search(r"status: (\w+)", _run(["ifconfig", wifi_port.group(1)]))
         add("wifi", "Wi-Fi radio", "wireless", "ok", f"{wifi_port.group(1)} {st.group(1) if st else ''}".strip(),
             interface=wifi_port.group(1), active=bool(st and st.group(1) == "active"))

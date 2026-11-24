@@ -1,8 +1,9 @@
 # SparrowShield — Complete Product Documentation
 
-**Version:** 1.0
-**Last Updated:** April 2026
-**Stack:** Python · Supabase · React · TypeScript · Tailwind CSS
+**Version:** 2.0
+**Last Updated:** 24 November 2026
+**Stack:** Python agents · Supabase (Postgres, Edge Functions, Realtime, pg_cron) · React · TypeScript · Tailwind CSS
+**Console:** https://sparrowshield.vercel.app (sign-in required — invited users only)
 
 ---
 
@@ -16,17 +17,21 @@
    - 5.1 [macOS Agent Installation](#51-macos-agent-installation)
    - 5.2 [Windows Agent Installation](#52-windows-agent-installation)
 6. [Device Agents](#6-device-agents)
+   - 6.0 [What every agent does today](#60-what-every-agent-does-today)
    - 6.1 [macOS Agent (agent_mac.py)](#61-macos-agent-agent_macpy)
    - 6.2 [Windows Agent (agent_windows.py)](#62-windows-agent-agent_windowspy)
    - 6.3 [macOS Menu Bar App (menubar_mac.py)](#63-macos-menu-bar-app-menubar_macpy)
 7. [Dashboard — Pages & Features](#7-dashboard--pages--features)
-   - 7.1 [Fleet Overview](#71-fleet-overview)
-   - 7.2 [Device List](#72-device-list)
-   - 7.3 [Device Detail](#73-device-detail)
-   - 7.4 [Alert Center](#74-alert-center)
-   - 7.5 [Reports](#75-reports)
-   - 7.6 [Compliance](#76-compliance)
-   - 7.7 [Settings](#77-settings)
+   - 7.1 [Signing in, roles and the console frame](#71-signing-in-roles-and-the-console-frame)
+   - 7.2 [Home](#72-home) — Overview, Alerts, Live Activity
+   - 7.3 [Endpoints](#73-endpoints) — All Devices, macOS, Windows, Device Detail, Device Groups, Sensor Health, JumpCloud
+   - 7.4 [Detection & Response](#74-detection--response) — Detections, Analytics, Malware Scanner, Threat Hunting, Process Tree, Network Activity, MITRE ATT&CK
+   - 7.5 [Protection Policies](#75-protection-policies) — Application Control, Web Filtering, Process Policies
+   - 7.6 [Vulnerability & Compliance](#76-vulnerability--compliance) — Vulnerabilities, Patch Management, Compliance
+   - 7.7 [Operations](#77-operations) — IT Notices, Reports, Executive Summary
+   - 7.8 [Administration](#78-administration) — Users & Roles, Audit Log, Settings
+   - 7.9 [Windows Console](#79-windows-console) — Windows Antivirus, Windows Detections, Host Isolation
+   - 7.10 [Pages reachable by link only](#710-pages-reachable-by-link-only)
 8. [Data Collection Reference](#8-data-collection-reference)
 9. [API Reference — Edge Functions](#9-api-reference--edge-functions)
 10. [Database Schema](#10-database-schema)
@@ -49,25 +54,29 @@
 
 ## 1. Product Overview
 
-**SparrowShield** is a self-hosted, open-source Device Health Monitoring and Fleet Management platform designed for IT teams managing macOS and Windows endpoints. It provides real-time visibility into every device in the fleet — hardware metrics, security posture, compliance status, installed software, and network configuration — all from a single dashboard.
+**SparrowShield** is an endpoint security and fleet management console for IT teams running macOS and Windows laptops. One lightweight Python agent per device reports health, security posture and sensor data, enforces application and web policies, runs Jamf-Protect-style detection analytics, and carries out remote actions sent from the console. Everything is stored in a Supabase project and shown in a React console with real-time updates.
 
-SparrowShield is built as a lightweight, cost-effective alternative to commercial MDM platforms like JumpCloud, Jamf, or Mosyle. Because it is fully self-hosted on Supabase infrastructure, there are no per-seat licensing fees — only flat infrastructure costs regardless of fleet size.
+The console is private: only people invited in **Administration → Users & Roles** can sign in, and every change they make is written to the **Audit Log**.
 
 ### Key Capabilities at a Glance
 
-| Category | Capability |
-|---|---|
-| **Monitoring** | CPU, RAM, disk, battery, thermals, WiFi, network I/O — updated every 5 minutes |
-| **Inventory** | Installed apps, running processes, peripherals, storage volumes, login history |
-| **Security** | FileVault, BitLocker, Firewall, SIP, Gatekeeper, MDM, antivirus, screen lock |
-| **Alerts** | Threshold-based alerts with Slack notifications |
-| **Remediation** | Remote actions: kill process, clear cache, optimize memory, install updates |
-| **Compliance** | SOC2 and HIPAA framework evaluation with per-control scoring |
-| **AI Diagnosis** | Claude-powered health reports with root-cause analysis every 15 minutes |
-| **Software** | App allowlist/blocklist, software catalog, remote install/uninstall |
-| **Patches** | OS and app update detection and remote patch deployment |
-| **IT Notices** | Push custom messages to all Mac menu bar trays in real time |
-| **Reports** | 20+ downloadable CSV reports for audits, compliance, and fleet health |
+| Category | Capability | Where in the console |
+|---|---|---|
+| **Fleet visibility** | Live status, CPU/RAM/disk/battery, security posture, agent version for every device; real-time updates (LIVE indicator) | Overview, All Devices, Device Detail |
+| **Sensor health** | 14 hardware sensors per Mac (Touch ID, lid angle, motion, ambient light, camera, mic, battery, thermal, radios…), Windows sensors via Device Manager; alert + Slack when a sensor fails, auto-resolve on recovery | Endpoints → Sensor Health, Device Detail |
+| **Detection** | 156 Jamf-Protect-style analytics (150 active on Macs), heartbeat detection rules, EDR sensor events, MITRE ATT&CK mapping | Detection & Response |
+| **Malware** | Full security scans (ClamAV signatures, threat intel, behaviour, policy), Defender scans on Windows, quarantine and restore | Malware Scanner, Quarantine |
+| **Application control** | Block apps (closed within ~15 s of launch), admin-approved remove/restore of app bundles, violations list | Application Control |
+| **Web filtering** | Category feeds (up to 250,000 domains/device) plus custom block/allow rules, pushed instantly | Web Filtering |
+| **Process policies** | Block or alert on process name, path, signing ID, team ID or hash | Process Policies, Threat Hunting |
+| **Response** | Kill process, full scan, restart, update agent, isolate host (Windows), uninstall app — with live progress | Device Detail, command activity tray |
+| **Vulnerabilities & patches** | Vulnerable/EOL software, outdated apps, patch one app or everything on a device | Vulnerabilities, Patch Management |
+| **Compliance** | SOC 2 / HIPAA plus your own frameworks built in the console, evaluated hourly | Compliance |
+| **Communication** | IT notices pop up on users' Macs as a dialog | IT Notices |
+| **Reporting** | Downloadable reports, scheduled email/Slack delivery, executive summary | Reports, Executive Summary |
+| **Integrations** | JumpCloud System Insights (hourly), Resend email, Slack webhook, VirusTotal look-ups | Settings → Integrations, JumpCloud |
+| **Administration** | Admin / read-only roles, SSO-ready sign-in, immutable audit log | Users & Roles, Audit Log |
+| **Agent lifecycle** | One-line install, hourly self-update with checksum verification and automatic rollback | Sidebar → Deploy agent |
 
 ---
 
@@ -125,7 +134,7 @@ SparrowShield is built as a lightweight, cost-effective alternative to commercia
 │  │  agent_mac.py    │      │  agent_windows.py      │  │
 │  │  (Python daemon) │      │  (Python daemon)       │  │
 │  │  + menubar_mac.py│      │  Scheduled Task        │  │
-│  │  LaunchAgent     │      │  (SYSTEM account)      │  │
+│  │  LaunchDaemon    │      │  (SYSTEM account)      │  │
 │  └────────┬─────────┘      └──────────┬─────────────┘  │
 └───────────┼──────────────────────────┼─────────────────┘
             │  HTTPS (Bearer token)    │
@@ -214,38 +223,42 @@ SparrowShield is built as a lightweight, cost-effective alternative to commercia
 
 ## 5. Installation Guide
 
+The easiest way to get the install command is the **Deploy agent** menu at the bottom of the console sidebar. It offers the macOS installer (`.sh`), the Windows installer (`.bat`) and a copy button for the one-line Mac command. Linux is intentionally hidden from the portal.
+
 ### 5.1 macOS Agent Installation
 
-**One-command install (recommended):**
+**One-line install (recommended)** — run in Terminal on the Mac:
 
 ```bash
-bash ~/Downloads/sparrow-install.sh
+curl -fsSL sparrowshield.vercel.app/mac | sudo bash
 ```
 
-The installer performs the following steps automatically:
-1. Checks for Python 3 (prompts to install via Homebrew if missing)
-2. Installs pip dependencies: `psutil`, `requests`, `rumps`
-3. Creates installation directory: `/opt/sparrow/`
-4. Writes `agent_mac.py` and `menubar_mac.py` to `/opt/sparrow/`
-5. Writes `config.json` with the pre-configured API URL, Supabase anon key
-6. Creates log directory and log file at `/var/log/healsparrow-agent.log`
-7. Registers a macOS LaunchAgent plist at `~/Library/LaunchAgents/com.sparrowshield.agent.plist`
-8. Loads the LaunchAgent (agent starts immediately and on every login)
+`/mac` is a short link to `/agents/SparrowShield-Mac-Install.sh`. The installer:
+1. Finds a Python 3 with `venv` (Homebrew, python.org or Apple's `/usr/bin/python3`)
+2. Creates `/usr/local/sparrowshield/` with its own virtualenv and installs `requests` and `psutil`
+3. Downloads `agent_mac.py` and `edr_engine.py` from the portal
+4. Writes `config.json` (Supabase URL and public key; `chmod 600`, owned by root)
+5. Installs ClamAV through Homebrew as the logged-in user, if Homebrew is present (otherwise virus-signature scanning is skipped)
+6. Registers the root LaunchDaemon `/Library/LaunchDaemons/com.sparrowshield.sensor.plist` and starts it
+7. The agent enrols on first run and appears in the console within about a minute
 
-**Verify installation:**
+**Full Disk Access:** without it the agent cannot scan user folders. Grant it silently with a PPPC profile from Jamf (see `backend/agent/macos_pkg/`), or manually in System Settings → Privacy & Security → Full Disk Access.
+
+**Verify / restart / logs:**
 ```bash
-# Check agent is running
-launchctl list | grep sparrow
-
-# View live logs
-tail -f /var/log/healsparrow-agent.log
+sudo launchctl print system/com.sparrowshield.sensor | head -20
+sudo launchctl kickstart -k system/com.sparrowshield.sensor
+tail -f /usr/local/sparrowshield/agent.log
 ```
+
+**Re-installing is not needed for updates** — the agent updates itself every hour (see 6.0).
 
 **Uninstall:**
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.sparrowshield.agent.plist
-rm -rf /opt/sparrow ~/Library/LaunchAgents/com.sparrowshield.agent.plist
+sudo launchctl bootout system/com.sparrowshield.sensor
+sudo rm -rf /usr/local/sparrowshield /Library/LaunchDaemons/com.sparrowshield.sensor.plist
 ```
+Then remove the device from the console (Device Detail → **Remove**).
 
 ---
 
@@ -253,9 +266,9 @@ rm -rf /opt/sparrow ~/Library/LaunchAgents/com.sparrowshield.agent.plist
 
 **Option A — Double-click installer (recommended):**
 
-1. Download `SparrowShield-Install.bat`
+1. Download `SparrowShieldInstaller.bat` from **Deploy agent** in the console sidebar
 2. Right-click → **Run as Administrator** (or double-click — it self-elevates)
-3. Follow the progress prompts [1/5] through [5/5]
+3. Follow the progress prompts
 
 **Option B — PowerShell directly:**
 
@@ -265,22 +278,18 @@ Set-ExecutionPolicy Bypass -Scope Process -Force
 .\sparrow-install.ps1
 ```
 
-The installer performs the following steps:
+The installer:
 1. Self-elevates to Administrator via UAC
 2. Checks for Python 3 → installs via `winget` if missing
 3. Installs pip dependencies: `psutil`, `requests`
-4. Creates installation directory: `C:\ProgramData\SparrowShield\`
+4. Creates `C:\ProgramData\SparrowShield\`
 5. Writes `agent_windows.py` and `config.json`
-6. Registers a Windows Task Scheduler task running as SYSTEM account
+6. Registers the Task Scheduler task `SparrowShieldAgent` running as SYSTEM, at every boot
 7. Starts the task immediately
 
 **Verify installation:**
 ```powershell
-# Check scheduled task
 Get-ScheduledTask -TaskName "SparrowShieldAgent"
-
-# View logs
-Get-Content "C:\ProgramData\HealSparrow\agent.log" -Tail 50
 ```
 
 **Uninstall:**
@@ -289,9 +298,51 @@ Unregister-ScheduledTask -TaskName "SparrowShieldAgent" -Confirm:$false
 Remove-Item "C:\ProgramData\SparrowShield" -Recurse
 ```
 
+> The Windows agent does **not** self-update yet. To roll out a new Windows agent, re-run the installer.
+
 ---
 
 ## 6. Device Agents
+
+### 6.0 What every agent does today
+
+Each agent runs several independent loops. The table shows the macOS agent (`agent_mac.py` + `edr_engine.py`, root LaunchDaemon); the Windows column says where Windows differs.
+
+| Loop / feature | How often | What it does | Windows |
+|---|---|---|---|
+| **Heartbeat** | every 5 min | Metrics, security posture, hostname (from `scutil --get ComputerName`, so renames show up), agent version, failed-login check | every 60 s |
+| **Inventory** | every hour | Installed software and top processes | Compliance / vulnerability loops |
+| **Command loop** | polls every 5 s | Runs console commands **concurrently** in threads, reports `progress` (0–100 %) and a progress message, merges duplicate scans, marks commands left "running" by a crash as failed at start-up | polls; no progress reporting |
+| **Auto-update** | 90 s after start, then hourly (or on the **Update agent** command) | Downloads `/agents/version.json`, verifies the SHA-256 of `agent_mac.py` and `edr_engine.py`, compiles them, keeps the old copy as `.prev`, restarts. If the new version fails to start 3 times it rolls back automatically | not available |
+| **App enforcement** | every 15 s | Closes apps on the Application Control blocklist (matched by `.app` bundle name, so helpers go too) and enforces Process Policies (block = kill, alert = alert). Never flags processes the agent itself started | via minifilter driver if installed |
+| **Detection analytics** | process rules every 30 s, file/persistence/config/log rules every 5 min | Evaluates the 156-analytic catalogue from the console (see below). State in `/var/lib/sparrowshield/analytics_state.json` | not available |
+| **IT notices** | every 60 s | Shows each active notice once per Mac as a dialog in the logged-in user's session | not available |
+| **Sensor health** | 45 s after start, then every 10 min (or **Check now**) | Checks hardware sensors and reports them to `rpc/report_sensors` (see below) | every 10 min, via Device Manager |
+| **Web filter** | on command and after policy changes | Category feeds (cached 6 h) + custom rules written to `/etc/hosts` only when the content changes; allow rules strip `www.` | DNS blocklist commands |
+
+**Detection analytics catalogue.** 156 analytics modelled on Jamf Protect, across 11 categories, stored in the `analytics` table (generated by `backend/supabase/analytics_catalog.py` — regenerate rather than hand-editing migration 025). 150 are enabled and evaluated, 3 are disabled by default (matching Jamf's defaults), and 3 (Nested App Signature Mismatch, Synthetic Click, USB Write) need the Endpoint Security sensor and are listed but not evaluated. Methods: command-line and parent/child process rules, listening ports, persistence baselines (new/changed LaunchAgents and daemons, disguised or hidden targets, `DYLD_INSERT_LIBRARIES`), file checks (new apps with URL handlers or no quarantine flag are judged only when they appear, never on first scan), configuration checks, unified-log queries and malware indicators. A hit writes a `security_events` row (`event_type = 'analytic'`) and an alert with `rule_id = analytic:<id>`.
+
+**Sensor health.** The macOS agent checks 14 sensors in `collect_sensors()`:
+
+| Sensor | Category | How it's read |
+|---|---|---|
+| Touch ID | Biometrics | `AppleBiometricSensor` in the I/O registry; `bioutil` for unlock setting and enrolled fingerprints |
+| Presence detection | Presence | Always "Not available" — Macs have none |
+| Accelerometer, Gyroscope | Motion & tilt | Apple Silicon sensor processor (`AppleSPUHIDDevice` products `accel`, `gyro`) |
+| Lid angle sensor | Lid / hinge | Live hinge angle in degrees read over IOKit HID (`las`), plus lid open/closed |
+| Ambient light sensor | Display light | `als` (Apple Silicon) or `AppleLMUController` (Intel) |
+| Location (Wi-Fi) | Location | Wi-Fi hardware present + Location Services on/off |
+| Wi-Fi radio, Bluetooth | Wireless | `networksetup` / `ifconfig`; `system_profiler SPBluetoothDataType` |
+| Built-in camera, Built-in microphone | Camera / Audio | `system_profiler SPCameraDataType` / `SPAudioDataType` |
+| Keyboard & trackpad | Input | "Apple Internal Keyboard / Trackpad" in the I/O registry |
+| Battery | Power | macOS battery health, maximum capacity, cycles, permanent-failure flag (warning below 80 % or "Service Recommended") |
+| Thermal sensors | Thermal | `pmset -g therm` — warning if the CPU is throttled |
+
+The Windows agent (`collect_sensors_win()`) reads Device Manager status for fingerprint reader, Windows Hello IR camera, presence (ToF/radar), accelerometer, gyroscope, compass, hinge/lid, ambient light, GPS, camera, microphone, Wi-Fi, Bluetooth and keyboard/touchpad, plus battery wear (full-charge vs design capacity). A device in Device Manager "Error" (any problem code) is a failure, "Degraded" is a warning.
+
+The database function `report_sensors()` (migration `026_sensor_health.sql`) stores each sensor in `device_sensors` and decides what counts as a fault: a sensor that **has worked before** on that device and now reports an error, a warning, or has disappeared raises one alert (`rule_id = sensor:<name>`, high for failures, medium for warnings) and posts to Slack straight away. When the sensor works again the alert resolves itself and Slack gets a "working again" message. Sensors a model never had never alert. A sensor that recovers and fails again within an hour does not page Slack a second time.
+
+---
 
 ### 6.1 macOS Agent (agent_mac.py)
 
@@ -299,7 +350,7 @@ The macOS agent is a Python daemon that runs continuously in the background, col
 
 #### Configuration
 
-The agent reads from `/opt/sparrow/config.json`:
+The agent reads from `/usr/local/sparrowshield/config.json`:
 
 ```json
 {
@@ -431,8 +482,11 @@ The Windows agent mirrors the macOS agent in functionality with platform-specifi
 | Disk encryption | FileVault | BitLocker (`manage-bde -status C:`) |
 | Firewall check | `socketfilterfw` | PowerShell `Get-NetFirewallProfile` |
 | Serial number | `system_profiler` | `wmic bios get serialnumber` |
-| Service mechanism | LaunchAgent plist | Task Scheduler (SYSTEM account) |
-| Log path | `/var/log/healsparrow-agent.log` | `C:\ProgramData\HealSparrow\agent.log` |
+| Service mechanism | Root LaunchDaemon `com.sparrowshield.sensor` | Task Scheduler (SYSTEM account) |
+| Install / log path | `/usr/local/sparrowshield/` (`agent.log`) | `C:\ProgramData\SparrowShield\` |
+| Self-update | Hourly, checksum-verified, auto-rollback | Re-run installer |
+| Analytics engine, app enforcement, IT notice pop-ups | Yes | Not yet |
+| Sensor health | 14 sensors (I/O registry, IOKit HID, system_profiler) | Device Manager status + battery wear |
 | Primary disk | `/` | `C:\` |
 | SIP / Gatekeeper | Checked | N/A |
 | BitLocker status | N/A | Checked |
@@ -496,272 +550,233 @@ The title displays live stats updated every 30 seconds:
 
 **Raise IT Ticket** — Opens a web browser to the IT ticketing system URL configured in `config.json`.
 
-**Restart Agent** — Unloads and reloads the LaunchAgent plist:
+**Restart Agent** — restarts the root LaunchDaemon:
 ```bash
-launchctl unload ~/Library/LaunchAgents/com.sparrowshield.agent.plist
-launchctl load  ~/Library/LaunchAgents/com.sparrowshield.agent.plist
+sudo launchctl kickstart -k system/com.sparrowshield.sensor
 ```
 
 ---
 
 ## 7. Dashboard — Pages & Features
 
-The dashboard is a React Single Page Application served via Vite. It connects directly to Supabase using the anon key and uses TanStack Query for data fetching, caching, and background refresh.
+The console lives at **https://sparrowshield.vercel.app**. This section follows the sidebar from top to bottom. Every list page uses the same table: free-text search, filter chips, sortable columns, CSV export, and a side drawer when you click a row.
 
-**Local development:**
-```bash
-cd dashboard
-npm install
-npm run dev
-# Available at http://localhost:5173
-```
+**Who can do what.** There are two roles. **Admins** can do everything. **Read-only** users see every page, but buttons that change something (create, delete, resolve, send a command) are disabled, with the tooltip "Read-only access — ask an admin", and a banner at the top of the console says the account is read-only. The database enforces the same rule, so a read-only user cannot make changes through the API either.
 
----
+### 7.1 Signing in, roles and the console frame
 
-### 7.1 Fleet Overview
+#### Login
+- **Email code:** enter a work email and receive a one-time sign-in code (requires the Supabase email template to include `{{ .Token }}`).
+- **Continue with Google / Continue with Microsoft:** OAuth sign-in. Works once the provider is enabled in Supabase → Authentication → Providers.
+- **Single sign-on (Okta, SAML):** enter the company domain to start a SAML sign-in (needs SAML configured in Supabase).
+- Only invited users get in. Anyone else who signs in sees a "no access" screen and no data.
 
-**Route:** `/`
+#### Sidebar
+Grouped sections (Home, Endpoints, Detection & Response, Protection Policies, Vulnerability & Compliance, Operations, Administration, and a collapsed Windows Console). Counters show open alerts, device counts per OS and sensor issues. **Deploy agent** at the bottom offers the macOS and Windows installers and copies the one-line Mac command. On phones the sidebar becomes a slide-in menu.
 
-The home page gives a bird's-eye view of the entire fleet's health at a glance.
-
-#### Summary Cards (top row)
-- **Total Devices** — count of all enrolled devices
-- **Critical** — count of devices in critical health status (red)
-- **Warning** — count of devices in warning status (amber)
-- **Healthy** — count of devices in healthy status (green)
-
-#### Fleet Health Donut Chart
-Visual breakdown of healthy / warning / critical device counts. Color-coded ring chart built with Recharts.
-
-#### Top Offenders
-List of the 5 devices with the lowest health scores, showing hostname, health score, and primary issues detected.
-
-#### Device Table
-Filterable table of all enrolled devices with columns:
-- Hostname
-- OS (macOS / Windows icon)
-- Assigned User
-- Department
-- Last Seen (relative time)
-- Health Score (colored badge)
-- Status (Online / Offline / Warning / Critical)
-
-**Filter tabs:** All · Critical · Warning · Healthy · Mac · Windows · Search
+#### Top bar
+- **Device search (⌘K):** jump to any device by name.
+- **LIVE indicator:** the console is subscribed to database changes (Supabase Realtime); pages refresh themselves within about a second of an agent reporting.
+- **Command activity tray:** every command sent to a device (scan, update, remove app, check sensors…) with live progress such as "Scanning files… 45 %", and the final result.
+- Open-alert shortcut and your role label.
 
 ---
 
-### 7.2 Device List
+### 7.2 Home
 
-**Route:** `/devices`
+#### Overview (`/`)
+Real-time security posture of the fleet.
+- **Tiles:** endpoints online, open alerts, policy violations, blocked items in the last 24 h, agents up to date.
+- **Charts:** detections over the last 14 days by severity, open alerts by severity, top MITRE ATT&CK techniques (30 days), protection coverage.
+- **Lists:** highest-priority open alerts and an endpoints table. **Refresh** reloads everything.
 
-Full searchable, sortable list of all enrolled devices. Each row is clickable to navigate to the Device Detail page.
+#### Alerts (`/alerts`)
+Every alert from every source (detection rules, analytics, policies, sensor health, malware, thresholds), sorted by severity.
+- Tiles for open alerts and resolved in the last 30 days; filters by severity, type and device.
+- Click an alert for details, recent activity on that device and **Open device**.
+- **Resolve / Reopen** (admin).
+- **Automated remediations that need an admin decision:** commands raised by auto-remediation rules wait here for **Approve** or **Dismiss** (admin).
 
----
-
-### 7.3 Device Detail
-
-**Route:** `/device/:id`
-
-The most feature-rich page. Displays a complete profile of a single device across multiple cards.
-
-#### Top Section
-- **Health Gauge** — Large circular gauge showing health score (0–100) with color (green/amber/red) and status label
-- **Metric Bars** — CPU%, RAM%, Disk% horizontal bars with color coding
-- **AI Diagnosis Card** — Health status, AI-generated summary, culprit apps with impact level (high/medium/low) and recommendations
-
-#### Hardware & System
-- **System Info Card** — Hostname, serial number, OS version, CPU model, CPU cores, RAM total, enrolled date, last seen, uptime, last reboot
-- **Storage Card** — Disk usage percentage, all mounted volumes with capacity and free space
-- **Battery Card** — Battery %, charge cycles, health (Good/Fair/Poor), charging status
-
-#### Network & Location
-- **Network Card** — WiFi SSID, signal strength (dBm + quality label), upload/download stats, public IP
-- **Location Card** — City, region, country, ISP, latitude/longitude
-- **Network Security Card** — Open connections count, listening ports, DNS servers, proxy status
-
-#### Security
-- **Security Status Card** — Traffic-light status for: FileVault, BitLocker, Firewall, SIP, Gatekeeper, MDM Enrollment, Antivirus, Screen Lock
-- **Compliance Card** — SOC2 and HIPAA compliance scores with per-control pass/fail details
-
-#### Performance History
-- **Metrics Trend Chart** — 24-hour line chart of CPU%, RAM%, Disk% with hover tooltips (built with Recharts)
-
-#### Software & Processes
-- **Installed Apps Card** — Full list of installed applications with name and version
-- **Browsers Card** — Web browsers detected (name, version, engine, profile count, default browser)
-- **Top Processes** — Running processes sorted by RAM usage (name, CPU%, RAM MB)
-
-#### Activity & Events
-- **Sessions Card** — Active login sessions (username, terminal, host, login time) and recent login/logout history
-- **Crashes Card** — Crash count in last 24 hours, most recently crashed app
-- **Updates Card** — Pending OS and app updates with count
-
-#### Peripherals & System Items
-- **Peripherals Card** — USB devices, Bluetooth devices (with battery %), connected displays
-- **Startup Items Card** — Login items, startup items, third-party kernel extensions
-- **Backup Card** — Time Machine status and last backup timestamp
-
-#### Remote Actions
-Optimizer action buttons:
-- **Kill Top Process** — Terminate the highest RAM-consuming process
-- **Clear Cache** — Delete user cache directories
-- **Optimize Memory** — Kill all apps over 500 MB RAM
-- **Restart UI** — Restart Dock and Finder
-- **Install Updates** — Trigger pending OS and app updates
+#### Live Activity (`/live-alerts`)
+Open alerts and high-severity sensor events streamed as they arrive. **Pause stream / Resume**, resolve from the list or drawer, jump to the device.
 
 ---
 
-### 7.4 Alert Center
+### 7.3 Endpoints
 
-**Route:** `/alerts`
+#### All Devices / macOS / Windows (`/devices`, `/mac/devices`, `/windows/devices`)
+Every enrolled endpoint with online status, posture, agent version and group. The macOS and Windows entries are the same list pre-filtered by OS.
+- **Tiles:** total, online, offline, at risk, agent updating.
+- **Filters:** OS, group, posture (compliant / at risk).
+- Click a row to open **Device Detail**. **Remove from console** deletes the device record (with confirmation). **Refresh** reloads.
 
-Centralized view of all system alerts across the fleet.
+#### Device Detail (`/device/:id`)
+Everything about one machine, top to bottom:
 
-#### Alert List
-Each alert shows:
-- Severity badge (Critical / Warning)
-- Alert type (plain English description)
-- Affected device hostname
-- Time created
-- Resolved status
-
-**Filter options:** All · Critical · Warning · Active · Resolved
-
-#### Pending Commands
-List of remediation commands awaiting approval, showing:
-- Command type (kill_process, clear_cache, optimize_memory, etc.)
-- Target device
-- Triggered by (auto-rule or manual)
-- Status (Awaiting Approval / Pending / Running / Completed / Failed)
-- Approve ✓ and Dismiss ✕ buttons
-
-#### Alert Types
-
-| Alert Type | Trigger |
+| Panel | What it shows / does |
 |---|---|
-| `high_cpu` | CPU > configurable threshold (default 90%) |
-| `high_ram` | RAM > configurable threshold (default 90%) |
-| `high_disk` | Disk > configurable threshold (default 85%) |
-| `critical_disk` | Disk > critical threshold (default 95%) |
-| `low_battery` | Battery < threshold (default 20%) |
-| `device_offline` | No heartbeat for configurable minutes (default 120) |
-| `encryption_disabled` | FileVault or BitLocker turned off |
-| `firewall_disabled` | Firewall turned off |
-| `antivirus_missing` | No antivirus detected |
-| `mdm_unenrolled` | Device removed from MDM |
-| `new_software_installed` | New application detected on device |
-| `software_violation` | Blocklisted app detected |
+| **Header** | Hostname (kept in sync with the Mac's Computer Name), online badge, serial, CPU, RAM, agent version, last seen. **Restart** (asks for confirmation; admin) and **Remove** |
+| **JumpCloud System Insights** | Shown when the serial matches a JumpCloud system: JumpCloud agent, OS build, hardware, encryption and recovery key, firewall, uptime, battery, volumes, signed-in users |
+| **Health gauge + AI diagnosis** | Latest health score and Claude-generated summary |
+| **Metric bars** | CPU, RAM, disk, battery |
+| **Battery / Network** | Battery condition and cycles; network interfaces and IPs |
+| **Sensor health** | Every hardware sensor with status (Working / Warning / Failure / Not available), live detail (e.g. "Lid open at 118°", "Good · 88 % capacity · 390 cycles"), and "last working" time for failures. **Check now** (admin) runs the check immediately and refreshes the panel. Sensors the model doesn't have are folded away |
+| **Security status / Security log** | FileVault/BitLocker, firewall, SIP, Gatekeeper…; recent security events (failed logins, USB, analytics hits, policy hits) |
+| **Windows EDR / Isolation** | Windows only: Defender and EDR posture; isolate or reconnect the host |
+| **Remote actions** | Mac: Run full security scan, Apply web filter now, Update agent now, Restart device (confirm). Windows: Run Defender full scan, Run vulnerability scan, Isolate host (confirm), Reconnect host. Each shows live progress and the result |
+| **Threat score timeline** | Threat score over time |
+| **Compliance / Crashes** | Per-device compliance result; crash reports |
+| **System info / Storage** | Hardware and OS details; volumes |
+| **Network security / Startup items** | Listening ports and connections; login items and launch agents |
+| **Peripherals / Sessions** | USB and Bluetooth devices; user sessions |
+| **Updates / Location** | Pending OS updates; approximate location from public IP |
+| **Browsers** | Installed browsers and versions |
+| **Installed apps** | Searchable app list with **Uninstall** and bulk uninstall (sends `uninstall_software`; the agent closes the app and moves it to quarantine, so it can be restored). Apple/system apps are protected |
+| **Optimizer (macOS)** | Culprit applications by memory, performance history chart, recent commands and alert history |
+
+#### Device Groups (`/groups`)
+Teams of devices used to scope policies.
+- **New team** (name + description), add or remove devices (searchable), **Delete team** (confirm).
+- Tiles: teams, devices assigned, unassigned, team-scoped rules (app and web rules can target a team).
+
+#### Sensor Health (`/sensors`)
+Fleet-wide view of hardware sensors. The sidebar badge shows how many sensors currently have issues.
+- **Tiles:** devices reporting (and how many have issues), open issues, failures, warnings, sensors working — click a tile to filter the table.
+- **Table:** device, sensor, type, status, detail, how long it has been in that state, last checked. Filters by sensor type and OS; search; CSV export. Click a row to open the device.
+- **Sensor coverage by platform:** one row per sensor type (biometrics, presence, motion & tilt, lid/hinge, location, display light, camera, microphone, wireless, keyboard & trackpad, battery, thermal) showing, for MacBooks and Windows laptops separately, how many devices have that sensor and how many have a problem.
+- **Notifications:** a sensor that used to work and now fails or disappears raises a HIGH alert (MEDIUM for warnings such as a worn battery) and posts to Slack immediately; when it recovers the alert closes itself and Slack is told. Turn the Slack part off with the `slack_notify_sensor_health` setting.
+
+#### JumpCloud (`/jumpcloud`)
+Machines managed in JumpCloud, matched to SparrowShield devices by serial number.
+- If JumpCloud isn't connected: **Connect JumpCloud** goes to Settings → Integrations.
+- **Tiles:** JumpCloud systems, Protected (has SparrowShield), **Missing agent**, not encrypted, no contact for over 7 days — click to filter.
+- Click a system for its System Insights; protected systems link to the SparrowShield device, missing ones show the install command.
+- Synced hourly by the `jumpcloud-sync` function, or with **Sync now** in Settings.
 
 ---
 
-### 7.5 Reports
+### 7.4 Detection & Response
 
-**Route:** `/reports`
+#### Detections (`/mac/edr`)
+Alerts raised by the endpoint detection engine.
+- Tabs **Open / Resolved / All**; filters by type and device; severity, MITRE technique and time columns.
+- Drawer: details and response actions — **Full EDR scan**, **Defender scan** (Windows), **Isolate host** (Windows, with confirmation), **Resolve / Reopen**, **Open device**.
 
-Export any of 20+ pre-built CSV reports for auditing, compliance, and analysis.
+#### Analytics (`/analytics`)
+The 156 Jamf-Protect-style detection analytics.
+- Tiles: analytics, enabled, needing the ES sensor, detections in 30 days.
+- Each analytic shows category, severity, MITRE technique, description and "Needs ES sensor" where applicable; an on/off switch (admin) enables or disables it fleet-wide — agents pick up the change on their next sync.
+- Drawer: how the analytic works and its recent detections.
 
-#### Available Reports
+#### Malware Scanner (`/mac/av`)
+Threat Scanner for the fleet.
+- **Scan all devices** queues a full scan on every device (`run_edr_scan` on Macs, `defender_scan` on Windows), skipping devices with a scan already running.
+- Tabs **Threats** (malware alerts; resolve / reopen) and **Scan history** (per-scan results, **Scan again**).
+- Tiles: active threats, critical, scans in 24 h, last scan.
 
-| Report Name | Contents |
+#### Threat Hunting (`/threat-hunt`)
+Live stream of endpoint sensor events (`edr_events`) with risk scores.
+- Pause / resume, minimum risk score filter, timeline of the last 60 minutes.
+- Drawer: process lineage, **Kill process**, and **Block fleet-wide** by process name, path or signing ID (creates a Process Policy).
+
+#### Process Tree (`/process-tree`)
+Parent → child execution chains rebuilt from sensor process events. Search by process, command line or path; expand / collapse; select a process for lineage, command line, VirusTotal look-up and **Kill process**. Shows "sensor not yet connected" when no device sends process events.
+
+#### Network Activity (`/mac/network`)
+Open connections and listening ports from each device's latest heartbeat, with tiles for online devices, open connections, listening ports and suspicious ports.
+
+#### MITRE ATT&CK (`/mitre`)
+The Enterprise matrix coloured by what was detected. Tiles for techniques detected, tactics hit and rule coverage. Click a technique to see recent alerts, sensor events, the rules that cover it, and a link to MITRE.
+
+---
+
+### 7.5 Protection Policies
+
+#### Application Control (`/app-filter`)
+- **Rules tab:** **Add rule** — application name (e.g. "Slack"), **Block** (closed within ~15 s of launch and recorded as a violation) or **Allow** (exempt), scope (all devices or a team), optional reason. Delete rules.
+- **Violations tab:** each time a blocked app was found. Actions: **Resolve**, **Remove app** (admin-approved: closes it and moves the `.app` bundle to quarantine on that Mac) and **Restore** (moves it back).
+- Tiles: blocked apps, allowed apps, open violations.
+
+#### Web Filtering (`/web-filter`)
+- **Categories tab:** switch whole categories (malware, phishing, ransomware, crypto-mining, gaming…) on or off.
+- **Custom rules tab:** **Add domain** as **Block** or **Allow** (allow wins even if a category lists the site). **Allow instead** turns a block into an allow in one click.
+- Every change sends `sync_web_filter` to all Macs immediately (up to 250,000 domains per device).
+- Tiles: categories blocked, blocked domains, allowed domains.
+
+#### Process Policies (`/policy`)
+Block or alert rules enforced by the agent's 15-second enforcement loop.
+- **New Block Rule:** name, rule type (process name, path, signing ID, team ID, hash), pattern, action (**block** = kill, **alert** = alert only), severity, platform, optional MITRE ID and description. Enable/disable and delete (delete is permanent).
+
+---
+
+### 7.6 Vulnerability & Compliance
+
+#### Vulnerabilities (`/vulnerabilities`)
+End-of-life and vulnerable software across the fleet.
+- Tabs **Open / Patched / All**; severity filter; most-affected applications; devices by risk.
+- Actions: **Patch app**, **Patch all on device**, **Mark fixed**, **Open device**, and a link to Patch Management.
+
+#### Patch Management (`/patches`)
+Outdated applications reported by each agent, **By application** or **By device**. Update one app or everything on a device (Homebrew / App Store on Mac, winget on Windows). Tiles: devices, need updates, outdated apps, up to date.
+
+#### Compliance (`/compliance`)
+- Pick a framework (SOC 2, HIPAA, or your own). See the fleet score, the **Controls** tab (pass/fail per control, severity) and the **Devices** tab (per-device result).
+- **New framework** (admin): name, description, controls; each control has an ID, name, severity and one or more checks on a device attribute with an operator (for example equals, contains, minimum version, or age in hours).
+- Enable/disable or delete a framework; **Evaluate now** re-scores immediately. The `compliance-evaluate` function also runs every hour.
+
+---
+
+### 7.7 Operations
+
+#### IT Notices (`/notices`)
+Send a message that pops up on every Mac. Write the message, set **From** and an optional **Expiry**, and send. Each Mac shows it once, as a dialog for the logged-in user, within about a minute; sleeping Macs see it when they wake (until it expires). **Sent notices** lists history; delete a notice to stop it.
+
+#### Reports (`/reports`)
+- **Report library:** download fleet reports on demand as CSV, and print a one-page security summary.
+- **Scheduled delivery:** **New schedule** — report type (executive, alerts, compliance, devices), daily / weekly / monthly, email recipients and/or Slack. Pause/resume and **Send now**. Delivered by the `send-reports` function (hourly check). Email needs a Resend key in Settings.
+
+#### Executive Summary (`/executive`)
+One-page posture for management: overall score, endpoints, agents reporting, open alerts, threat events (7 days), compliance, disk encryption, firewall, vulnerability-free share, web categories blocked; trends for 30 days; highest-risk endpoints. **Print / save PDF**.
+
+---
+
+### 7.8 Administration
+
+#### Users & Roles (`/users`)
+- **Invite user** by work email as **Admin — full control** or **Read-only**. Change a role from the drop-down in the list, or **Remove access**. The last admin cannot be removed or demoted.
+- Shows each person's role and last sign-in ("Never signed in" until they log in) and the sign-in methods available (email code; Google / Microsoft / Okta SSO).
+
+#### Audit Log (`/audit`) — admins only
+Every change a person made in the console: policies, device actions, alerts, users and settings, with before/after values (secrets hidden). Filter by who, action, area and time range. Entries cannot be edited or deleted.
+
+#### Settings (`/settings`)
+Tabs (the URL remembers the tab, e.g. `/settings?tab=integrations`):
+
+| Tab | What you configure |
 |---|---|
-| Fleet Health Summary | All devices with health score, status, last seen |
-| Device Inventory | Full hardware specs for all devices |
-| Alert History | All alerts with device, type, severity, resolution |
-| Software Inventory | All installed apps across all devices |
-| Process Report | Top processes by device |
-| Security Compliance | Per-device security control status |
-| SOC2 Compliance | SOC2 control pass/fail per device |
-| HIPAA Compliance | HIPAA control pass/fail per device |
-| Battery Health Report | Battery cycles and health across fleet |
-| Disk Usage Report | Disk utilization across fleet |
-| Location Report | Device locations by IP geolocation |
-| Login History | User login/logout events per device |
-| Crash Report | Application crashes across fleet |
-| Update Status | Pending updates per device |
-| Patch History | OS update history per device |
-| Software Violations | Blocklisted apps detected |
-| Offline Devices | Devices that have not reported recently |
-| New Enrollments | Recently enrolled devices |
+| **Slack Notifications** | Slack webhook URL and which notification types to send (security alerts, system critical, device offline, disk health, new apps) |
+| **Email Alerts** | Email delivery through Resend: API key, who receives alert e-mails, From address, **Send test email**, **Remove key** |
+| **Integrations** | **JumpCloud** (API key, optional organisation ID, **Sync now**, **Disconnect**), **VirusTotal** (API key stored only in your browser, used for file look-ups; free tier 500/day). Other cards are marked *Planned* |
+| **Auto-Remediation** | Rules such as "CPU above X % for N heartbeats → free memory", with cooldown, and the recent remediation log. Remediations can require admin approval in Alerts |
+| **Software Lists** | Allow/block lists with reason, platform and violations |
+| **Software Catalog** | Approved software with install method, for remote install |
+
+API keys are stored server-side in `internal_secrets`, which the console can never read back.
 
 ---
 
-### 7.6 Compliance
+### 7.9 Windows Console
 
-**Route:** `/compliance`
-
-Evaluate and track SOC2 and HIPAA compliance across the entire fleet.
-
-#### Framework Selector
-Toggle between SOC2 and HIPAA frameworks.
-
-#### Fleet Compliance Score
-Overall percentage of controls passing across all devices.
-
-#### Control Summary
-Per-control breakdown showing:
-- Control ID and name
-- Description
-- Which device field is evaluated
-- Pass / Fail / N/A counts across the fleet
-- Severity (critical / high / medium / low)
-
-#### Device Compliance Table
-Per-device compliance score with last evaluation timestamp. Drill down into a device to see which specific controls it is failing.
+Collapsed by default in the sidebar.
+- **Windows Antivirus** (`/windows/av`) — the Threat Scanner for Windows devices (Defender scans).
+- **Windows Detections** (`/windows/edr`) — Detections filtered to Windows.
+- **Host Isolation** (`/windows/isolation`) — Windows endpoints with their isolation state; **Isolate** cuts all traffic except the SparrowShield console, **Release** restores it.
 
 ---
 
-### 7.7 Settings
+### 7.10 Pages reachable by link only
 
-**Route:** `/settings`
-
-Admin configuration panel with the following tabs:
-
-#### General
-Global alert threshold configuration:
-- Disk warning threshold (%)
-- Disk critical threshold (%)
-- RAM warning threshold (%)
-- Battery warning threshold (%)
-- Offline detection window (minutes)
-- Minimum macOS version required
-- Minimum Windows version required
-
-#### Remediation Rules
-Create and manage auto-remediation rules. Each rule defines:
-- **Name** — friendly label
-- **Metric** — `cpu_pct`, `ram_pct`, or `disk_pct`
-- **Operator** — `>`, `<`, or `=`
-- **Threshold** — numeric trigger value
-- **Consecutive Beats** — how many heartbeats must breach threshold before firing
-- **Action** — kill_process, optimize_memory, clear_cache, restart_ui, install_updates
-- **Cooldown** — minutes before the rule can fire again for the same device
-- **Enabled** toggle
-
-#### Slack Notifications
-- Slack webhook URL input
-- Toggle notifications for: new software installs, critical system alerts, security alerts, device offline, disk health warnings
-
-#### Software Lists
-Manage application allowlists and blocklists:
-- **Allowlist** — only these apps are permitted (if enforced)
-- **Blocklist** — these apps trigger a violation alert when detected
-- Each entry has: app name, match pattern (glob), reason, added by
-
-#### Software Catalog
-Library of approved software packages available for remote deployment:
-- App name, bundle ID, version, category, platform (mac/windows)
-- Install method: Homebrew, PKG, DMG
-- Install command and uninstall command
-
-#### Deployment Tasks
-Track in-progress and completed remote software deployments:
-- Target device, app name, status, initiated by, timestamps
-
-#### IT Notices
-Push custom messages to all Mac menu bar trays:
-- **Compose form:** Message text (up to 280 characters), From field, optional expiry datetime
-- **Send to All Macs** button — inserts notice to `it_notices` table; polled by all menu bar apps within 2 minutes
-- **Notice History** — table of all past notices with Active/Dismissed badge and manual dismiss button
+Not in the sidebar, but reachable by URL: Quarantine (`/av/quarantine` — quarantined app bundles with **Restore**), AV Definitions (`/av/definitions`), Detection Rules (`/edr/rules`), Process Monitor (`/edr/processes` — top processes with **Kill process**), Onboarding (`/onboarding`), About (`/about`).
 
 ---
 
@@ -1243,9 +1258,20 @@ value  text
 
 ## 11. Alert System
 
+### Where alerts come from today (November 2026)
+
+| Source | Raised by | Notified |
+|---|---|---|
+| Detection rules, analytics, process policies, blocked apps, malware | The agent, directly into `alerts` / `security_events` | Shown in the console in real time (Alerts, Live Activity). **Not** posted to Slack individually |
+| Sensor faults | `report_sensors()` in the database (migration 026) | **Slack immediately**, and again when the sensor recovers |
+| Threshold alerts (disk, RAM, CPU, battery %, encryption, firewall, offline) | The `check-alerts` edge function | Slack + email for each new alert |
+
+> **Known gap:** `check-alerts` is **not currently scheduled** in pg_cron (only `compliance-evaluate`, `send-reports`, `jumpcloud-sync` and the offline-marking jobs are). Until a cron job is added, the threshold alerts described below are not generated automatically.
+
+
 ### How Alerts Are Generated
 
-The `check-alerts` edge function runs every 15 minutes via pg_cron. For each device that has reported in the last hour it:
+When scheduled (see the known gap above), the `check-alerts` edge function runs via pg_cron. For each device that has reported in the last hour it:
 
 1. Reads the most recent heartbeat metrics from the `metrics` table
 2. Evaluates each threshold rule:
@@ -1425,53 +1451,19 @@ The score is AI-generated but generally reflects: RAM pressure, disk usage, ther
 
 ## 17. IT Notices
 
-IT Notices allow administrators to push custom text messages directly to the macOS menu bar app on all enrolled Mac devices.
+IT Notices put a message in front of every Mac user — for example "Please restart before 6 PM to install security updates".
 
-### Creating a Notice (Dashboard → Settings → IT Notices)
-
-1. Type your message (up to 280 characters)
-2. Set the "From" name (defaults to "IT Admin")
-3. Optionally set an expiry datetime (auto-dismisses at that time)
-4. Click **Send to All Macs**
-
-The notice is inserted into the `it_notices` Supabase table.
+### Sending a notice (console → Operations → IT Notices)
+1. Write the message.
+2. Set **From** (shown in the dialog title, e.g. "IT Notice — IT Team").
+3. Optionally set an **Expiry**.
+4. Send. The notice is stored in the `it_notices` table.
 
 ### Delivery
+The macOS agent checks for active, unexpired notices every 60 seconds and shows each new one **once per Mac** as a dialog with an OK button in the logged-in user's session (`launchctl asuser … osascript`; the text is passed as arguments, never inserted into the script). Seen notices are remembered in `notices_seen.json` on the Mac. A Mac that is asleep or has nobody logged in shows the notice later, as long as it hasn't expired. Windows does not show notices yet.
 
-The macOS menu bar app polls the `it_notices` table every 2 minutes. When an active notice is found, it displays in the menu as a banner:
-
-```
-📢 [Message text] — [Sender]
-```
-
-### Expiry
-
-If an `expires_at` datetime is set, a Supabase database trigger automatically sets `active = false` when that time passes. The notice disappears from all menu bar apps within 2 minutes of expiry.
-
-### Manual Dismiss
-
-Administrators can click the ✕ button next to any notice in the IT Notices history table to immediately set `active = false`.
-
-### Prerequisites
-
-Run migration `014_it_notices.sql` in the Supabase SQL editor before using this feature:
-
-```sql
-create table if not exists public.it_notices (
-  id         uuid primary key default gen_random_uuid(),
-  message    text not null,
-  sender     text not null default 'IT Admin',
-  active     boolean not null default true,
-  created_at timestamptz not null default now(),
-  expires_at timestamptz default null
-);
-
-alter table public.it_notices enable row level security;
-
-create policy "anon can read active notices"
-  on public.it_notices for select to anon
-  using (active = true);
-```
+### Stopping a notice
+Delete it from **Sent notices**, or let it expire.
 
 ---
 
@@ -1545,18 +1537,18 @@ Each device authenticates using a **Bearer token** issued at enrollment. The tok
 - Sent in every heartbeat and inventory request as `Authorization: Bearer {token}`
 - Verified server-side by hashing the incoming token and comparing to the stored hash
 
-### Row Level Security (RLS)
+### Console access and roles (RLS)
 
-All Supabase tables have Row Level Security enabled. The `anon` role (used by the dashboard and agents) has carefully scoped policies:
+- The console requires sign-in (email code, Google, Microsoft or SAML). Membership is the `console_users` table (`admin` or `viewer`); `is_console_member()` and `is_console_admin()` are used by every policy.
+- Every table: members can **read** (`console_member_read`), only admins can **write** (`console_admin_write`). Someone who signs in without an invitation sees nothing.
+- Agents use the public (anon) key with narrow policies on the tables they write. Sensor reports go through the `report_sensors()` function instead of a table policy.
+- Secrets (cron secret, JumpCloud and Resend keys) live in `internal_secrets`, which only the service role can read. Never put secrets in `config` — members can read it.
+- User management goes through the `admin-users` edge function (invite, change role, remove; the last admin is protected).
+- Every change made by a person is recorded by the `audit_row_change()` trigger in `audit_log` (config values redacted); entries cannot be edited or deleted.
+- **Known gap:** the public key can still insert `device_commands` rows, so anyone who extracts it from an installer could queue commands to a device. Tighten this before wide rollout.
 
-- Agents can only INSERT/UPDATE their own device's records (scoped by `device_id`)
-- Dashboard reads are allowed on all tables via anon (read-only)
-- Destructive operations (delete, bulk update) require the service role key
-- `it_notices` only returns rows where `active = true`
-
-### Admin Operations
-
-Admin-level API calls (update-config, delete-device) require the `FLEETPULSE_ADMIN_SECRET` environment variable as a Bearer token. This secret is never exposed to the frontend or agents.
+### Scheduled jobs
+pg_cron calls edge functions through `call_edge_function()` with an `x-cron-secret` header: `compliance-evaluate` (hourly at :10), `send-reports` (hourly at :02), `jumpcloud-sync` (hourly at :20). Devices are marked offline every 2–5 minutes when heartbeats stop.
 
 ### Network Security
 
@@ -1745,13 +1737,13 @@ python3 build_installer.py  # or run the embed script
 
 **macOS (via MDM or manual):**
 ```bash
-# Copy installer to target Mac then:
-bash ~/Downloads/sparrow-install.sh
+# On the target Mac (or push the same command through Jamf/MDM):
+curl -fsSL sparrowshield.vercel.app/mac | sudo bash
 ```
 
 **Windows (via GPO or manual):**
 ```
-Double-click SparrowShield-Install.bat → Run as Administrator
+Double-click SparrowShieldInstaller.bat → Run as Administrator
 ```
 
 ---
@@ -1760,11 +1752,11 @@ Double-click SparrowShield-Install.bat → Run as Administrator
 
 ### Agent Not Sending Heartbeats
 
-1. Check agent is running: `launchctl list | grep sparrow`
-2. View logs: `tail -100 /var/log/healsparrow-agent.log`
+1. Check agent is running: `sudo launchctl print system/com.sparrowshield.sensor | head`
+2. View logs: `tail -100 /usr/local/sparrowshield/agent.log`
 3. Verify config.json has valid `api_url` and `anon_key`
 4. Test connectivity: `curl https://[PROJECT].supabase.co/functions/v1/get-devices`
-5. Restart agent: `launchctl unload/load ~/Library/LaunchAgents/com.sparrowshield.agent.plist`
+5. Restart agent: `sudo launchctl kickstart -k system/com.sparrowshield.sensor`
 
 ### Dashboard Shows Device as Offline
 
@@ -1791,12 +1783,12 @@ The macOS `last` command returns dates without a year (e.g., `"Mon Mar 31 10:22"
 3. Check edge function logs in Supabase Dashboard → Edge Functions → reporting-agent → Logs
 4. Verify the cron job is active: `select * from cron.job;` in SQL editor
 
-### IT Notices Not Appearing in Menu Bar
+### IT Notices Not Appearing on Macs
 
-1. Confirm migration `014_it_notices.sql` has been run
-2. Check the `it_notices` table has an active row (`active = true`)
-3. Wait up to 2 minutes (polling interval)
-4. Check `menubar_mac.py` logs for errors in the `_fetch_it_notice()` function
+1. Check the notice is active and not expired in **IT Notices → Sent notices**
+2. Wait about a minute (the agent checks every 60 seconds); each Mac shows a notice only once
+3. A user must be logged in at the Mac — with only the login window showing, the notice waits
+4. Look for "Showed IT notice" in `/usr/local/sparrowshield/agent.log`
 
 ### Windows Agent Not Starting
 
@@ -1814,28 +1806,26 @@ The macOS `last` command returns dates without a year (e.g., `"Mon Mar 31 10:22"
 
 | Area | Limitation |
 |---|---|
-| **Menu Bar App** | macOS only. Windows tray app not yet built. |
-| **Remote Actions** | Require agent polling. Actions can take up to 10 seconds to reach the device. |
-| **MDM Features** | Does not enforce profiles, certificates, or configuration payloads (that requires Apple MDM protocol) |
-| **Mobile Devices** | iOS and Android not supported |
-| **Linux** | No Linux agent |
-| **Real-time** | Dashboard does not use Supabase Realtime subscriptions — uses polling via TanStack Query |
-| **Authentication** | Dashboard has no built-in auth layer — relies on Supabase anon key access |
+| **Windows parity** | Windows lacks self-update, the analytics engine, 15-second app enforcement and IT notice pop-ups. Windows sensor health is implemented but not yet tested on a real Windows laptop |
+| **Endpoint Security sensor** | 3 analytics (Nested App Signature Mismatch, Synthetic Click, USB Write) need the ES sensor and are not evaluated |
+| **Threshold alerts** | `check-alerts` is not scheduled (see section 11) |
+| **Agent-raised alerts** | Detection / analytics alerts are not pushed to Slack one by one (sensor faults are) |
+| **Command security** | The public key can insert device commands (see section 20) |
+| **Full Disk Access** | Must be granted by a PPPC profile (Jamf) or by hand; without it user folders are not scanned |
+| **Integrations need keys** | JumpCloud and Resend need API keys in Settings; SSO buttons need the provider enabled in Supabase |
+| **Linux** | Agent exists but is hidden from the portal and unsupported |
+| **Mobile** | iOS and Android not supported |
+| **MDM** | No configuration profiles or certificates (needs Apple MDM) |
 
-### Planned Features
+### Delivered since v1
+Console sign-in with roles and audit log · real-time updates · live command progress · custom compliance frameworks with hourly evaluation · scheduled report delivery · device groups · agent self-update · 156 detection analytics · application control with remove/restore · web filtering with category feeds · IT notice pop-ups · JumpCloud System Insights · sensor health monitoring.
 
-- [ ] Windows menu bar / system tray app
-- [ ] Linux agent (Ubuntu / Debian)
-- [ ] Dashboard authentication (Supabase Auth with email/password or SSO)
-- [ ] Role-based access control (IT Admin vs. Read-only)
-- [ ] Real-time dashboard updates via Supabase Realtime
-- [ ] Mobile agent (iOS / Android)
-- [ ] Custom compliance frameworks (beyond SOC2 and HIPAA)
-- [ ] Scheduled report delivery via email
-- [ ] Two-way command acknowledgement with progress streaming
-- [ ] Device groups and tagging
-- [ ] Integration with Jira / ServiceNow for ticket creation
-- [ ] Audit log for all admin actions
+### Planned
+- [ ] Windows parity (self-update, analytics, notices)
+- [ ] Schedule `check-alerts` and send agent-raised alerts to Slack
+- [ ] Restrict command creation to signed-in admins
+- [ ] Ticketing (Jira / ServiceNow)
+- [ ] Endpoint Security sensor for the remaining analytics
 
 ---
 
